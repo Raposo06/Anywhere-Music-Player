@@ -22,7 +22,7 @@ graph TD
         API[PostgREST]
     end
 
-    subgraph "Clients"
+    subgraph Clients
         TV[Android TV App]
         Web[Flutter Web App]
     end
