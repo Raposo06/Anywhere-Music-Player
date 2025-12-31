@@ -18,12 +18,12 @@ graph TD
 
     subgraph "Hetzner VPS (Coolify)"
         n8n[n8n Automation]
-        MinIO["MinIO Storage (S3)]
+        MinIO["MinIO Storage (S3)""]
         DB[(PostgreSQL)]
         API[PostgREST]
     end
 
-    subgraph "Clients"
+    subgraph Clients
         TV[Android TV App]
         Web[Flutter Web App]
     end
