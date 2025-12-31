@@ -1,0 +1,23 @@
+### JetBrains IDE (PyCharm/IntelliJ) ###
+.idea/workspace.xml
+.idea/usage.statistics.xml
+.idea/dictionaries
+.idea/shelf
+# Optional: Sometimes safe to ignore in PyCharm if it causes conflicts
+.idea/modules.xml
+
+### Python Specific (CRITICAL) ###
+# Python compiles files into these "cache" folders. Never commit them.
+__pycache__/
+*.pyc
+
+### Virtual Environments ###
+# If you create a virtual environment, it puts thousands of files here.
+# Never commit your environment libraries.
+venv/
+.venv/
+env/
+
+### Operating System Junk ###
+.DS_Store
+Thumbs.db
