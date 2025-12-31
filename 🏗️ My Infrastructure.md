@@ -1,87 +1,208 @@
-### 1. ☁️ The Server (Hardware)
+# 🏗️ AniStream Infrastructure
+
+> Infrastructure specification for the **Anywhere-Music-Player (AniStream)** project.
+
+---
+
+## 1. ☁️ The Server (Hardware)
 
 - **Provider:** [Hetzner Cloud](https://console.hetzner.cloud/)
-- **Location:** Germany (Nuremberg/Falkenstein) — _Low latency for PT._
-- **Server Type:** **CX22** (Intel/AMD x86 Architecture).
+- **Location:** Germany (Nuremberg/Falkenstein) — _Low latency for EU._
+- **Server Type:** **CX22** (Intel/AMD x86 Architecture)
 - **Specs:**
     - **CPU:** 2 vCPU
     - **RAM:** 4 GB
     - **Disk:** 40 GB NVMe
 - **Operating System:** Ubuntu 24.04 LTS
-- **Cost:** ~€4.35 / month (excl. VAT).
+- **Cost:** ~€4.35/month (excl. VAT)
 - **IP Address:** _(Check your Hetzner Dashboard)_
 
-### 2. 🛠️ The Management Layer (PaaS)
+---
+
+## 2. 🛠️ The Management Layer (PaaS)
 
 - **Software:** [Coolify](https://coolify.io/)
-- **Function:** Manages Docker containers, Reverse Proxy, and SSL certificates automatically.
+- **Function:** Manages Docker containers, Reverse Proxy (Traefik), and SSL certificates automatically.
 - **Installation:** Self-hosted on the Hetzner server ("Localhost").
 - **Access Port:** `http://YOUR_IP:8000` (initially) or via your configured domain.
 
-### 3. 🧩 The Software Stack (Applications)
+---
 
-All applications are running as Docker containers managed by Coolify.
+## 3. 🧩 The Software Stack (Applications)
 
-### **A. Automation Core (n8n)**
+All applications run as Docker containers managed by Coolify.
 
-- **Type:** `n8n with PostgreSQL` (Production Grade).
-- **Domain:** `https://n8n.n8nauto.win/
-- **Database:** PostgreSQL (Internal, dedicated container).
-- **Docker Image Tag:** `latest` (Auto-updates on redeploy).
+### A. Object Storage (MinIO)
 
-### **B. Vector Database**
+- **Software:** [MinIO](https://min.io/)
+- **Type:** Docker Service (S3-compatible storage)
+- **Domain:** `https://minio.YOUR_DOMAIN/`
+- **Console Domain:** `https://minio-console.YOUR_DOMAIN/`
+- **Bucket Name:** `anime-music`
+- **Bucket Policy:** **Public (Read-only)** — Allows streaming without auth tokens.
+- **Configuration:**
+    - **Access Key:** _(Store securely)_
+    - **Secret Key:** _(Store securely)_
+- **Stream URL Format:** `https://minio.YOUR_DOMAIN/anime-music/{filename}`
 
-- **Software:** [Qdrant](https://qdrant.tech/)
-- **Type:** Docker Service.
-- **Domain (Dashboard):** `https://qdrant.n8nauto.win/dashboard`
-- **Internal Access:** `http://qdrant:6333` (For n8n to talk to it).
-- **Collection Name:** `traffic_law`
-- **Vector Configuration:**
-    - **Dimensions:** `1536` (Compatible with OpenAI `text-embedding-3-small`).
-    - **Distance Metric:** `Cosine`.
-- **Auth:** Protected by `QDRANT_API_KEY`.
+### B. Database (PostgreSQL)
 
-### C. Business Database
-
-- **Software:** PostgreSQL.
-- **Type:** Docker Service (Separate from n8n internal DB).
+- **Software:** PostgreSQL 16
+- **Type:** Docker Service
+- **Purpose:** Stores track metadata for the music library.
 - **Access Configuration:**
-    - **Internal (n8n):** Connects via Docker Internal Network (Host: `uuid` or container name from Coolify).
-    - **External (DBeaver):** **SSH Tunnel** (Recommended).
-        - _Host:_ `HETZNER_IP`
-        - _Port:_ `5432`
-        - _Via SSH:_ `root@YOUR_HETZNER_IP`
-- **Security:** "Ports Mappings" left **Empty** (Not exposed to the public internet).
+    - **Internal (n8n/PostgREST):** Connects via Docker internal network.
+    - **External (DBeaver):** SSH Tunnel recommended (not exposed publicly).
+- **Security:** Port mappings left **empty** (not exposed to public internet).
+- **Schema:**
+    ```sql
+    CREATE TABLE public.tracks (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title TEXT NOT NULL,
+        artist TEXT DEFAULT 'Unknown',
+        album TEXT,
+        filename TEXT NOT NULL,
+        stream_url TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+    );
+
+    CREATE INDEX idx_tracks_artist ON public.tracks(artist);
+    CREATE INDEX idx_tracks_title ON public.tracks(title);
+    ```
 - **Naming Conventions:**
-    - **Format:** `snake_case` (e.g., `first_name`).
-    - **Language:** English.
-    - **Tables:** Plural (e.g., `users`, `orders`).
-    - **Schema:** `public`.
+    - **Format:** `snake_case` (e.g., `stream_url`)
+    - **Language:** English
+    - **Tables:** Plural (e.g., `tracks`)
+    - **Schema:** `public`
 
-### 4. 🌐 Networking & DNS
+### C. Automation Engine (n8n)
 
-- **Provider:** Cloudflare.
-- **SSL Mode:** **Full (Strict)**.
-- **Records:**
-    - `A` Record | `n8n` -> Points to Hetzner IP (Proxied ☁️).
-    - `A` Record | `qdrant` -> Points to Hetzner IP (Proxied ☁️).
+- **Software:** [n8n](https://n8n.io/)
+- **Type:** Docker Service with dedicated PostgreSQL (for n8n internal data).
+- **Domain:** `https://n8n.YOUR_DOMAIN/`
+- **Purpose:** Handles music ingestion workflow:
+    1. Receives MP3 + metadata from Python uploader script.
+    2. Uploads binary file to MinIO bucket.
+    3. Inserts track metadata into PostgreSQL.
+- **Webhook Endpoint:** `https://n8n.YOUR_DOMAIN/webhook/upload-music`
+- **Authentication:** Protected by `x-api-key` header.
+
+### D. Read API (PostgREST)
+
+- **Software:** [PostgREST](https://postgrest.org/)
+- **Type:** Docker Service
+- **Domain:** `https://api.YOUR_DOMAIN/`
+- **Purpose:** Exposes PostgreSQL as a RESTful API for the Flutter app.
+- **Endpoints:**
+    - `GET /tracks` — List all tracks
+    - `GET /tracks?title=ilike.*keyword*` — Search by title
+    - `GET /tracks?artist=eq.ArtistName` — Filter by artist
+- **Connection:** Reads from the same PostgreSQL instance (Business Database).
+- **Security:** Read-only role (no mutations from API).
 
 ---
 
-### 🔑 Credentials Backup
+## 4. 🌐 Networking & DNS
 
-1. **Hetzner Root Password** (SSH).
-2. **Coolify Login** (Email/Pass).
-3. **n8n Owner Account** (Email/Pass).
-4. **Qdrant API Key** (From Coolify Env Vars).
-5. **OpenRouter API Key**.
-6. OpenAI API Key
-7. Google AI Studio API Key
+- **Provider:** Cloudflare
+- **SSL Mode:** **Full (Strict)**
+- **Base Domain:** `YOUR_DOMAIN` _(e.g., anistream.example.com)_
+
+### DNS Records
+
+| Type | Name | Value | Proxy |
+|------|------|-------|-------|
+| `A` | `@` | Hetzner IP | ☁️ Proxied |
+| `A` | `minio` | Hetzner IP | ☁️ Proxied |
+| `A` | `minio-console` | Hetzner IP | ☁️ Proxied |
+| `A` | `n8n` | Hetzner IP | ☁️ Proxied |
+| `A` | `api` | Hetzner IP | ☁️ Proxied |
 
 ---
 
-### 📝 Quick Commands (PowerShell)
+## 5. 🔑 Credentials Checklist
 
-- **Connect to Server:** `ssh root@YOUR_IP_ADDRESS`
-- **Check Docker Status:** `docker ps`
-- **Check Coolify Logs:** `docker logs -f coolify`
+Store these securely (password manager recommended):
+
+| Service | Credentials |
+|---------|-------------|
+| **Hetzner** | Root SSH password/key |
+| **Coolify** | Admin email/password |
+| **MinIO** | Access Key + Secret Key |
+| **PostgreSQL** | Database user/password |
+| **n8n** | Owner account email/password |
+| **n8n Webhook** | API Key (`x-api-key`) |
+
+---
+
+## 6. 📝 Quick Commands
+
+```bash
+# Connect to server
+ssh root@YOUR_HETZNER_IP
+
+# Check running containers
+docker ps
+
+# Check Coolify logs
+docker logs -f coolify
+
+# Check MinIO logs
+docker logs -f <minio-container-id>
+
+# Check PostgREST logs
+docker logs -f <postgrest-container-id>
+
+# Test API endpoint
+curl https://api.YOUR_DOMAIN/tracks
+```
+
+---
+
+## 7. 🗺️ Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Hetzner VPS (CX22)                           │
+│                    Ubuntu 24.04 + Coolify                       │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │                     Docker Network                         │  │
+│  │                                                            │  │
+│  │   ┌─────────┐    ┌─────────────┐    ┌───────────────┐     │  │
+│  │   │  MinIO  │    │  PostgreSQL │    │   PostgREST   │     │  │
+│  │   │ :9000   │    │    :5432    │◄───│    :3000      │     │  │
+│  │   │         │    │             │    │               │     │  │
+│  │   └────▲────┘    └──────▲──────┘    └───────────────┘     │  │
+│  │        │                │                    ▲             │  │
+│  │        │                │                    │             │  │
+│  │        │           ┌────┴────┐               │             │  │
+│  │        └───────────│   n8n   │               │             │  │
+│  │                    │  :5678  │               │             │  │
+│  │                    └────▲────┘               │             │  │
+│  │                         │                    │             │  │
+│  └─────────────────────────┼────────────────────┼─────────────┘  │
+│                            │                    │                │
+└────────────────────────────┼────────────────────┼────────────────┘
+                             │                    │
+            ┌────────────────┘                    │
+            │                                     │
+    ┌───────┴───────┐                    ┌────────┴────────┐
+    │ Python Script │                    │  Flutter Apps   │
+    │   (Upload)    │                    │  (Web + TV)     │
+    └───────────────┘                    └─────────────────┘
+```
+
+---
+
+## 8. 📊 Resource Estimates
+
+| Component | RAM | CPU | Storage |
+|-----------|-----|-----|---------|
+| Coolify | ~500 MB | Low | ~2 GB |
+| MinIO | ~200 MB | Low | **Scales with library** |
+| PostgreSQL | ~200 MB | Low | ~100 MB |
+| n8n | ~300 MB | Low | ~500 MB |
+| PostgREST | ~50 MB | Very Low | Minimal |
+| **Total** | **~1.3 GB** | — | **3GB+ for music** |
+
+> **Note:** CX22 with 4GB RAM has sufficient headroom for this stack.
