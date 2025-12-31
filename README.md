@@ -91,8 +91,8 @@ CREATE INDEX idx_tracks_title ON public.tracks(title);
 ### 3. Read API (PostgREST)
 1.  In Coolify, deploy **PostgREST**.
 2.  Connect it to your PostgreSQL container.
-3.  This will expose your DB at `https://your-api.domain.com`.
-    *   *Test:* Visiting `https://your-api.domain.com/tracks` should return an empty JSON array `[]`.
+3.  This will expose your DB at `https://api.YOUR_DOMAIN`.
+    *   *Test:* Visiting `https://api.YOUR_DOMAIN/tracks` should return an empty JSON array `[]`.
 
 ---
 
@@ -104,7 +104,7 @@ We use **n8n** strictly for the uploading process to handle the file logic and d
 Create a workflow with a **Webhook Trigger** (POST) that accepts Binary Data.
 *   **Node 1 (S3):** Uploads binary to MinIO bucket `anime-music`.
 *   **Node 2 (Postgres):** Inserts `title`, `artist`, and constructs the `stream_url`.
-    *   *Stream URL Format:* `https://minio.yourdomain.com/anime-music/{{filename}}`
+    *   *Stream URL Format:* `https://minio.YOUR_DOMAIN/anime-music/{{filename}}`
 
 ### Step 2: The Uploader Script
 This script runs on your PC. It scans your folder, reads ID3 tags (Title/Artist), and pushes them to n8n.
@@ -117,7 +117,7 @@ import eyed3
 
 # CONFIG
 FOLDER = r"C:\Music\Anime"
-WEBHOOK = "https://n8n.yourdomain.com/webhook/upload-music"
+WEBHOOK = "https://n8n.YOUR_DOMAIN/webhook/upload-music"
 AUTH_HEADER = {"x-api-key": "your-n8n-secret"}
 
 for root, _, files in os.walk(FOLDER):
