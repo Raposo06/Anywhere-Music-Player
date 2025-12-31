@@ -3,7 +3,7 @@
 > **Self-hosted, cross-platform music streaming for your personal anime collection.**
 > *Write Once (Flutter), Host Anywhere (Coolify), Play Everywhere (TV & PC).*
 
-**AniStream** is a private streaming solution designed to solve a specific problem: accessing a local high-quality MP3 library (3GB+) seamlessly on a **PC Web Browser** and a **Smart TV (Android TV)** without relying on commercial cloud services.
+**Aniwhere Music Player** is a private streaming solution designed to solve a specific problem: accessing a local high-quality MP3 library (3GB+) seamlessly on a **PC Web Browser** and a **Smart TV (Android TV)** without relying on commercial cloud services.
 
 ## 🏗️ Architecture
 
@@ -242,5 +242,3 @@ flutter run -d chrome
 
 ---
 
-## 📝 License
-Personal Project - MIT License.
