@@ -17,7 +17,6 @@ graph TD
     end
 
     subgraph "Hetzner VPS (Coolify)"
-        n8n[n8n Automation]
         MinIO["MinIO Storage (S3)"]
         DB[(PostgreSQL)]
         API[PostgREST]
@@ -30,9 +29,8 @@ graph TD
 
     %% Ingestion Flow
     MP3s --> Script
-    Script -->|POST File + Metadata| n8n
-    n8n -->|Upload Binary| MinIO
-    n8n -->|Insert Metadata| DB
+    Script -->|Upload Binary| MinIO
+    Script -->|Insert Metadata| DB
 
     %% Playback Flow
     TV -->|GET /tracks| API
@@ -46,7 +44,7 @@ graph TD
 *   **Infrastructure:** Hetzner Cloud + Coolify.
 *   **Storage:** **MinIO** (S3 Compatible) - Stores the MP3 files.
 *   **Database:** **PostgreSQL** - Stores song metadata (Artist, Title, Duration, Stream URL).
-*   **Ingestion:** **n8n** - Receives files from PC, handles S3 upload and DB insertion.
+*   **Ingestion:** **Python Script** - Directly uploads to MinIO and inserts metadata into PostgreSQL.
 *   **Read API:** **PostgREST** - Instantly turns the PostgreSQL database into a REST API for the app to read.
 *   **Frontend:** **Flutter** - Single codebase compiling to Android TV (APK) and Web (PWA).
 
@@ -56,8 +54,7 @@ graph TD
 
 1.  **Flutter SDK** installed on your local machine.
 2.  **Python 3** installed (for the uploader script).
-3.  **Coolify Instance** running.
-4.  **n8n** installed and accessible.
+3.  **Coolify Instance** running with MinIO, PostgreSQL, and PostgREST.
 
 ---
 
@@ -67,7 +64,7 @@ graph TD
 1.  In Coolify, deploy a **MinIO** service.
 2.  Create a bucket named `anime-music`.
 3.  **Important:** Set the bucket policy to **Public** (Read-only) so the TV can stream without complex auth tokens.
-4.  Save your `Access Key`, `Secret Key`, and `Endpoint` for the n8n step.
+4.  Save your `Access Key`, `Secret Key`, and `Endpoint` for the uploader script.
 
 ### 2. Database (PostgreSQL)
 Run the following SQL in your existing PostgreSQL instance to create the schema:
@@ -78,7 +75,7 @@ CREATE TABLE public.tracks (
     title TEXT NOT NULL,
     artist TEXT DEFAULT 'Unknown',
     album TEXT,
-    filename TEXT NOT NULL,
+    filename TEXT NOT NULL UNIQUE,
     stream_url TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
@@ -96,50 +93,88 @@ CREATE INDEX idx_tracks_title ON public.tracks(title);
 
 ---
 
-## 📥 Data Ingestion (n8n & Python)
+## 📥 Data Ingestion (Python Script)
 
-We use **n8n** strictly for the uploading process to handle the file logic and database recording.
+The uploader script runs on your PC and directly communicates with MinIO and PostgreSQL—no middleware needed.
 
-### Step 1: Configure n8n Workflow
-Create a workflow with a **Webhook Trigger** (POST) that accepts Binary Data.
-*   **Node 1 (S3):** Uploads binary to MinIO bucket `anime-music`.
-*   **Node 2 (Postgres):** Inserts `title`, `artist`, and constructs the `stream_url`.
-    *   *Stream URL Format:* `https://minio.YOUR_DOMAIN/anime-music/{{filename}}`
+### Setup
 
-### Step 2: The Uploader Script
-This script runs on your PC. It scans your folder, reads ID3 tags (Title/Artist), and pushes them to n8n.
+Install dependencies:
+```bash
+pip install minio psycopg2-binary eyed3
+```
+
+### The Uploader Script
 
 **`scripts/upload.py`**:
 ```python
 import os
-import requests
 import eyed3
+from minio import Minio
+import psycopg2
 
 # CONFIG
 FOLDER = r"C:\Music\Anime"
-WEBHOOK = "https://n8n.YOUR_DOMAIN/webhook/upload-music"
-AUTH_HEADER = {"x-api-key": "your-n8n-secret"}
+MINIO_ENDPOINT = "minio.YOUR_DOMAIN"
+MINIO_ACCESS_KEY = "your-access-key"
+MINIO_SECRET_KEY = "your-secret-key"
+BUCKET_NAME = "anime-music"
 
+DB_HOST = "YOUR_HETZNER_IP"  # Via SSH tunnel, or direct if exposed
+DB_PORT = 5432
+DB_NAME = "postgres"
+DB_USER = "postgres"
+DB_PASS = "your-db-password"
+
+# Initialize clients
+minio_client = Minio(
+    MINIO_ENDPOINT,
+    access_key=MINIO_ACCESS_KEY,
+    secret_key=MINIO_SECRET_KEY,
+    secure=True
+)
+
+db_conn = psycopg2.connect(
+    host=DB_HOST, port=DB_PORT,
+    dbname=DB_NAME, user=DB_USER, password=DB_PASS
+)
+db_cursor = db_conn.cursor()
+
+# Process files
 for root, _, files in os.walk(FOLDER):
     for file in files:
         if file.endswith(".mp3"):
             path = os.path.join(root, file)
             audio = eyed3.load(path)
-            
+
             # Extract tags or fallback to filename
-            title = audio.tag.title if audio and audio.tag.title else file
-            artist = audio.tag.artist if audio and audio.tag.artist else "Unknown"
+            title = audio.tag.title if audio and audio.tag and audio.tag.title else file
+            artist = audio.tag.artist if audio and audio.tag and audio.tag.artist else "Unknown"
+            album = audio.tag.album if audio and audio.tag and audio.tag.album else None
 
             print(f"Uploading: {title}...")
-            
-            with open(path, 'rb') as f:
-                requests.post(
-                    WEBHOOK,
-                    headers=AUTH_HEADER,
-                    data={'title': title, 'artist': artist, 'filename': file},
-                    files={'data': f}
-                )
+
+            # 1. Upload to MinIO
+            minio_client.fput_object(BUCKET_NAME, file, path)
+
+            # 2. Insert metadata into PostgreSQL
+            stream_url = f"https://{MINIO_ENDPOINT}/{BUCKET_NAME}/{file}"
+            db_cursor.execute(
+                """
+                INSERT INTO tracks (title, artist, album, filename, stream_url)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (filename) DO NOTHING
+                """,
+                (title, artist, album, file, stream_url)
+            )
+            db_conn.commit()
+
+print("Done!")
+db_cursor.close()
+db_conn.close()
 ```
+
+> **Note:** For database access, use an SSH tunnel (`ssh -L 5432:localhost:5432 root@YOUR_IP`) or configure PostgreSQL for secure remote access.
 
 ---
 

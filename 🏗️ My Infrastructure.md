@@ -51,8 +51,8 @@ All applications run as Docker containers managed by Coolify.
 - **Type:** Docker Service
 - **Purpose:** Stores track metadata for the music library.
 - **Access Configuration:**
-    - **Internal (n8n/PostgREST):** Connects via Docker internal network.
-    - **External (DBeaver):** SSH Tunnel recommended (not exposed publicly).
+    - **Internal (PostgREST):** Connects via Docker internal network.
+    - **External (Uploader Script/DBeaver):** SSH Tunnel recommended (not exposed publicly).
 - **Security:** Port mappings left **empty** (not exposed to public internet).
 - **Schema:**
     ```sql
@@ -61,7 +61,7 @@ All applications run as Docker containers managed by Coolify.
         title TEXT NOT NULL,
         artist TEXT DEFAULT 'Unknown',
         album TEXT,
-        filename TEXT NOT NULL,
+        filename TEXT NOT NULL UNIQUE,
         stream_url TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
     );
@@ -75,19 +75,7 @@ All applications run as Docker containers managed by Coolify.
     - **Tables:** Plural (e.g., `tracks`)
     - **Schema:** `public`
 
-### C. Automation Engine (n8n)
-
-- **Software:** [n8n](https://n8n.io/)
-- **Type:** Docker Service with dedicated PostgreSQL (for n8n internal data).
-- **Domain:** `https://n8n.YOUR_DOMAIN/`
-- **Purpose:** Handles music ingestion workflow:
-    1. Receives MP3 + metadata from Python uploader script.
-    2. Uploads binary file to MinIO bucket.
-    3. Inserts track metadata into PostgreSQL.
-- **Webhook Endpoint:** `https://n8n.YOUR_DOMAIN/webhook/upload-music`
-- **Authentication:** Protected by `x-api-key` header.
-
-### D. Read API (PostgREST)
+### C. Read API (PostgREST)
 
 - **Software:** [PostgREST](https://postgrest.org/)
 - **Type:** Docker Service
@@ -115,7 +103,6 @@ All applications run as Docker containers managed by Coolify.
 | `A` | `@` | Hetzner IP | ☁️ Proxied |
 | `A` | `minio` | Hetzner IP | ☁️ Proxied |
 | `A` | `minio-console` | Hetzner IP | ☁️ Proxied |
-| `A` | `n8n` | Hetzner IP | ☁️ Proxied |
 | `A` | `api` | Hetzner IP | ☁️ Proxied |
 
 ---
@@ -130,8 +117,6 @@ Store these securely (password manager recommended):
 | **Coolify** | Admin email/password |
 | **MinIO** | Access Key + Secret Key |
 | **PostgreSQL** | Database user/password |
-| **n8n** | Owner account email/password |
-| **n8n Webhook** | API Key (`x-api-key`) |
 
 ---
 
@@ -175,18 +160,13 @@ curl https://api.YOUR_DOMAIN/tracks
 │  │   └────▲────┘    └──────▲──────┘    └───────────────┘     │  │
 │  │        │                │                    ▲             │  │
 │  │        │                │                    │             │  │
-│  │        │           ┌────┴────┐               │             │  │
-│  │        └───────────│   n8n   │               │             │  │
-│  │                    │  :5678  │               │             │  │
-│  │                    └────▲────┘               │             │  │
-│  │                         │                    │             │  │
-│  └─────────────────────────┼────────────────────┼─────────────┘  │
-│                            │                    │                │
-└────────────────────────────┼────────────────────┼────────────────┘
-                             │                    │
-            ┌────────────────┘                    │
-            │                                     │
-    ┌───────┴───────┐                    ┌────────┴────────┐
+│  └────────┼────────────────┼────────────────────┼─────────────┘  │
+│           │                │                    │                │
+└───────────┼────────────────┼────────────────────┼────────────────┘
+            │                │                    │
+            │   ┌────────────┘                    │
+            │   │                                 │
+    ┌───────┴───┴───┐                    ┌────────┴────────┐
     │ Python Script │                    │  Flutter Apps   │
     │   (Upload)    │                    │  (Web + TV)     │
     └───────────────┘                    └─────────────────┘
@@ -199,10 +179,9 @@ curl https://api.YOUR_DOMAIN/tracks
 | Component | RAM | CPU | Storage |
 |-----------|-----|-----|---------|
 | Coolify | ~500 MB | Low | ~2 GB |
-| MinIO | ~200 MB | Low | **Scales with library** |
+| MinIO | ~200 MB | Low | **Scales with library (max 6GB)** |
 | PostgreSQL | ~200 MB | Low | ~100 MB |
-| n8n | ~300 MB | Low | ~500 MB |
 | PostgREST | ~50 MB | Very Low | Minimal |
-| **Total** | **~1.3 GB** | — | **3GB+ for music** |
+| **Total** | **~1 GB** | — | **~10 GB used** |
 
-> **Note:** CX22 with 4GB RAM has sufficient headroom for this stack.
+> **Note:** CX22 with 4GB RAM and 40GB NVMe has plenty of headroom for this stack.
