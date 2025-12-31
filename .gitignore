@@ -1,19 +1,20 @@
-### JetBrains IDE (PyCharm/IntelliJ) ###
+### JetBrains IDE (PyCharm / IntelliJ) ###
+# User-specific workspace (Never commit)
 .idea/workspace.xml
 .idea/usage.statistics.xml
-.idea/dictionaries
 .idea/shelf
-# Optional: Sometimes safe to ignore in PyCharm if it causes conflicts
+.idea/dictionaries
+
+# Module settings (The file you wanted to ignore)
+*.iml
 .idea/modules.xml
 
-### Python Specific (CRITICAL) ###
-# Python compiles files into these "cache" folders. Never commit them.
+### Python Specifics ###
+# Compiled python files
 __pycache__/
 *.pyc
 
-### Virtual Environments ###
-# If you create a virtual environment, it puts thousands of files here.
-# Never commit your environment libraries.
+# Virtual Environments (Libraries)
 venv/
 .venv/
 env/
