@@ -1,0 +1,19 @@
+# Anywhere Music Player - Python Uploader Dependencies
+
+# MinIO S3 client for file uploads
+minio>=7.2.0
+
+# PostgreSQL database adapter
+psycopg2-binary>=2.9.9
+
+# MP3 metadata extraction (replaces eyed3 - better maintained)
+mutagen>=1.47.0
+
+# Image processing for cover art
+Pillow>=10.1.0
+
+# Progress bar for upload tracking
+tqdm>=4.66.1
+
+# Environment variable management
+python-dotenv>=1.0.0

@@ -33,6 +33,11 @@ venv/
 .venv/
 env/
 
+# Environment files with credentials (NEVER COMMIT)
+.env
+*.env
+!.env.example
+
 ### Operating System Junk ###
 .DS_Store
 Thumbs.db
