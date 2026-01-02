@@ -22,8 +22,7 @@ CREATE TABLE IF NOT EXISTS musicplayer.tracks (
     cover_art_url TEXT,
     duration_seconds INTEGER,
     file_size_bytes BIGINT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
 -- Indexes for fast sorting and filtering
@@ -35,12 +34,6 @@ CREATE INDEX IF NOT EXISTS idx_tracks_created_at ON musicplayer.tracks(created_a
 -- Full-text search index for searching across title and artist
 CREATE INDEX IF NOT EXISTS idx_tracks_search ON musicplayer.tracks
     USING gin(to_tsvector('english', title || ' ' || artist || ' ' || COALESCE(album, '')));
-
--- Trigger to automatically update 'updated_at' timestamp
-CREATE TRIGGER update_tracks_updated_at
-    BEFORE UPDATE ON musicplayer.tracks
-    FOR EACH ROW
-    EXECUTE FUNCTION musicplayer.update_updated_at_column();
 
 -- Add comments for documentation
 COMMENT ON TABLE musicplayer.tracks IS 'Music library metadata - populated by Python upload script';

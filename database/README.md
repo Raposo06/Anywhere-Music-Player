@@ -199,18 +199,17 @@ curl https://api.YOUR_DOMAIN/tracks \
 Schema: musicplayer (isolated from other projects)
 
 ┌─────────────────────────────┐
-│    musicplayer.users          │
+│    musicplayer.users        │
 ├─────────────────────────────┤
 │ id (UUID) PK                │
 │ email (TEXT) UNIQUE         │
 │ username (TEXT) UNIQUE      │
 │ password_hash (TEXT)        │
 │ created_at (TIMESTAMPTZ)    │
-│ updated_at (TIMESTAMPTZ)    │
 └─────────────────────────────┘
 
 ┌─────────────────────────────┐
-│    musicplayer.tracks         │
+│    musicplayer.tracks       │
 ├─────────────────────────────┤
 │ id (UUID) PK                │
 │ title (TEXT)                │
@@ -222,7 +221,6 @@ Schema: musicplayer (isolated from other projects)
 │ duration_seconds (INTEGER)  │
 │ file_size_bytes (BIGINT)    │
 │ created_at (TIMESTAMPTZ)    │
-│ updated_at (TIMESTAMPTZ)    │
 └─────────────────────────────┘
 ```
 
