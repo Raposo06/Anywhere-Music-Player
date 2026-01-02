@@ -39,11 +39,11 @@ psql -h localhost -U postgres -d postgres -f 05_postgrest_roles.sql
 
 | File | Purpose | What it Creates |
 |------|---------|----------------|
-| `00_create_schema.sql` | Create dedicated schema | `anistream` schema (isolates from other projects) |
+| `00_create_schema.sql` | Create dedicated schema | `musicplayer` schema (isolates from other projects) |
 | `01_extensions.sql` | Enable PostgreSQL extensions | pgcrypto, pgjwt, uuid-ossp |
-| `02_users_table.sql` | User authentication table | `anistream.users` table + indexes |
-| `03_tracks_table.sql` | Music library metadata | `anistream.tracks` table + indexes |
-| `04_auth_functions.sql` | Signup/Login functions | `anistream.signup()`, `anistream.login()` functions |
+| `02_users_table.sql` | User authentication table | `musicplayer.users` table + indexes |
+| `03_tracks_table.sql` | Music library metadata | `musicplayer.tracks` table + indexes |
+| `04_auth_functions.sql` | Signup/Login functions | `musicplayer.signup()`, `musicplayer.login()` functions |
 | `05_postgrest_roles.sql` | PostgREST permissions | `anon`, `authenticated`, `authenticator` roles |
 
 ---
@@ -99,14 +99,14 @@ Add these to your PostgREST service:
 
 ```bash
 PGRST_DB_URI=postgres://authenticator:YOUR_PASSWORD@postgres:5432/postgres
-PGRST_DB_SCHEMA=anistream
+PGRST_DB_SCHEMA=musicplayer
 PGRST_DB_ANON_ROLE=anon
 PGRST_JWT_SECRET=YOUR_JWT_SECRET_FROM_STEP_1
 PGRST_JWT_SECRET_IS_BASE64=false
 ```
 
 **Important:**
-- The `PGRST_DB_SCHEMA` is set to `anistream` (our dedicated schema, not `public`)
+- The `PGRST_DB_SCHEMA` is set to `musicplayer` (our dedicated schema, not `public`)
 - The `PGRST_JWT_SECRET` must match the `jwt_secret` in `04_auth_functions.sql`
 
 ---
@@ -132,7 +132,7 @@ Expected output:
 ### 2. Test Signup Function
 
 ```sql
-SELECT anistream.signup(
+SELECT musicplayer.signup(
     'test@example.com',
     'testuser',
     'securepassword123'
@@ -151,7 +151,7 @@ Expected output:
 ### 3. Test Login Function
 
 ```sql
-SELECT anistream.login('test@example.com', 'securepassword123');
+SELECT musicplayer.login('test@example.com', 'securepassword123');
 ```
 
 Expected output:
@@ -196,10 +196,10 @@ curl https://api.YOUR_DOMAIN/tracks \
 ## 🗺️ Database Schema Diagram
 
 ```
-Schema: anistream (isolated from other projects)
+Schema: musicplayer (isolated from other projects)
 
 ┌─────────────────────────────┐
-│    anistream.users          │
+│    musicplayer.users          │
 ├─────────────────────────────┤
 │ id (UUID) PK                │
 │ email (TEXT) UNIQUE         │
@@ -210,7 +210,7 @@ Schema: anistream (isolated from other projects)
 └─────────────────────────────┘
 
 ┌─────────────────────────────┐
-│    anistream.tracks         │
+│    musicplayer.tracks         │
 ├─────────────────────────────┤
 │ id (UUID) PK                │
 │ title (TEXT)                │

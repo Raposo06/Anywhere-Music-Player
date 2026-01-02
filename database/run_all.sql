@@ -16,7 +16,7 @@
 \echo '========================================='
 \echo ''
 
-\echo '[1/6] Creating dedicated schema (anistream)...'
+\echo '[1/6] Creating dedicated schema (musicplayer)...'
 \i 00_create_schema.sql
 \echo '✓ Schema created'
 \echo ''
@@ -53,6 +53,6 @@
 \echo 'Next steps:'
 \echo '  1. Update JWT secret in 04_auth_functions.sql'
 \echo '  2. Update authenticator password in 05_postgrest_roles.sql'
-\echo '  3. Configure PostgREST in Coolify (use schema: anistream)'
-\echo '  4. Test with: SELECT anistream.signup(...)'
+\echo '  3. Configure PostgREST in Coolify (use schema: musicplayer)'
+\echo '  4. Test with: SELECT musicplayer.signup(...)'
 \echo ''

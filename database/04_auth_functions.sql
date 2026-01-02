@@ -18,7 +18,7 @@
 -- Purpose: Register a new user with hashed password
 -- Returns: JSON with user_id and success message
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION anistream.signup(
+CREATE OR REPLACE FUNCTION musicplayer.signup(
     email TEXT,
     username TEXT,
     password TEXT
@@ -33,7 +33,7 @@ BEGIN
     END IF;
 
     -- Insert new user with bcrypt-hashed password
-    INSERT INTO anistream.users (email, username, password_hash)
+    INSERT INTO musicplayer.users (email, username, password_hash)
     VALUES (
         signup.email,
         signup.username,
@@ -62,7 +62,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Purpose: Authenticate user and generate JWT token
 -- Returns: JSON with JWT token and user info
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION anistream.login(
+CREATE OR REPLACE FUNCTION musicplayer.login(
     email TEXT,
     password TEXT
 )
@@ -74,7 +74,7 @@ DECLARE
 BEGIN
     -- Find user and verify password
     SELECT id, username, email INTO user_record
-    FROM anistream.users
+    FROM musicplayer.users
     WHERE users.email = login.email
     AND password_hash = crypt(login.password, password_hash);
 
@@ -118,9 +118,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Grant permissions for PostgREST
 -- ----------------------------------------------------------------------------
 -- Allow anonymous users to call signup and login functions
-GRANT EXECUTE ON FUNCTION anistream.signup(TEXT, TEXT, TEXT) TO anon;
-GRANT EXECUTE ON FUNCTION anistream.login(TEXT, TEXT) TO anon;
+GRANT EXECUTE ON FUNCTION musicplayer.signup(TEXT, TEXT, TEXT) TO anon;
+GRANT EXECUTE ON FUNCTION musicplayer.login(TEXT, TEXT) TO anon;
 
 -- Add comments for documentation
-COMMENT ON FUNCTION anistream.signup IS 'Register new user with bcrypt password hashing';
-COMMENT ON FUNCTION anistream.login IS 'Authenticate user and return JWT token (7-day expiration)';
+COMMENT ON FUNCTION musicplayer.signup IS 'Register new user with bcrypt password hashing';
+COMMENT ON FUNCTION musicplayer.login IS 'Authenticate user and return JWT token (7-day expiration)';

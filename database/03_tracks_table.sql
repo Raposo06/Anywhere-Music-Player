@@ -12,7 +12,7 @@
 --   - file_size_bytes: File size for storage tracking
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS anistream.tracks (
+CREATE TABLE IF NOT EXISTS musicplayer.tracks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
     artist TEXT DEFAULT 'Unknown',
@@ -27,23 +27,23 @@ CREATE TABLE IF NOT EXISTS anistream.tracks (
 );
 
 -- Indexes for fast sorting and filtering
-CREATE INDEX IF NOT EXISTS idx_tracks_artist ON anistream.tracks(artist);
-CREATE INDEX IF NOT EXISTS idx_tracks_title ON anistream.tracks(title);
-CREATE INDEX IF NOT EXISTS idx_tracks_album ON anistream.tracks(album);
-CREATE INDEX IF NOT EXISTS idx_tracks_created_at ON anistream.tracks(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tracks_artist ON musicplayer.tracks(artist);
+CREATE INDEX IF NOT EXISTS idx_tracks_title ON musicplayer.tracks(title);
+CREATE INDEX IF NOT EXISTS idx_tracks_album ON musicplayer.tracks(album);
+CREATE INDEX IF NOT EXISTS idx_tracks_created_at ON musicplayer.tracks(created_at DESC);
 
 -- Full-text search index for searching across title and artist
-CREATE INDEX IF NOT EXISTS idx_tracks_search ON anistream.tracks
+CREATE INDEX IF NOT EXISTS idx_tracks_search ON musicplayer.tracks
     USING gin(to_tsvector('english', title || ' ' || artist || ' ' || COALESCE(album, '')));
 
 -- Trigger to automatically update 'updated_at' timestamp
 CREATE TRIGGER update_tracks_updated_at
-    BEFORE UPDATE ON anistream.tracks
+    BEFORE UPDATE ON musicplayer.tracks
     FOR EACH ROW
-    EXECUTE FUNCTION anistream.update_updated_at_column();
+    EXECUTE FUNCTION musicplayer.update_updated_at_column();
 
 -- Add comments for documentation
-COMMENT ON TABLE anistream.tracks IS 'Music library metadata - populated by Python upload script';
-COMMENT ON COLUMN anistream.tracks.stream_url IS 'Direct MinIO URL for streaming audio';
-COMMENT ON COLUMN anistream.tracks.cover_art_url IS 'MinIO URL for album cover image (extracted from MP3)';
-COMMENT ON COLUMN anistream.tracks.duration_seconds IS 'Song duration in seconds for UI progress bars';
+COMMENT ON TABLE musicplayer.tracks IS 'Music library metadata - populated by Python upload script';
+COMMENT ON COLUMN musicplayer.tracks.stream_url IS 'Direct MinIO URL for streaming audio';
+COMMENT ON COLUMN musicplayer.tracks.cover_art_url IS 'MinIO URL for album cover image (extracted from MP3)';
+COMMENT ON COLUMN musicplayer.tracks.duration_seconds IS 'Song duration in seconds for UI progress bars';

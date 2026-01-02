@@ -12,32 +12,32 @@
 -- ============================================================================
 
 -- Create the schema
-CREATE SCHEMA IF NOT EXISTS anistream;
+CREATE SCHEMA IF NOT EXISTS musicplayer;
 
 -- Set search_path so all subsequent commands use this schema by default
 -- This allows the rest of the SQL files to work without modification
-SET search_path TO anistream, public;
+SET search_path TO musicplayer, public;
 
 -- Grant usage to roles (will be created in later scripts)
 -- This is idempotent, so it won't fail if roles don't exist yet
 DO $$
 BEGIN
     IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN
-        GRANT USAGE ON SCHEMA anistream TO anon;
+        GRANT USAGE ON SCHEMA musicplayer TO anon;
     END IF;
 
     IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN
-        GRANT USAGE ON SCHEMA anistream TO authenticated;
+        GRANT USAGE ON SCHEMA musicplayer TO authenticated;
     END IF;
 
     IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
-        GRANT USAGE ON SCHEMA anistream TO authenticator;
+        GRANT USAGE ON SCHEMA musicplayer TO authenticator;
     END IF;
 END
 $$;
 
 -- Add comment for documentation
-COMMENT ON SCHEMA anistream IS 'Anywhere Music Player - Self-hosted anime music streaming platform';
+COMMENT ON SCHEMA musicplayer IS 'Anywhere Music Player - Self-hosted music streaming platform';
 
 -- Show current search_path
 SHOW search_path;
