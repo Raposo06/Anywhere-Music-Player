@@ -20,14 +20,37 @@ This script automatically:
 
 ## 🚀 Quick Start
 
-### 1. Install Python Dependencies
+### 1. Create Virtual Environment
+
+**Why use a virtual environment?**
+- Isolates dependencies from your system Python
+- Prevents version conflicts between projects
+- Easy to recreate if something breaks
 
 ```bash
 cd scripts
+
+# Create virtual environment
+python3 -m venv venv
+
+# Activate it
+# On Linux/Mac:
+source venv/bin/activate
+
+# On Windows:
+venv\Scripts\activate
+
+# Your prompt should now show (venv) prefix
+```
+
+### 2. Install Dependencies
+
+```bash
+# Make sure venv is activated (you should see "(venv)" in your prompt)
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
+### 3. Configure Environment
 
 ```bash
 # Copy the example configuration
