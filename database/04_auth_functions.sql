@@ -70,7 +70,7 @@ RETURNS JSON AS $$
 DECLARE
     user_record RECORD;
     jwt_token TEXT;
-    jwt_secret TEXT := 'REPLACE_WITH_YOUR_JWT_SECRET_MIN_32_CHARS';  -- CHANGE THIS!
+    jwt_secret TEXT := 'REPLACE_WITH_JWT_SECRET_MIN_32_CHARS';
 BEGIN
     -- Find user and verify password
     SELECT id, username, email INTO user_record

@@ -48,19 +48,19 @@ load_dotenv()
 # Configuration from Environment Variables
 # ============================================================================
 
-MUSIC_FOLDER = os.getenv("MUSIC_FOLDER", r"C:\Music\Anime")
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio.yourdomain.com")
+MUSIC_FOLDER = os.getenv("MUSIC_FOLDER")
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
-MINIO_BUCKET = os.getenv("MINIO_BUCKET", "anime-music")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET")
 MINIO_SECURE = os.getenv("MINIO_SECURE", "true").lower() == "true"
 
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = int(os.getenv("DB_PORT", "5432"))
-DB_NAME = os.getenv("DB_NAME", "postgres")
-DB_USER = os.getenv("DB_USER", "postgres")
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = int(os.getenv("DB_PORT"))
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_SCHEMA = os.getenv("DB_SCHEMA", "musicplayer")
+DB_SCHEMA = os.getenv("DB_SCHEMA")
 
 
 # ============================================================================

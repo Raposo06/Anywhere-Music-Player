@@ -40,7 +40,7 @@ $$;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
-        CREATE ROLE authenticator LOGIN PASSWORD 'CHANGE_THIS_PASSWORD';
+        CREATE ROLE authenticator LOGIN PASSWORD 'CHANGE_PASSWORD';
     END IF;
 END
 $$;
