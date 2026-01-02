@@ -255,15 +255,15 @@ def upload_cover_art(minio_client, cover_art_data, filename):
         return None
 
 
-def insert_track(db_conn, metadata, filename, stream_url, cover_art_url):
+def insert_track(db_conn, metadata, filename, stream_url, cover_art_url, folder_path):
     """Insert track metadata into PostgreSQL."""
     cursor = db_conn.cursor()
 
     try:
         query = sql.SQL("""
             INSERT INTO {schema}.tracks
-            (title, artist, album, filename, stream_url, cover_art_url, duration_seconds, file_size_bytes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (title, artist, album, filename, stream_url, cover_art_url, folder_path, duration_seconds, file_size_bytes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (filename) DO NOTHING
             RETURNING id
         """).format(schema=sql.Identifier(DB_SCHEMA))
@@ -275,6 +275,7 @@ def insert_track(db_conn, metadata, filename, stream_url, cover_art_url):
             filename,
             stream_url,
             cover_art_url,
+            folder_path,
             metadata["duration_seconds"],
             metadata["file_size_bytes"]
         ))
@@ -296,6 +297,34 @@ def insert_track(db_conn, metadata, filename, stream_url, cover_art_url):
 # ============================================================================
 # Main Upload Process
 # ============================================================================
+
+def get_relative_folder_path(file_path, base_folder):
+    """
+    Extract relative folder path from base folder.
+
+    Examples:
+        file_path: /home/user/Music/Animes/Naruto/opening1.mp3
+        base_folder: /home/user/Music/Animes
+        returns: "Naruto"
+
+        file_path: /home/user/Music/Animes/Tekken/Tekken 2/track1.mp3
+        base_folder: /home/user/Music/Animes
+        returns: "Tekken/Tekken 2"
+    """
+    file_path = Path(file_path).resolve()
+    base_folder = Path(base_folder).resolve()
+
+    # Get the directory containing the MP3 file
+    file_dir = file_path.parent
+
+    # Get relative path from base folder
+    try:
+        relative_path = file_dir.relative_to(base_folder)
+        return str(relative_path) if str(relative_path) != '.' else None
+    except ValueError:
+        # File is not under base_folder
+        return None
+
 
 def find_mp3_files(folder):
     """Find all MP3 files in folder and subfolders."""
@@ -348,6 +377,9 @@ def main():
             # Extract metadata
             metadata = extract_metadata(file_path)
 
+            # Extract folder path
+            folder_path = get_relative_folder_path(file_path, MUSIC_FOLDER)
+
             # Upload MP3 to MinIO
             stream_url = upload_to_minio(minio_client, file_path, filename)
             if not stream_url:
@@ -361,7 +393,7 @@ def main():
                 cover_art_url = upload_cover_art(minio_client, cover_art, filename)
 
             # Insert into database
-            inserted = insert_track(db_conn, metadata, filename, stream_url, cover_art_url)
+            inserted = insert_track(db_conn, metadata, filename, stream_url, cover_art_url, folder_path)
 
             if inserted:
                 uploaded += 1

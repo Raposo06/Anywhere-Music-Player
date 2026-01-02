@@ -10,6 +10,7 @@
 --   - cover_art_url: MinIO URL for album art image
 --   - duration_seconds: Song length for progress bars
 --   - file_size_bytes: File size for storage tracking
+--   - folder_path: Relative folder path from MUSIC_FOLDER (e.g., "Naruto" or "Tekken/Tekken 2")
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS musicplayer.tracks (
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS musicplayer.tracks (
     filename TEXT NOT NULL UNIQUE,
     stream_url TEXT NOT NULL,
     cover_art_url TEXT,
+    folder_path TEXT,
     duration_seconds INTEGER,
     file_size_bytes BIGINT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
@@ -29,6 +31,7 @@ CREATE TABLE IF NOT EXISTS musicplayer.tracks (
 CREATE INDEX IF NOT EXISTS idx_tracks_artist ON musicplayer.tracks(artist);
 CREATE INDEX IF NOT EXISTS idx_tracks_title ON musicplayer.tracks(title);
 CREATE INDEX IF NOT EXISTS idx_tracks_album ON musicplayer.tracks(album);
+CREATE INDEX IF NOT EXISTS idx_tracks_folder_path ON musicplayer.tracks(folder_path);
 CREATE INDEX IF NOT EXISTS idx_tracks_created_at ON musicplayer.tracks(created_at DESC);
 
 -- Full-text search index for searching across title and artist
@@ -39,4 +42,5 @@ CREATE INDEX IF NOT EXISTS idx_tracks_search ON musicplayer.tracks
 COMMENT ON TABLE musicplayer.tracks IS 'Music library metadata - populated by Python upload script';
 COMMENT ON COLUMN musicplayer.tracks.stream_url IS 'Direct MinIO URL for streaming audio';
 COMMENT ON COLUMN musicplayer.tracks.cover_art_url IS 'MinIO URL for album cover image (extracted from MP3)';
+COMMENT ON COLUMN musicplayer.tracks.folder_path IS 'Relative folder path from MUSIC_FOLDER (e.g., "Naruto" or "Tekken/Tekken 2")';
 COMMENT ON COLUMN musicplayer.tracks.duration_seconds IS 'Song duration in seconds for UI progress bars';

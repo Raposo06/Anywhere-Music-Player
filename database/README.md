@@ -218,6 +218,7 @@ Schema: musicplayer (isolated from other projects)
 │ filename (TEXT) UNIQUE      │
 │ stream_url (TEXT)           │
 │ cover_art_url (TEXT)        │
+│ folder_path (TEXT)          │
 │ duration_seconds (INTEGER)  │
 │ file_size_bytes (BIGINT)    │
 │ created_at (TIMESTAMPTZ)    │
