@@ -1,13 +1,27 @@
-### JetBrains IDE (PyCharm / IntelliJ) ###
+### JetBrains IDE (PyCharm / IntelliJ / Android Studio) ###
 # User-specific workspace (Never commit)
 .idea/workspace.xml
 .idea/usage.statistics.xml
 .idea/shelf
 .idea/dictionaries
 
-# Module settings (The file you wanted to ignore)
+# Android Studio specific (Added based on your screenshot)
+.idea/deviceManager.xml
+.idea/studiobot.xml
+.idea/caches/
+
+# Module settings (Generated files)
 *.iml
 .idea/modules.xml
+
+### Android & Gradle Build Files (CRITICAL) ###
+# Never commit the build output or the gradle cache
+/build
+/app/build
+.gradle/
+
+# Local configuration (SDK location, secrets) - NEVER COMMIT THIS
+local.properties
 
 ### Python Specifics ###
 # Compiled python files
