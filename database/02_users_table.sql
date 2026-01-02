@@ -9,7 +9,7 @@
 --   - Email and username must be unique
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS public.users (
+CREATE TABLE IF NOT EXISTS anistream.users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email TEXT UNIQUE NOT NULL CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$'),
     username TEXT UNIQUE NOT NULL CHECK (length(username) >= 3),
@@ -19,11 +19,11 @@ CREATE TABLE IF NOT EXISTS public.users (
 );
 
 -- Index for faster login lookups
-CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
-CREATE INDEX IF NOT EXISTS idx_users_username ON public.users(username);
+CREATE INDEX IF NOT EXISTS idx_users_email ON anistream.users(email);
+CREATE INDEX IF NOT EXISTS idx_users_username ON anistream.users(username);
 
 -- Trigger to automatically update 'updated_at' timestamp
-CREATE OR REPLACE FUNCTION update_updated_at_column()
+CREATE OR REPLACE FUNCTION anistream.update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
    NEW.updated_at = now();
@@ -32,10 +32,10 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER update_users_updated_at
-    BEFORE UPDATE ON public.users
+    BEFORE UPDATE ON anistream.users
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+    EXECUTE FUNCTION anistream.update_updated_at_column();
 
 -- Add comment for documentation
-COMMENT ON TABLE public.users IS 'User accounts for authentication';
-COMMENT ON COLUMN public.users.password_hash IS 'Bcrypt hashed password - NEVER store plain text passwords';
+COMMENT ON TABLE anistream.users IS 'User accounts for authentication';
+COMMENT ON COLUMN anistream.users.password_hash IS 'Bcrypt hashed password - NEVER store plain text passwords';

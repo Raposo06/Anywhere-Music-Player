@@ -39,10 +39,11 @@ psql -h localhost -U postgres -d postgres -f 05_postgrest_roles.sql
 
 | File | Purpose | What it Creates |
 |------|---------|----------------|
+| `00_create_schema.sql` | Create dedicated schema | `anistream` schema (isolates from other projects) |
 | `01_extensions.sql` | Enable PostgreSQL extensions | pgcrypto, pgjwt, uuid-ossp |
-| `02_users_table.sql` | User authentication table | `users` table + indexes |
-| `03_tracks_table.sql` | Music library metadata | `tracks` table + indexes |
-| `04_auth_functions.sql` | Signup/Login functions | `signup()`, `login()` functions |
+| `02_users_table.sql` | User authentication table | `anistream.users` table + indexes |
+| `03_tracks_table.sql` | Music library metadata | `anistream.tracks` table + indexes |
+| `04_auth_functions.sql` | Signup/Login functions | `anistream.signup()`, `anistream.login()` functions |
 | `05_postgrest_roles.sql` | PostgREST permissions | `anon`, `authenticated`, `authenticator` roles |
 
 ---
@@ -98,13 +99,15 @@ Add these to your PostgREST service:
 
 ```bash
 PGRST_DB_URI=postgres://authenticator:YOUR_PASSWORD@postgres:5432/postgres
-PGRST_DB_SCHEMA=public
+PGRST_DB_SCHEMA=anistream
 PGRST_DB_ANON_ROLE=anon
 PGRST_JWT_SECRET=YOUR_JWT_SECRET_FROM_STEP_1
 PGRST_JWT_SECRET_IS_BASE64=false
 ```
 
-**Important:** The `PGRST_JWT_SECRET` must match the `jwt_secret` in `04_auth_functions.sql`.
+**Important:**
+- The `PGRST_DB_SCHEMA` is set to `anistream` (our dedicated schema, not `public`)
+- The `PGRST_JWT_SECRET` must match the `jwt_secret` in `04_auth_functions.sql`
 
 ---
 
@@ -129,7 +132,7 @@ Expected output:
 ### 2. Test Signup Function
 
 ```sql
-SELECT public.signup(
+SELECT anistream.signup(
     'test@example.com',
     'testuser',
     'securepassword123'
@@ -148,7 +151,7 @@ Expected output:
 ### 3. Test Login Function
 
 ```sql
-SELECT public.login('test@example.com', 'securepassword123');
+SELECT anistream.login('test@example.com', 'securepassword123');
 ```
 
 Expected output:
@@ -193,8 +196,10 @@ curl https://api.YOUR_DOMAIN/tracks \
 ## 🗺️ Database Schema Diagram
 
 ```
+Schema: anistream (isolated from other projects)
+
 ┌─────────────────────────────┐
-│         users               │
+│    anistream.users          │
 ├─────────────────────────────┤
 │ id (UUID) PK                │
 │ email (TEXT) UNIQUE         │
@@ -205,7 +210,7 @@ curl https://api.YOUR_DOMAIN/tracks \
 └─────────────────────────────┘
 
 ┌─────────────────────────────┐
-│         tracks              │
+│    anistream.tracks         │
 ├─────────────────────────────┤
 │ id (UUID) PK                │
 │ title (TEXT)                │

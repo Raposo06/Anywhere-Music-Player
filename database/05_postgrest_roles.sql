@@ -60,12 +60,12 @@ GRANT authenticated TO authenticator;
 
 -- Authenticated users can:
 --   - Read all tracks (SELECT)
-GRANT USAGE ON SCHEMA public TO authenticated;
-GRANT SELECT ON public.tracks TO authenticated;
+GRANT USAGE ON SCHEMA anistream TO authenticated;
+GRANT SELECT ON anistream.tracks TO authenticated;
 
 -- Prevent authenticated users from modifying tracks
 -- (only the Python upload script can write to tracks)
-REVOKE INSERT, UPDATE, DELETE ON public.tracks FROM authenticated;
+REVOKE INSERT, UPDATE, DELETE ON anistream.tracks FROM authenticated;
 
 
 -- ----------------------------------------------------------------------------
@@ -74,10 +74,10 @@ REVOKE INSERT, UPDATE, DELETE ON public.tracks FROM authenticated;
 -- Uncomment this section when you add 'favorites' or 'playlists' tables
 -- where users should only see their own data
 
--- ALTER TABLE public.tracks ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE anistream.tracks ENABLE ROW LEVEL SECURITY;
 --
 -- CREATE POLICY "Users can view all tracks"
---     ON public.tracks
+--     ON anistream.tracks
 --     FOR SELECT
 --     TO authenticated
 --     USING (true);

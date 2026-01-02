@@ -16,27 +16,32 @@
 \echo '========================================='
 \echo ''
 
-\echo '[1/5] Enabling PostgreSQL extensions...'
+\echo '[1/6] Creating dedicated schema (anistream)...'
+\i 00_create_schema.sql
+\echo '✓ Schema created'
+\echo ''
+
+\echo '[2/6] Enabling PostgreSQL extensions...'
 \i 01_extensions.sql
 \echo '✓ Extensions enabled'
 \echo ''
 
-\echo '[2/5] Creating users table...'
+\echo '[3/6] Creating users table...'
 \i 02_users_table.sql
 \echo '✓ Users table created'
 \echo ''
 
-\echo '[3/5] Creating tracks table...'
+\echo '[4/6] Creating tracks table...'
 \i 03_tracks_table.sql
 \echo '✓ Tracks table created'
 \echo ''
 
-\echo '[4/5] Creating authentication functions...'
+\echo '[5/6] Creating authentication functions...'
 \i 04_auth_functions.sql
 \echo '✓ Auth functions created'
 \echo ''
 
-\echo '[5/5] Setting up PostgREST roles...'
+\echo '[6/6] Setting up PostgREST roles...'
 \i 05_postgrest_roles.sql
 \echo '✓ Roles configured'
 \echo ''
@@ -48,6 +53,6 @@
 \echo 'Next steps:'
 \echo '  1. Update JWT secret in 04_auth_functions.sql'
 \echo '  2. Update authenticator password in 05_postgrest_roles.sql'
-\echo '  3. Configure PostgREST in Coolify'
-\echo '  4. Test with: SELECT public.signup(...)'
+\echo '  3. Configure PostgREST in Coolify (use schema: anistream)'
+\echo '  4. Test with: SELECT anistream.signup(...)'
 \echo ''
