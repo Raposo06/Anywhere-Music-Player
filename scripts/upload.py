@@ -445,10 +445,6 @@ def main():
     if uploaded > 0:
         print(f"\n🎉 Success! {uploaded} track(s) uploaded to your music library.")
 
-    print("\n💡 Next steps:")
-    print("   1. Verify tracks at: https://api.YOUR_DOMAIN/tracks")
-    print("   2. Build the Flutter app to start streaming!")
-
 
 if __name__ == "__main__":
     main()
