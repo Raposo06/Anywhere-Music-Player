@@ -314,8 +314,13 @@ def file_exists_in_db(db_conn, filename):
 def get_relative_folder_path(file_path, base_folder):
     """
     Extract relative folder path from base folder.
+    Files in the root get the base folder name.
 
     Examples:
+        file_path: /home/user/Music/Animes/song.mp3
+        base_folder: /home/user/Music/Animes
+        returns: "Animes"
+
         file_path: /home/user/Music/Animes/Naruto/opening1.mp3
         base_folder: /home/user/Music/Animes
         returns: "Naruto"
@@ -333,7 +338,10 @@ def get_relative_folder_path(file_path, base_folder):
     # Get relative path from base folder
     try:
         relative_path = file_dir.relative_to(base_folder)
-        return str(relative_path) if str(relative_path) != '.' else None
+        # If file is in root (.), use the base folder name
+        if str(relative_path) == '.':
+            return base_folder.name
+        return str(relative_path)
     except ValueError:
         # File is not under base_folder
         return None
