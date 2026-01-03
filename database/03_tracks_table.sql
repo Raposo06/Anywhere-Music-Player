@@ -4,20 +4,18 @@
 -- This table stores metadata for all music files
 --
 -- Fields:
---   - title, artist, album: Extracted from MP3 ID3 tags
+--   - title: Extracted from MP3 ID3 tags or filename
 --   - filename: Original filename (unique constraint prevents duplicates)
 --   - stream_url: Direct MinIO URL for streaming (e.g., https://minio.domain.com/anime-music/song.mp3)
 --   - cover_art_url: MinIO URL for album art image
+--   - folder_path: Relative folder path from MUSIC_FOLDER (e.g., "Naruto" or "Tekken/Tekken 2")
 --   - duration_seconds: Song length for progress bars
 --   - file_size_bytes: File size for storage tracking
---   - folder_path: Relative folder path from MUSIC_FOLDER (e.g., "Naruto" or "Tekken/Tekken 2")
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS musicplayer.tracks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
-    artist TEXT DEFAULT 'Unknown',
-    album TEXT,
     filename TEXT NOT NULL UNIQUE,
     stream_url TEXT NOT NULL,
     cover_art_url TEXT,
@@ -28,15 +26,13 @@ CREATE TABLE IF NOT EXISTS musicplayer.tracks (
 );
 
 -- Indexes for fast sorting and filtering
-CREATE INDEX IF NOT EXISTS idx_tracks_artist ON musicplayer.tracks(artist);
 CREATE INDEX IF NOT EXISTS idx_tracks_title ON musicplayer.tracks(title);
-CREATE INDEX IF NOT EXISTS idx_tracks_album ON musicplayer.tracks(album);
 CREATE INDEX IF NOT EXISTS idx_tracks_folder_path ON musicplayer.tracks(folder_path);
 CREATE INDEX IF NOT EXISTS idx_tracks_created_at ON musicplayer.tracks(created_at DESC);
 
--- Full-text search index for searching across title and artist
+-- Full-text search index for searching across title and folder
 CREATE INDEX IF NOT EXISTS idx_tracks_search ON musicplayer.tracks
-    USING gin(to_tsvector('english', title || ' ' || artist || ' ' || COALESCE(album, '')));
+    USING gin(to_tsvector('english', title || ' ' || COALESCE(folder_path, '')));
 
 -- Add comments for documentation
 COMMENT ON TABLE musicplayer.tracks IS 'Music library metadata - populated by Python upload script';

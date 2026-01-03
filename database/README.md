@@ -213,8 +213,6 @@ Schema: musicplayer (isolated from other projects)
 ├─────────────────────────────┤
 │ id (UUID) PK                │
 │ title (TEXT)                │
-│ artist (TEXT)               │
-│ album (TEXT)                │
 │ filename (TEXT) UNIQUE      │
 │ stream_url (TEXT)           │
 │ cover_art_url (TEXT)        │

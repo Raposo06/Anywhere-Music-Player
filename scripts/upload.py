@@ -148,15 +148,13 @@ def extract_metadata(file_path):
     Extract metadata from MP3 file.
 
     Returns:
-        dict: Metadata including title, artist, album, duration, file_size
+        dict: Metadata including title, duration, file_size
     """
     try:
         audio = MP3(file_path, ID3=ID3)
 
-        # Extract ID3 tags
-        title = str(audio.get("TIT2", Path(file_path).stem))  # Title or filename
-        artist = str(audio.get("TPE1", "Unknown"))  # Artist
-        album = str(audio.get("TALB", ""))  # Album (optional)
+        # Extract title from ID3 tags (or use filename)
+        title = str(audio.get("TIT2", Path(file_path).stem))
 
         # Get duration in seconds
         duration = int(audio.info.length) if audio.info else None
@@ -166,8 +164,6 @@ def extract_metadata(file_path):
 
         return {
             "title": title,
-            "artist": artist,
-            "album": album if album else None,
             "duration_seconds": duration,
             "file_size_bytes": file_size
         }
@@ -176,8 +172,6 @@ def extract_metadata(file_path):
         print(f"⚠️  Warning: Could not extract metadata from {Path(file_path).name}: {e}")
         return {
             "title": Path(file_path).stem,
-            "artist": "Unknown",
-            "album": None,
             "duration_seconds": None,
             "file_size_bytes": os.path.getsize(file_path)
         }
@@ -262,16 +256,14 @@ def insert_track(db_conn, metadata, filename, stream_url, cover_art_url, folder_
     try:
         query = sql.SQL("""
             INSERT INTO {schema}.tracks
-            (title, artist, album, filename, stream_url, cover_art_url, folder_path, duration_seconds, file_size_bytes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (title, filename, stream_url, cover_art_url, folder_path, duration_seconds, file_size_bytes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (filename) DO NOTHING
             RETURNING id
         """).format(schema=sql.Identifier(DB_SCHEMA))
 
         cursor.execute(query, (
             metadata["title"],
-            metadata["artist"],
-            metadata["album"],
             filename,
             stream_url,
             cover_art_url,
