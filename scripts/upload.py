@@ -286,6 +286,27 @@ def insert_track(db_conn, metadata, filename, stream_url, cover_art_url, folder_
         cursor.close()
 
 
+def file_exists_in_db(db_conn, filename):
+    """
+    Check if a file already exists in the database.
+
+    Returns:
+        bool: True if file exists, False otherwise
+    """
+    cursor = db_conn.cursor()
+
+    try:
+        query = sql.SQL("""
+            SELECT 1 FROM {schema}.tracks WHERE filename = %s LIMIT 1
+        """).format(schema=sql.Identifier(DB_SCHEMA))
+
+        cursor.execute(query, (filename,))
+        return cursor.fetchone() is not None
+
+    finally:
+        cursor.close()
+
+
 # ============================================================================
 # Main Upload Process
 # ============================================================================
@@ -366,6 +387,11 @@ def main():
         filename = Path(file_path).name
 
         try:
+            # Check if file already exists in database (skip MinIO upload if duplicate)
+            if file_exists_in_db(db_conn, filename):
+                skipped += 1
+                continue
+
             # Extract metadata
             metadata = extract_metadata(file_path)
 
@@ -390,6 +416,7 @@ def main():
             if inserted:
                 uploaded += 1
             else:
+                # This shouldn't happen since we checked above, but just in case
                 skipped += 1
 
         except Exception as e:
