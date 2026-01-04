@@ -26,27 +26,47 @@ A simple, powerful REST API for music streaming built with FastAPI. Replaces Pos
 
 ### Option 1: Run Locally (Development)
 
-1. **Install dependencies:**
+1. **Create and activate a virtual environment:**
 
 ```bash
 cd backend
+
+# Create virtual environment
+python -m venv venv
+
+# Activate it
+# Windows:
+venv\Scripts\activate
+
+# macOS/Linux:
+source venv/bin/activate
+```
+
+2. **Install dependencies:**
+
+```bash
 pip install -r requirements.txt
 ```
 
-2. **Configure environment:**
+3. **Configure environment:**
 
 ```bash
 cp .env.example .env
 # Edit .env with your database credentials
 ```
 
-3. **Run the server:**
+4. **Run the server:**
 
 ```bash
 python main.py
 ```
 
 The API will be available at `http://localhost:8000`
+
+**To deactivate the virtual environment later:**
+```bash
+deactivate
+```
 
 **Docs:**
 - Swagger UI: http://localhost:8000/docs
