@@ -21,6 +21,8 @@ dependencies:
 
   # Audio Player
   just_audio: ^0.9.36
+  just_audio_windows: ^0.2.0
+  just_audio_android: ^0.9.36
 
   # Local Storage (JWT tokens)
   shared_preferences: ^2.2.2
