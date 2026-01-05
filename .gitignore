@@ -52,6 +52,58 @@ flutter_app/.packages
 flutter_app/.pub-cache/
 flutter_app/.pub/
 
-# Generated code
+# Generated code from build_runner
 flutter_app/**/*.g.dart
 flutter_app/**/*.freezed.dart
+flutter_app/**/*.mocks.dart
+
+# Coverage
+flutter_app/coverage/
+
+# Flutter version management
+flutter_app/.flutter-version
+
+# Platform-specific build folders
+flutter_app/android/app/build/
+flutter_app/android/.gradle/
+flutter_app/android/captures/
+flutter_app/android/local.properties
+flutter_app/android/key.properties
+flutter_app/android/.idea/
+flutter_app/android/*.iml
+
+flutter_app/ios/Flutter/App.framework
+flutter_app/ios/Flutter/Flutter.framework
+flutter_app/ios/Flutter/Flutter.podspec
+flutter_app/ios/Flutter/Generated.xcconfig
+flutter_app/ios/Flutter/ephemeral/
+flutter_app/ios/.symlinks/
+flutter_app/ios/Pods/
+flutter_app/ios/Podfile.lock
+flutter_app/ios/.generated/
+flutter_app/ios/build/
+
+flutter_app/macos/Flutter/ephemeral/
+flutter_app/macos/Pods/
+flutter_app/macos/Podfile.lock
+flutter_app/macos/build/
+
+flutter_app/windows/flutter/ephemeral/
+flutter_app/windows/build/
+
+flutter_app/linux/flutter/ephemeral/
+flutter_app/linux/build/
+
+flutter_app/web/build/
+
+# Obfuscation related
+flutter_app/app.*.symbols
+
+# Symbolication related
+flutter_app/app.*.map.json
+
+# Firebase & Google Services
+flutter_app/android/app/google-services.json
+flutter_app/ios/Runner/GoogleService-Info.plist
+flutter_app/ios/firebase_app_id_file.json
+flutter_app/lib/firebase_options.dart

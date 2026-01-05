@@ -226,21 +226,15 @@ def get_track(
 
 
 @router.get("/{track_id}/stream")
-def stream_track(
-    track_id: str,
-    current_user: dict = Depends(get_current_user)
-):
+def stream_track(track_id: str):
     """
     Stream audio file for a track.
 
-    This endpoint proxies the audio file from MinIO storage, solving CORS issues
-    and allowing authenticated access to audio files.
-
-    Requires authentication (JWT token in Authorization header).
+    This endpoint proxies the audio file from MinIO storage, solving CORS issues.
+    Public endpoint - no authentication required since MinIO bucket is public.
 
     Args:
         track_id: Track UUID
-        current_user: Authenticated user (from JWT token)
 
     Returns:
         Streaming audio file
