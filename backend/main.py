@@ -42,6 +42,15 @@ app.include_router(auth_router.router)
 app.include_router(tracks_router.router)
 
 
+# Health check endpoint for Coolify
+@app.get("/health", tags=["Health"])
+def health_check():
+    """
+    Simple health check endpoint for Coolify/monitoring.
+    """
+    return {"status": "ok"}
+
+
 # Root endpoint
 @app.get("/", tags=["Health"])
 def root():
