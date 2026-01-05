@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import '../models/track.dart';
 import '../models/user.dart';
+import '../models/folder.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -135,10 +136,17 @@ class ApiService {
     }
   }
 
-  /// Get unique folder paths for grouping
-  Future<List<String>> getFolders() async {
+  /// Get folders with hierarchical support
+  /// - Without parentPath: Returns only root-level folders
+  /// - With parentPath="Animes": Returns direct children like "Animes/Pokemon"
+  Future<List<Folder>> getFolders({String? parentPath}) async {
     try {
-      final uri = Uri.parse('$baseUrl/tracks/folders');
+      var uri = Uri.parse('$baseUrl/tracks/folders');
+
+      // Add query parameters for hierarchical navigation
+      if (parentPath != null && parentPath.isNotEmpty) {
+        uri = uri.replace(queryParameters: {'parent_path': parentPath});
+      }
 
       final response = await http.get(
         uri,
@@ -147,14 +155,36 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
-        final folders = data
-            .map((item) => item['folder_path'] as String?)
-            .whereType<String>()
-            .toList();
-        return folders;
+        return data.map((json) => Folder.fromJson(json)).toList();
       } else {
         throw ApiException(
           'Failed to fetch folders',
+          response.statusCode,
+        );
+      }
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException('Network error: $e');
+    }
+  }
+
+  /// Search folders by name
+  Future<List<Folder>> searchFolders(String query) async {
+    try {
+      final uri = Uri.parse('$baseUrl/tracks/folders/search')
+          .replace(queryParameters: {'query': query});
+
+      final response = await http.get(
+        uri,
+        headers: _getHeaders(authenticated: true),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((json) => Folder.fromJson(json)).toList();
+      } else {
+        throw ApiException(
+          'Folder search failed',
           response.statusCode,
         );
       }
