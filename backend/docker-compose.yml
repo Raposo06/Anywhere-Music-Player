@@ -24,7 +24,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}  # Set in Coolify secrets
 
       # CORS - Allow all for development, restrict in production
-      CORS_ORIGINS: "*"
+      CORS_ORIGINS: "https://api.n8nauto.win"
 
     expose:
       - "8000"
