@@ -14,7 +14,9 @@ services:
       # USE THE SECRETS!
       # Don't hardcode host/user/pass here.
       # We added DATABASE_URL to Coolify secrets earlier.
-      DATABASE_URL: ${DATABASE_URL}
+      DB_HOST: ${DB_HOST}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_USER: ${DB_USER}
       JWT_SECRET: ${JWT_SECRET}
 
       CORS_ORIGINS: "https://api.n8nauto.win"
