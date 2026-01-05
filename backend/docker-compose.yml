@@ -11,6 +11,7 @@ services:
     environment:
       # Server
       PORT: 8000
+      API_BASE_URL: https://api.n8nauto.win
 
       # Database - Update these!
       DB_HOST: postgresql_database  # Your PostgreSQL service name in Coolify
