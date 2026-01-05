@@ -11,34 +11,34 @@ dependencies:
     sdk: flutter
 
   # UI
-  cupertino_icons: ^1.0.6
+  cupertino_icons: any
 
   # State Management
-  provider: ^6.1.1
+  provider: any
 
   # HTTP Client
-  http: ^1.1.2
+  http: any
 
   # Audio Player
-  just_audio: ^0.9.36
-  just_audio_windows: ^0.2.0
-  just_audio_android: ^0.9.36
+  just_audio: any
+  just_audio_windows: any
+  just_audio_android: any
 
   # Local Storage (JWT tokens)
-  shared_preferences: ^2.2.2
+  shared_preferences: any
 
   # JSON Serialization
-  json_annotation: ^4.9.0
+  json_annotation: any
 
   # Environment Configuration
-  flutter_dotenv: ^5.1.0
+  flutter_dotenv: any
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.1
-  build_runner: ^2.4.7
-  json_serializable: ^6.7.1
+  flutter_lints: any
+  build_runner: any
+  json_serializable: any
 
 flutter:
   uses-material-design: true
