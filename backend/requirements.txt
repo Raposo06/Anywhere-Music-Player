@@ -16,3 +16,7 @@ email-validator>=2.0.0
 
 # CORS
 fastapi-cors>=0.0.6
+
+# MinIO for audio streaming
+minio>=7.2.0
+requests>=2.31.0
