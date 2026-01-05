@@ -62,9 +62,40 @@ graph TD
 
 ### 1. Storage (MinIO)
 1.  In Coolify, deploy a **MinIO** service.
-2.  Create a bucket named `anime-music`.
-3.  **Important:** Set the bucket policy to **Public** (Read-only) so the TV can stream without complex auth tokens.
+2.  Create a bucket named `wonderfulmusic`.
+3.  **Important:** Set the bucket policy to **Public** (Read-only) so files can be streamed.
 4.  Save your `Access Key`, `Secret Key`, and `Endpoint` for the uploader script.
+
+#### Making MinIO Bucket Public via Coolify Terminal
+
+Since you are using Coolify, you can open the **Terminal** tab for your MinIO container and run the command directly there.
+
+**Steps:**
+
+1. **Open the Terminal**
+   - Go to Coolify → MinIO Service → **Terminal** → **Connect**
+
+2. **Configure the "Local" Alias**
+   ```bash
+   mc alias set myminio http://localhost:9000 minio minio123
+   ```
+   - `myminio`: A nickname for this server
+   - `http://localhost:9000`: Connecting to the server from inside the container
+   - `minio` / `minio123`: Your root user and password
+   - **Note:** If you changed `MINIO_ROOT_PASSWORD` in Coolify, use that instead of `minio123`
+
+3. **Set the Bucket to Public (Read-Only)**
+   ```bash
+   mc anonymous set download myminio/wonderfulmusic
+   ```
+
+4. **Verify the Configuration**
+   ```bash
+   mc anonymous list myminio/wonderfulmusic
+   ```
+   - Should output: `readonly` or `download`
+
+Now your audio files are publicly accessible for streaming!
 
 ### 2. Database (PostgreSQL)
 Run the following SQL in your existing PostgreSQL instance to create the schema:
