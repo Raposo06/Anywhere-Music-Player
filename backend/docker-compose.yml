@@ -9,40 +9,26 @@ services:
     restart: unless-stopped
 
     environment:
-      # Server
       PORT: 8000
 
-      # Database - Update these!
-      DB_HOST: postgresql_database  # Your PostgreSQL service name in Coolify
-      DB_PORT: 5432
-      DB_NAME: postgres
-      DB_USER: postgres
-      DB_PASSWORD: ${DB_PASSWORD}  # Set in Coolify secrets
-      DB_SCHEMA: musicplayer
+      # USE THE SECRETS!
+      # Don't hardcode host/user/pass here.
+      # We added DATABASE_URL to Coolify secrets earlier.
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
 
-      # JWT - Generate with: openssl rand -base64 32
-      JWT_SECRET: ${JWT_SECRET}  # Set in Coolify secrets
-
-      # CORS - Allow all for development, restrict in production
       CORS_ORIGINS: "https://api.n8nauto.win"
 
+    # Coolify handles the routing automatically based on the "Domains" field in the UI.
+    # We only need to tell it which port to look at.
     expose:
       - "8000"
 
     labels:
-      # Coolify label
       - "coolify.exposedPort=8000"
 
-      # Traefik labels (if needed)
-      - "traefik.enable=true"
-      - "traefik.http.routers.music-api.rule=Host(`api.n8nauto.win`)"
-      - "traefik.http.routers.music-api.entrypoints=websecure"
-      - "traefik.http.routers.music-api.tls.certresolver=letsencrypt"
-      - "traefik.http.services.music-api.loadbalancer.server.port=8000"
-
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
