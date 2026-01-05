@@ -18,7 +18,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}  # Set in Coolify secrets
       DB_SCHEMA: musicplayer
 
-      # JWT - Must match the one in database/04_auth_functions.sql
+      # JWT - Generate with: openssl rand -base64 32
       JWT_SECRET: ${JWT_SECRET}  # Set in Coolify secrets
 
       # CORS - Allow all for development, restrict in production
