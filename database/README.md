@@ -1,316 +1,180 @@
 # 🗄️ Database Setup Guide
 
-This directory contains SQL migration files to set up your PostgreSQL database for the Anywhere Music Player.
+This directory contains SQL scripts to set up your PostgreSQL database for the Anywhere Music Player with FastAPI backend.
 
 ## 📋 Quick Start
 
-### Option 1: Run All Scripts at Once (Recommended)
+### Simple 3-Step Setup
+
+Execute these SQL files in order:
 
 ```bash
 # Connect to your PostgreSQL database
-psql -h YOUR_HETZNER_IP -U postgres -d postgres -f run_all.sql
+psql -h YOUR_HOST -U postgres -d postgres
 
-# Or if using SSH tunnel:
-ssh -L 5432:localhost:5432 root@YOUR_HETZNER_IP
-psql -h localhost -U postgres -d postgres -f run_all.sql
+# Then run each file:
+\i 00_create_schema.sql
+\i 02_users_table.sql
+\i 03_tracks_table.sql
 ```
 
-### Option 2: Run Scripts Individually
-
-Execute each file in order:
-
-```bash
-psql -h localhost -U postgres -d postgres -f 01_extensions.sql
-psql -h localhost -U postgres -d postgres -f 02_users_table.sql
-psql -h localhost -U postgres -d postgres -f 03_tracks_table.sql
-psql -h localhost -U postgres -d postgres -f 04_auth_functions.sql
-psql -h localhost -U postgres -d postgres -f 05_postgrest_roles.sql
-```
-
-### Option 3: Using DBeaver or pgAdmin
-
-1. Connect to your PostgreSQL instance
-2. Open each `.sql` file
-3. Execute them in numerical order (01 → 05)
+**That's it!** Your database is ready for FastAPI.
 
 ---
 
-## 📁 File Descriptions
+## 📁 Files
 
-| File | Purpose | What it Creates |
-|------|---------|----------------|
-| `01_extensions.sql` | Enable PostgreSQL extensions | pgcrypto, pgjwt, uuid-ossp |
-| `02_users_table.sql` | User authentication table | `users` table + indexes |
-| `03_tracks_table.sql` | Music library metadata | `tracks` table + indexes |
-| `04_auth_functions.sql` | Signup/Login functions | `signup()`, `login()` functions |
-| `05_postgrest_roles.sql` | PostgREST permissions | `anon`, `authenticated`, `authenticator` roles |
+| File | Purpose |
+|------|---------|
+| `00_create_schema.sql` | Creates the `musicplayer` schema (isolated from other projects) |
+| `02_users_table.sql` | Creates the `users` table for authentication |
+| `03_tracks_table.sql` | Creates the `tracks` table for music metadata |
 
 ---
 
-## 🔐 Security Configuration
+## 🔐 Grant Permissions to Postgres User
 
-### **CRITICAL: Change These Values Before Deploying!**
+After running the scripts, grant permissions for the FastAPI backend:
 
-#### 1. JWT Secret (`04_auth_functions.sql`)
-
-**Line 56:**
 ```sql
-jwt_secret TEXT := 'REPLACE_WITH_YOUR_JWT_SECRET_MIN_32_CHARS';
+-- Grant all permissions on musicplayer schema to postgres user
+GRANT ALL PRIVILEGES ON SCHEMA musicplayer TO postgres;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA musicplayer TO postgres;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA musicplayer TO postgres;
+
+-- Make sure future tables also get permissions
+ALTER DEFAULT PRIVILEGES IN SCHEMA musicplayer
+  GRANT ALL PRIVILEGES ON TABLES TO postgres;
+ALTER DEFAULT PRIVILEGES IN SCHEMA musicplayer
+  GRANT ALL PRIVILEGES ON SEQUENCES TO postgres;
 ```
 
-**Generate a secure secret:**
-```bash
-# Option 1: OpenSSL
-openssl rand -base64 32
-
-# Option 2: Python
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-
-# Option 3: Node.js
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
-
-**Update the SQL file with your generated secret.**
-
-#### 2. Authenticator Password (`05_postgrest_roles.sql`)
-
-**Line 38:**
-```sql
-CREATE ROLE authenticator LOGIN PASSWORD 'CHANGE_THIS_PASSWORD';
-```
-
-**Generate a strong password:**
-```bash
-openssl rand -base64 24
-```
-
-**Update the SQL file with your generated password.**
+**Why?** The FastAPI backend connects as the `postgres` user, so it needs full access to the `musicplayer` schema.
 
 ---
 
-## 🚀 PostgREST Configuration
-
-After running the SQL scripts, configure PostgREST in Coolify:
-
-### Environment Variables
-
-Add these to your PostgREST service:
-
-```bash
-PGRST_DB_URI=postgres://authenticator:YOUR_PASSWORD@postgres:5432/postgres
-PGRST_DB_SCHEMA=public
-PGRST_DB_ANON_ROLE=anon
-PGRST_JWT_SECRET=YOUR_JWT_SECRET_FROM_STEP_1
-PGRST_JWT_SECRET_IS_BASE64=false
-```
-
-**Important:** The `PGRST_JWT_SECRET` must match the `jwt_secret` in `04_auth_functions.sql`.
-
----
-
-## 🧪 Testing the Setup
-
-### 1. Test Extensions
-
-```sql
-SELECT extname, extversion FROM pg_extension
-WHERE extname IN ('pgcrypto', 'pgjwt', 'uuid-ossp');
-```
-
-Expected output:
-```
-  extname   | extversion
-------------+------------
- pgcrypto   | 1.3
- pgjwt      | 0.2.0
- uuid-ossp  | 1.1
-```
-
-### 2. Test Signup Function
-
-```sql
-SELECT public.signup(
-    'test@example.com',
-    'testuser',
-    'securepassword123'
-);
-```
-
-Expected output:
-```json
-{
-  "success": true,
-  "user_id": "a1b2c3d4-...",
-  "message": "Account created successfully"
-}
-```
-
-### 3. Test Login Function
-
-```sql
-SELECT public.login('test@example.com', 'securepassword123');
-```
-
-Expected output:
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "user": {
-    "id": "a1b2c3d4-...",
-    "email": "test@example.com",
-    "username": "testuser"
-  }
-}
-```
-
-### 4. Test PostgREST API
-
-```bash
-# Signup via API
-curl -X POST https://api.YOUR_DOMAIN/rpc/signup \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "api-test@example.com",
-    "username": "apiuser",
-    "password": "testpass123"
-  }'
-
-# Login via API
-curl -X POST https://api.YOUR_DOMAIN/rpc/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "api-test@example.com",
-    "password": "testpass123"
-  }'
-
-# Get tracks (authenticated)
-curl https://api.YOUR_DOMAIN/tracks \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN_HERE"
-```
-
----
-
-## 🗺️ Database Schema Diagram
+## 🗺️ Database Schema
 
 ```
+Schema: musicplayer
+
 ┌─────────────────────────────┐
-│         users               │
+│    musicplayer.users        │
 ├─────────────────────────────┤
 │ id (UUID) PK                │
 │ email (TEXT) UNIQUE         │
 │ username (TEXT) UNIQUE      │
 │ password_hash (TEXT)        │
 │ created_at (TIMESTAMPTZ)    │
-│ updated_at (TIMESTAMPTZ)    │
 └─────────────────────────────┘
 
 ┌─────────────────────────────┐
-│         tracks              │
+│    musicplayer.tracks       │
 ├─────────────────────────────┤
 │ id (UUID) PK                │
 │ title (TEXT)                │
-│ artist (TEXT)               │
-│ album (TEXT)                │
 │ filename (TEXT) UNIQUE      │
 │ stream_url (TEXT)           │
 │ cover_art_url (TEXT)        │
+│ folder_path (TEXT)          │
 │ duration_seconds (INTEGER)  │
 │ file_size_bytes (BIGINT)    │
 │ created_at (TIMESTAMPTZ)    │
-│ updated_at (TIMESTAMPTZ)    │
 └─────────────────────────────┘
 ```
 
+**Note:**
+- Passwords are hashed using **bcrypt** (handled by FastAPI backend)
+- JWT tokens are generated in **Python** (not SQL)
+- No complex PostgreSQL extensions needed!
+
 ---
 
-## 📚 Learning Resources
+## 🧪 Testing the Setup
 
-### Understanding JWT (JSON Web Tokens)
+### 1. Verify Tables Exist
 
-A JWT has 3 parts separated by dots: `header.payload.signature`
-
-**Example JWT:**
+```sql
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'musicplayer';
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYTFiMi4uLiIsImV4cCI6MTczNTk4NzY1NH0.signature
+
+Expected output:
+```
+ table_name
+------------
+ users
+ tracks
 ```
 
-**Decoded:**
+### 2. Check Permissions
+
+```sql
+SELECT
+    grantee,
+    privilege_type
+FROM information_schema.table_privileges
+WHERE table_schema = 'musicplayer'
+  AND grantee = 'postgres';
+```
+
+You should see `SELECT`, `INSERT`, `UPDATE`, `DELETE` permissions.
+
+### 3. Test via FastAPI
+
+Once your FastAPI backend is running, test signup:
+
+```bash
+curl -X POST http://localhost:8000/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "username": "testuser",
+    "password": "password123"
+  }'
+```
+
+Expected response:
 ```json
-// Header
 {
-  "alg": "HS256",
-  "typ": "JWT"
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "user": {
+    "id": "uuid-here",
+    "email": "test@example.com",
+    "username": "testuser",
+    "created_at": "2026-01-04T12:00:00Z"
+  }
 }
-
-// Payload (this is what your app reads)
-{
-  "user_id": "a1b2c3d4-...",
-  "email": "user@example.com",
-  "role": "authenticated",
-  "iat": 1735387654,  // Issued at (Unix timestamp)
-  "exp": 1735987654   // Expires (Unix timestamp)
-}
-
-// Signature (verifies the token hasn't been tampered with)
 ```
-
-### How PostgREST Uses JWT
-
-1. Client sends: `Authorization: Bearer <JWT>`
-2. PostgREST verifies signature using `PGRST_JWT_SECRET`
-3. If valid, PostgREST switches to `authenticated` role
-4. If invalid/missing, PostgREST uses `anon` role
-5. PostgreSQL enforces permissions based on role
 
 ---
 
 ## 🔧 Troubleshooting
 
-### Error: "extension does not exist"
+### Error: "permission denied for table users"
 
-**Problem:** `pgjwt` extension not installed
+**Solution:** Run the grant permissions SQL above.
 
-**Solution:**
-```bash
-# SSH into your Hetzner server
-ssh root@YOUR_HETZNER_IP
+### Error: "schema musicplayer does not exist"
 
-# Enter PostgreSQL container
-docker exec -it <postgres-container-id> bash
+**Solution:** Run `00_create_schema.sql` first.
 
-# Install pgjwt
-apt update && apt install -y postgresql-contrib
-```
+### Error: "relation tracks does not exist"
 
-### Error: "role already exists"
-
-**Problem:** Re-running `05_postgrest_roles.sql`
-
-**Solution:** This is safe to ignore, or use `DROP ROLE` first:
-```sql
-DROP ROLE IF EXISTS anon;
-DROP ROLE IF EXISTS authenticated;
-DROP ROLE IF EXISTS authenticator;
-```
-
-### Error: "permission denied for schema public"
-
-**Problem:** Roles don't have proper grants
-
-**Solution:** Re-run `05_postgrest_roles.sql`
+**Solution:** Make sure you ran all 3 SQL files in order.
 
 ---
 
 ## ✅ Next Steps
 
-After database setup is complete:
+After database setup:
 
-1. ✅ Configure PostgREST in Coolify with the environment variables above
-2. ✅ Test the API endpoints with curl
-3. ✅ Create your first user account via `/rpc/signup`
-4. ✅ Run the Python uploader script to populate tracks
-5. ✅ Build the Flutter app to connect to your API
+1. ✅ Deploy FastAPI backend (see `backend/README.md`)
+2. ✅ Upload music files with `scripts/upload.py`
+3. ✅ Test authentication via `/auth/signup` and `/auth/login`
+4. ✅ Run the Flutter app to start streaming!
 
 ---
 
-**Questions?** Check the main README.md or the `/docs/AUTHENTICATION.md` guide.
+**Simple, clean, and ready for FastAPI!** No PostgREST complexity needed.

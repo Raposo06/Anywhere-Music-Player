@@ -1,13 +1,27 @@
-### JetBrains IDE (PyCharm / IntelliJ) ###
+### JetBrains IDE (PyCharm / IntelliJ / Android Studio) ###
 # User-specific workspace (Never commit)
 .idea/workspace.xml
 .idea/usage.statistics.xml
 .idea/shelf
 .idea/dictionaries
 
-# Module settings (The file you wanted to ignore)
+# Android Studio specific (Added based on your screenshot)
+.idea/deviceManager.xml
+.idea/studiobot.xml
+.idea/caches/
+
+# Module settings (Generated files)
 *.iml
 .idea/modules.xml
+
+### Android & Gradle Build Files (CRITICAL) ###
+# Never commit the build output or the gradle cache
+/build
+/app/build
+.gradle/
+
+# Local configuration (SDK location, secrets) - NEVER COMMIT THIS
+local.properties
 
 ### Python Specifics ###
 # Compiled python files
@@ -19,6 +33,25 @@ venv/
 .venv/
 env/
 
+# Environment files with credentials (NEVER COMMIT)
+.env
+*.env
+!.env.example
+
 ### Operating System Junk ###
 .DS_Store
 Thumbs.db
+
+### Flutter / Dart ###
+# Build artifacts
+flutter_app/build/
+flutter_app/.dart_tool/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+flutter_app/.packages
+flutter_app/.pub-cache/
+flutter_app/.pub/
+
+# Generated code
+flutter_app/**/*.g.dart
+flutter_app/**/*.freezed.dart
