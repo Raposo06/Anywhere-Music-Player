@@ -7,11 +7,13 @@ class AudioPlayerService with ChangeNotifier {
   Track? _currentTrack;
   List<Track> _playlist = [];
   int _currentIndex = -1;
+  bool _isLoading = false;
 
   AudioPlayer get player => _player;
   Track? get currentTrack => _currentTrack;
   List<Track> get playlist => _playlist;
   int get currentIndex => _currentIndex;
+  bool get isLoading => _isLoading;
 
   bool get isPlaying => _player.playing;
   Duration? get duration => _player.duration;
@@ -41,15 +43,26 @@ class AudioPlayerService with ChangeNotifier {
 
   /// Play a single track
   Future<void> playTrack(Track track) async {
+    if (_isLoading) return; // Prevent multiple simultaneous loads
+
     try {
+      _isLoading = true;
       _currentTrack = track;
       _playlist = [track];
       _currentIndex = 0;
+      notifyListeners();
+
+      // Stop and clear previous track
+      await _player.stop();
 
       await _player.setUrl(track.streamUrl);
       await _player.play();
+
+      _isLoading = false;
       notifyListeners();
     } catch (e) {
+      _isLoading = false;
+      notifyListeners();
       debugPrint('Error playing track: $e');
       rethrow;
     }
@@ -61,15 +74,26 @@ class AudioPlayerService with ChangeNotifier {
       return;
     }
 
+    if (_isLoading) return; // Prevent multiple simultaneous loads
+
     try {
+      _isLoading = true;
       _playlist = tracks;
       _currentIndex = startIndex;
       _currentTrack = tracks[startIndex];
+      notifyListeners();
+
+      // Stop and clear previous track
+      await _player.stop();
 
       await _player.setUrl(tracks[startIndex].streamUrl);
       await _player.play();
+
+      _isLoading = false;
       notifyListeners();
     } catch (e) {
+      _isLoading = false;
+      notifyListeners();
       debugPrint('Error playing playlist: $e');
       rethrow;
     }
@@ -81,15 +105,30 @@ class AudioPlayerService with ChangeNotifier {
       return;
     }
 
+    if (_isLoading) return; // Prevent multiple simultaneous loads
+
     _currentIndex++;
     _currentTrack = _playlist[_currentIndex];
 
     try {
+      _isLoading = true;
+      notifyListeners();
+
+      // Stop and clear previous track
+      await _player.stop();
+
       await _player.setUrl(_currentTrack!.streamUrl);
       await _player.play();
+
+      _isLoading = false;
       notifyListeners();
     } catch (e) {
-      debugPrint('Error playing next track: $e');
+      _isLoading = false;
+      notifyListeners();
+      // Don't print "Loading interrupted" - it's expected when switching tracks quickly
+      if (!e.toString().contains('Loading interrupted')) {
+        debugPrint('Error playing next track: $e');
+      }
     }
   }
 
@@ -99,15 +138,30 @@ class AudioPlayerService with ChangeNotifier {
       return;
     }
 
+    if (_isLoading) return; // Prevent multiple simultaneous loads
+
     _currentIndex--;
     _currentTrack = _playlist[_currentIndex];
 
     try {
+      _isLoading = true;
+      notifyListeners();
+
+      // Stop and clear previous track
+      await _player.stop();
+
       await _player.setUrl(_currentTrack!.streamUrl);
       await _player.play();
+
+      _isLoading = false;
       notifyListeners();
     } catch (e) {
-      debugPrint('Error playing previous track: $e');
+      _isLoading = false;
+      notifyListeners();
+      // Don't print "Loading interrupted" - it's expected when switching tracks quickly
+      if (!e.toString().contains('Loading interrupted')) {
+        debugPrint('Error playing previous track: $e');
+      }
     }
   }
 
