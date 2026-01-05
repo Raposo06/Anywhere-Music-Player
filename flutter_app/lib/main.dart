@@ -5,7 +5,7 @@ import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
 import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
+import 'screens/main_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -126,7 +126,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     // Show appropriate screen based on auth state
     return authService.isAuthenticated
-        ? const HomeScreen()
+        ? const MainScreen()
         : const LoginScreen();
   }
 }

@@ -217,7 +217,42 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 20),
+
+                  // Shuffle Button
+                  if (playerService.playlist.length > 1)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            Icons.shuffle,
+                            color: playerService.isShuffleEnabled
+                                ? Theme.of(context).primaryColor
+                                : Colors.grey,
+                          ),
+                          iconSize: 32,
+                          onPressed: playerService.toggleShuffle,
+                          tooltip: playerService.isShuffleEnabled
+                              ? 'Shuffle: ON'
+                              : 'Shuffle: OFF',
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          playerService.isShuffleEnabled ? 'Shuffle ON' : 'Shuffle OFF',
+                          style: TextStyle(
+                            color: playerService.isShuffleEnabled
+                                ? Theme.of(context).primaryColor
+                                : Colors.grey[600],
+                            fontSize: 14,
+                            fontWeight: playerService.isShuffleEnabled
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 20),
 
                   // Playlist Info
                   if (playerService.playlist.length > 1)
