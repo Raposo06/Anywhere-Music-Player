@@ -1,7 +1,7 @@
 """
 Tracks endpoints: list, search, and folder management.
 """
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from typing import List, Optional
 import os
@@ -226,15 +226,17 @@ def get_track(
 
 
 @router.get("/{track_id}/stream")
-def stream_track(track_id: str):
+def stream_track(track_id: str, request: Request):
     """
     Stream audio file for a track.
 
     This endpoint proxies the audio file from MinIO storage, solving CORS issues.
+    Supports HTTP Range requests for seeking.
     Public endpoint - no authentication required since MinIO bucket is public.
 
     Args:
         track_id: Track UUID
+        request: FastAPI Request object for Range header
 
     Returns:
         Streaming audio file
@@ -257,19 +259,38 @@ def stream_track(track_id: str):
     stream_url = track["stream_url"]
 
     try:
-        # Stream the file from MinIO
-        response = requests.get(stream_url, stream=True, timeout=30)
+        # Prepare headers for MinIO request (forward Range header if present)
+        headers = {}
+        range_header = request.headers.get("range")
+        if range_header:
+            headers["Range"] = range_header
+
+        # Stream the file from MinIO with Range support
+        response = requests.get(stream_url, headers=headers, stream=True, timeout=30)
         response.raise_for_status()
 
-        # Return streaming response
+        # Prepare response headers
+        response_headers = {
+            "Content-Type": "audio/mpeg",
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600",
+            "Content-Disposition": f'inline; filename="{track["filename"]}"',
+        }
+
+        # Forward important headers from MinIO
+        if "Content-Length" in response.headers:
+            response_headers["Content-Length"] = response.headers["Content-Length"]
+
+        if "Content-Range" in response.headers:
+            response_headers["Content-Range"] = response.headers["Content-Range"]
+
+        # Return streaming response with proper status code
+        status_code = response.status_code  # 200 or 206 (partial content)
+
         return StreamingResponse(
             response.iter_content(chunk_size=8192),
-            media_type="audio/mpeg",
-            headers={
-                "Content-Disposition": f'inline; filename="{track["filename"]}"',
-                "Accept-Ranges": "bytes",
-                "Cache-Control": "public, max-age=3600"
-            }
+            status_code=status_code,
+            headers=response_headers,
         )
 
     except requests.RequestException as e:
