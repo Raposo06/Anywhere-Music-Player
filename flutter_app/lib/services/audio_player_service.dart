@@ -99,6 +99,10 @@ class AudioPlayerService with ChangeNotifier {
       // Stop and clear previous track
       await _player.stop();
 
+      // Debug: Print the stream URL being attempted
+      debugPrint('🎵 Playing: ${_currentTrack!.title}');
+      debugPrint('📡 Stream URL: ${_playlist[_currentIndex].streamUrl}');
+
       await _player.setUrl(_playlist[_currentIndex].streamUrl);
       await _player.play();
 
