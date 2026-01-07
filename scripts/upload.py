@@ -148,7 +148,7 @@ def extract_metadata(file_path):
     Extract metadata from MP3 file.
 
     Returns:
-        dict: Metadata including title, duration, file_size
+        dict: Metadata including title, duration, file_size, bitrate_info
     """
     try:
         audio = MP3(file_path, ID3=ID3)
@@ -162,10 +162,22 @@ def extract_metadata(file_path):
         # Get file size in bytes
         file_size = os.path.getsize(file_path)
 
+        # Get bitrate info for debugging
+        bitrate = None
+        bitrate_mode = None
+        if audio.info:
+            bitrate = audio.info.bitrate  # in bps
+            # Check if VBR (bitrate_mode: 0=CBR, 1=VBR, 2=ABR)
+            if hasattr(audio.info, 'bitrate_mode'):
+                modes = {0: 'CBR', 1: 'VBR', 2: 'ABR'}
+                bitrate_mode = modes.get(audio.info.bitrate_mode, 'Unknown')
+
         return {
             "title": title,
             "duration_seconds": duration,
-            "file_size_bytes": file_size
+            "file_size_bytes": file_size,
+            "bitrate": bitrate,
+            "bitrate_mode": bitrate_mode,
         }
 
     except Exception as e:
@@ -173,7 +185,9 @@ def extract_metadata(file_path):
         return {
             "title": Path(file_path).stem,
             "duration_seconds": None,
-            "file_size_bytes": os.path.getsize(file_path)
+            "file_size_bytes": os.path.getsize(file_path),
+            "bitrate": None,
+            "bitrate_mode": None,
         }
 
 
@@ -215,12 +229,25 @@ def extract_cover_art(file_path):
 # ============================================================================
 
 def upload_to_minio(minio_client, file_path, object_name):
-    """Upload a file to MinIO."""
+    """Upload a file to MinIO with proper content-type."""
     try:
+        # Determine content type based on file extension
+        ext = object_name.lower().split('.')[-1] if '.' in object_name else ''
+        content_types = {
+            'mp3': 'audio/mpeg',
+            'm4a': 'audio/mp4',
+            'aac': 'audio/aac',
+            'ogg': 'audio/ogg',
+            'flac': 'audio/flac',
+            'wav': 'audio/wav',
+        }
+        content_type = content_types.get(ext, 'audio/mpeg')
+
         minio_client.fput_object(
             MINIO_BUCKET,
             object_name,
             file_path,
+            content_type=content_type,
         )
         return f"https://{MINIO_ENDPOINT}/{MINIO_BUCKET}/{object_name}"
 
@@ -388,6 +415,7 @@ def main():
     uploaded = 0
     skipped = 0
     failed = 0
+    vbr_files = []  # Track VBR files for warning
 
     print("\n⬆️  Uploading files...\n")
 
@@ -402,6 +430,10 @@ def main():
 
             # Extract metadata
             metadata = extract_metadata(file_path)
+
+            # Track VBR files (may cause Windows playback issues)
+            if metadata.get("bitrate_mode") == "VBR":
+                vbr_files.append(filename)
 
             # Extract folder path
             folder_path = get_relative_folder_path(file_path, MUSIC_FOLDER)
@@ -441,6 +473,22 @@ def main():
     print(f"   ⏭️  Skipped (duplicates): {skipped}")
     print(f"   ❌ Failed: {failed}")
     print("=" * 50)
+
+    # VBR warning for Windows compatibility
+    if vbr_files:
+        print(f"\n⚠️  Warning: {len(vbr_files)} VBR-encoded file(s) detected.")
+        print("   VBR files may not play correctly on Windows.")
+        print("   Consider re-encoding to CBR with ffmpeg:")
+        print("   ffmpeg -i input.mp3 -acodec libmp3lame -b:a 320k output.mp3")
+        if len(vbr_files) <= 10:
+            print("\n   VBR files:")
+            for f in vbr_files:
+                print(f"   - {f}")
+        else:
+            print(f"\n   First 10 VBR files:")
+            for f in vbr_files[:10]:
+                print(f"   - {f}")
+            print(f"   ... and {len(vbr_files) - 10} more")
 
     if uploaded > 0:
         print(f"\n🎉 Success! {uploaded} track(s) uploaded to your music library.")
