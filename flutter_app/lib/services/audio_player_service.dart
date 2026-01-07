@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/track.dart';
@@ -11,6 +12,7 @@ class AudioPlayerService with ChangeNotifier {
   int _currentIndex = -1;
   bool _isLoading = false;
   bool _isShuffleEnabled = false;
+  String? _lastError;
   final _random = Random();
 
   AudioPlayer get player => _player;
@@ -19,10 +21,14 @@ class AudioPlayerService with ChangeNotifier {
   int get currentIndex => _currentIndex;
   bool get isLoading => _isLoading;
   bool get isShuffleEnabled => _isShuffleEnabled;
+  String? get lastError => _lastError;
 
   bool get isPlaying => _player.playing;
   Duration? get duration => _player.duration;
   Duration? get position => _player.position;
+
+  /// Check if we're running on Windows
+  bool get _isWindows => !kIsWeb && Platform.isWindows;
 
   AudioPlayerService() {
     // Listen to player state changes
@@ -44,11 +50,44 @@ class AudioPlayerService with ChangeNotifier {
         playNext();
       }
     });
+
+    // Listen for playback errors
+    _player.playbackEventStream.listen(
+      (event) {},
+      onError: (Object e, StackTrace st) {
+        _handlePlaybackError(e);
+      },
+    );
+  }
+
+  /// Handle playback errors with platform-specific messages
+  void _handlePlaybackError(Object error) {
+    final errorStr = error.toString();
+
+    if (_isWindows && errorStr.contains('Media error')) {
+      _lastError = 'Windows playback error. The audio format may not be supported.';
+      debugPrint('🔴 Windows Media Error: $errorStr');
+      debugPrint('💡 Tip: Ensure the audio file is a valid MP3 and the server returns proper Content-Length headers.');
+    } else {
+      _lastError = 'Playback error: $errorStr';
+      debugPrint('🔴 Playback error: $errorStr');
+    }
+
+    notifyListeners();
+  }
+
+  /// Clear the last error
+  void clearError() {
+    _lastError = null;
+    notifyListeners();
   }
 
   /// Play a single track
   Future<void> playTrack(Track track) async {
     if (_isLoading) return; // Prevent multiple simultaneous loads
+
+    // Clear any previous error
+    _lastError = null;
 
     try {
       _isLoading = true;
@@ -60,6 +99,9 @@ class AudioPlayerService with ChangeNotifier {
       // Stop and clear previous track
       await _player.stop();
 
+      debugPrint('🎵 Playing: ${track.title}');
+      debugPrint('📡 Stream URL: ${track.streamUrl}');
+
       await _player.setUrl(track.streamUrl);
       await _player.play();
 
@@ -67,7 +109,7 @@ class AudioPlayerService with ChangeNotifier {
       notifyListeners();
     } catch (e) {
       _isLoading = false;
-      notifyListeners();
+      _handlePlaybackError(e);
       debugPrint('Error playing track: $e');
       rethrow;
     }
@@ -80,6 +122,9 @@ class AudioPlayerService with ChangeNotifier {
     }
 
     if (_isLoading) return; // Prevent multiple simultaneous loads
+
+    // Clear any previous error
+    _lastError = null;
 
     try {
       _isLoading = true;
@@ -110,7 +155,7 @@ class AudioPlayerService with ChangeNotifier {
       notifyListeners();
     } catch (e) {
       _isLoading = false;
-      notifyListeners();
+      _handlePlaybackError(e);
       debugPrint('Error playing playlist: $e');
       rethrow;
     }
@@ -124,28 +169,38 @@ class AudioPlayerService with ChangeNotifier {
 
     if (_isLoading) return; // Prevent multiple simultaneous loads
 
+    // Clear any previous error
+    _lastError = null;
+
     _currentIndex++;
     _currentTrack = _playlist[_currentIndex];
+    _isLoading = true;
+    notifyListeners();
 
     try {
-      _isLoading = true;
-      notifyListeners();
+      // Debug: Print the stream URL being attempted
+      debugPrint('🎵 Next: ${_currentTrack!.title}');
+      debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
 
-      // Stop and clear previous track
+      // Stop previous track
       await _player.stop();
 
+      // Set new URL and play - await both to ensure proper sequencing
       await _player.setUrl(_currentTrack!.streamUrl);
+
+      // Explicitly call play and wait for it to start
       await _player.play();
 
       _isLoading = false;
       notifyListeners();
     } catch (e) {
       _isLoading = false;
-      notifyListeners();
       // Don't print "Loading interrupted" - it's expected when switching tracks quickly
       if (!e.toString().contains('Loading interrupted')) {
+        _handlePlaybackError(e);
         debugPrint('Error playing next track: $e');
       }
+      notifyListeners();
     }
   }
 
@@ -157,28 +212,38 @@ class AudioPlayerService with ChangeNotifier {
 
     if (_isLoading) return; // Prevent multiple simultaneous loads
 
+    // Clear any previous error
+    _lastError = null;
+
     _currentIndex--;
     _currentTrack = _playlist[_currentIndex];
+    _isLoading = true;
+    notifyListeners();
 
     try {
-      _isLoading = true;
-      notifyListeners();
+      // Debug: Print the stream URL being attempted
+      debugPrint('🎵 Previous: ${_currentTrack!.title}');
+      debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
 
-      // Stop and clear previous track
+      // Stop previous track
       await _player.stop();
 
+      // Set new URL and play - await both to ensure proper sequencing
       await _player.setUrl(_currentTrack!.streamUrl);
+
+      // Explicitly call play and wait for it to start
       await _player.play();
 
       _isLoading = false;
       notifyListeners();
     } catch (e) {
       _isLoading = false;
-      notifyListeners();
       // Don't print "Loading interrupted" - it's expected when switching tracks quickly
       if (!e.toString().contains('Loading interrupted')) {
+        _handlePlaybackError(e);
         debugPrint('Error playing previous track: $e');
       }
+      notifyListeners();
     }
   }
 

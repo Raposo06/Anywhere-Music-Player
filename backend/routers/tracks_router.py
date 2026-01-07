@@ -225,6 +225,66 @@ def get_track(
     return TrackResponse(**track)
 
 
+def _get_content_type(filename: str) -> str:
+    """Get the appropriate content type based on file extension."""
+    ext = filename.lower().split('.')[-1] if '.' in filename else ''
+    content_types = {
+        'mp3': 'audio/mpeg',
+        'm4a': 'audio/mp4',
+        'aac': 'audio/aac',
+        'ogg': 'audio/ogg',
+        'opus': 'audio/opus',
+        'flac': 'audio/flac',
+        'wav': 'audio/wav',
+        'wma': 'audio/x-ms-wma',
+    }
+    return content_types.get(ext, 'audio/mpeg')
+
+
+@router.head("/{track_id}/stream")
+def stream_track_head(track_id: str):
+    """
+    HEAD request for audio stream - returns metadata without body.
+
+    This is used by audio players to get file size and content type
+    before starting to stream. Critical for Windows Media Foundation.
+
+    Args:
+        track_id: Track UUID
+
+    Returns:
+        Response with headers only (no body)
+    """
+    from fastapi.responses import Response
+
+    # Get track from database
+    query = """
+        SELECT filename, file_size_bytes
+        FROM musicplayer.tracks
+        WHERE id = %s
+    """
+    track = execute_query(query, (track_id,), fetch_one=True)
+
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    filename = track["filename"]
+    file_size = track.get("file_size_bytes")
+    content_type = _get_content_type(filename)
+
+    headers = {
+        "Content-Type": content_type,
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "public, max-age=3600",
+        "Content-Disposition": f'inline; filename="{filename}"',
+    }
+
+    if file_size:
+        headers["Content-Length"] = str(file_size)
+
+    return Response(content=b"", headers=headers)
+
+
 @router.get("/{track_id}/stream")
 def stream_track(track_id: str, request: Request):
     """
@@ -245,9 +305,9 @@ def stream_track(track_id: str, request: Request):
         HTTPException 404: If track not found
         HTTPException 500: If streaming fails
     """
-    # Get track from database
+    # Get track from database (include file_size_bytes for Content-Length)
     query = """
-        SELECT stream_url, filename
+        SELECT stream_url, filename, file_size_bytes
         FROM musicplayer.tracks
         WHERE id = %s
     """
@@ -257,6 +317,11 @@ def stream_track(track_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Track not found")
 
     stream_url = track["stream_url"]
+    filename = track["filename"]
+    file_size = track.get("file_size_bytes")
+
+    # Determine content type based on file extension
+    content_type = _get_content_type(filename)
 
     try:
         # Prepare headers for MinIO request (forward Range header if present)
@@ -269,18 +334,22 @@ def stream_track(track_id: str, request: Request):
         response = requests.get(stream_url, headers=headers, stream=True, timeout=30)
         response.raise_for_status()
 
-        # Prepare response headers
+        # Prepare response headers with proper content type
         response_headers = {
-            "Content-Type": "audio/mpeg",
+            "Content-Type": content_type,
             "Accept-Ranges": "bytes",
             "Cache-Control": "public, max-age=3600",
-            "Content-Disposition": f'inline; filename="{track["filename"]}"',
+            "Content-Disposition": f'inline; filename="{filename}"',
         }
 
-        # Forward important headers from MinIO
+        # Forward Content-Length from MinIO, or use database value as fallback
         if "Content-Length" in response.headers:
             response_headers["Content-Length"] = response.headers["Content-Length"]
+        elif file_size and not range_header:
+            # Use stored file size for full requests (not range requests)
+            response_headers["Content-Length"] = str(file_size)
 
+        # Forward Content-Range for partial content responses
         if "Content-Range" in response.headers:
             response_headers["Content-Range"] = response.headers["Content-Range"]
 
