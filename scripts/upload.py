@@ -416,6 +416,7 @@ def main():
     skipped = 0
     failed = 0
     vbr_files = []  # Track VBR files for warning
+    failed_files = []  # Track failed files with reasons
 
     print("\n⬆️  Uploading files...\n")
 
@@ -442,6 +443,7 @@ def main():
             stream_url = upload_to_minio(minio_client, file_path, filename)
             if not stream_url:
                 failed += 1
+                failed_files.append((file_path, "MinIO upload failed"))
                 continue
 
             # Extract and upload cover art
@@ -460,8 +462,8 @@ def main():
                 skipped += 1
 
         except Exception as e:
-            print(f"\n❌ Error processing {filename}: {e}")
             failed += 1
+            failed_files.append((file_path, str(e)))
 
     # Close database connection
     db_conn.close()
@@ -473,6 +475,24 @@ def main():
     print(f"   ⏭️  Skipped (duplicates): {skipped}")
     print(f"   ❌ Failed: {failed}")
     print("=" * 50)
+
+    # Show failed files with reasons
+    if failed_files:
+        print(f"\n❌ Failed files ({len(failed_files)}):")
+        for file_path, reason in failed_files:
+            print(f"   - {Path(file_path).name}")
+            print(f"     Path: {file_path}")
+            print(f"     Reason: {reason}")
+
+        # Save failed files to a log
+        log_file = Path(MUSIC_FOLDER) / "upload_failed.log"
+        with open(log_file, "w") as f:
+            f.write("Failed uploads log\n")
+            f.write("=" * 50 + "\n\n")
+            for file_path, reason in failed_files:
+                f.write(f"File: {file_path}\n")
+                f.write(f"Reason: {reason}\n\n")
+        print(f"\n   📄 Full log saved to: {log_file}")
 
     # VBR warning for Windows compatibility
     if vbr_files:
