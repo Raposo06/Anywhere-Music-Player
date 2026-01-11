@@ -70,6 +70,21 @@ def check_ffmpeg():
         return False
 
 
+def cleanup_temp_files(folder):
+    """Remove any leftover temp files from interrupted conversions."""
+    temp_count = 0
+    for root, _, files in os.walk(folder):
+        for file in files:
+            if file.endswith(".cbr_temp.mp3"):
+                temp_path = os.path.join(root, file)
+                try:
+                    os.remove(temp_path)
+                    temp_count += 1
+                except OSError:
+                    pass
+    return temp_count
+
+
 def is_vbr(file_path):
     """Check if an MP3 file is VBR encoded."""
     try:
@@ -87,8 +102,17 @@ def get_vbr_files(folder):
     vbr_files = []
     all_mp3s = []
 
-    for root, _, files in os.walk(folder):
+    # Folders to skip (backup folders, temp files)
+    skip_folders = {'_vbr_backups', '__pycache__', '.git'}
+
+    for root, dirs, files in os.walk(folder):
+        # Skip backup and system folders
+        dirs[:] = [d for d in dirs if d not in skip_folders]
+
         for file in files:
+            # Skip temp files from interrupted conversions
+            if file.endswith(".cbr_temp.mp3"):
+                continue
             if file.lower().endswith(".mp3"):
                 all_mp3s.append(os.path.join(root, file))
 
@@ -210,6 +234,11 @@ def main():
         print(f"❌ Music folder not found: {args.folder}")
         print("💡 Set MUSIC_FOLDER in .env or use --folder")
         sys.exit(1)
+
+    # Clean up any temp files from previous interrupted runs
+    temp_cleaned = cleanup_temp_files(args.folder)
+    if temp_cleaned > 0:
+        print(f"🧹 Cleaned up {temp_cleaned} temp file(s) from previous run")
 
     if args.convert and not check_ffmpeg():
         print("❌ ffmpeg not found. Please install ffmpeg:")
