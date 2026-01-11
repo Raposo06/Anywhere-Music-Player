@@ -303,43 +303,56 @@ def main():
     failed = 0
     failed_files = []
 
-    for file_path in tqdm(vbr_files, desc="Converting", unit="file"):
+    for i, file_path in enumerate(tqdm(vbr_files, desc="Converting", unit="file")):
         file_path = Path(file_path)
         filename = file_path.name
         temp_output = file_path.with_suffix(".cbr_temp.mp3")
 
-        # Convert to temp file
-        success, error = convert_to_cbr(str(file_path), str(temp_output), args.bitrate)
+        try:
+            # Convert to temp file
+            success, error = convert_to_cbr(str(file_path), str(temp_output), args.bitrate)
 
-        if success and temp_output.exists():
-            new_size = temp_output.stat().st_size
+            if success and temp_output.exists():
+                new_size = temp_output.stat().st_size
 
-            if not args.replace and backup_folder:
-                # Backup original
-                backup_path = backup_folder / filename
-                counter = 1
-                while backup_path.exists():
-                    backup_path = backup_folder / f"{file_path.stem}_{counter}{file_path.suffix}"
-                    counter += 1
-                shutil.move(str(file_path), str(backup_path))
+                if not args.replace and backup_folder:
+                    # Backup original
+                    backup_path = backup_folder / filename
+                    counter = 1
+                    while backup_path.exists():
+                        backup_path = backup_folder / f"{file_path.stem}_{counter}{file_path.suffix}"
+                        counter += 1
+                    shutil.move(str(file_path), str(backup_path))
+                else:
+                    # Remove original
+                    file_path.unlink()
+
+                # Rename temp to original name
+                temp_output.rename(file_path)
+                converted += 1
+
+                # Re-upload to MinIO and update database
+                if minio_client and db_conn:
+                    if upload_to_minio(minio_client, str(file_path), filename):
+                        uploaded += 1
+                        update_database_filesize(db_conn, filename, new_size)
             else:
-                # Remove original
-                file_path.unlink()
+                failed += 1
+                failed_files.append((str(file_path), error or "Conversion failed"))
+                if temp_output.exists():
+                    temp_output.unlink()
 
-            # Rename temp to original name
-            temp_output.rename(file_path)
-            converted += 1
-
-            # Re-upload to MinIO and update database
-            if minio_client and db_conn:
-                if upload_to_minio(minio_client, str(file_path), filename):
-                    uploaded += 1
-                    update_database_filesize(db_conn, filename, new_size)
-        else:
+        except Exception as e:
             failed += 1
-            failed_files.append((str(file_path), error))
+            failed_files.append((str(file_path), str(e)))
+            # Clean up temp file if it exists
             if temp_output.exists():
-                temp_output.unlink()
+                try:
+                    temp_output.unlink()
+                except:
+                    pass
+            # Print error but continue with next file
+            tqdm.write(f"⚠️  Error on {filename}: {str(e)[:50]}")
 
     # Close database connection
     if db_conn:
