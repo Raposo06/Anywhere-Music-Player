@@ -1,615 +1,237 @@
-#!/usr/bin/env python3
-"""
-Anywhere Music Player - MP3 Uploader Script
-
-This script:
-1. Scans a folder for MP3 files
-2. Extracts metadata (title, artist, album, duration)
-3. Extracts album cover art (if available)
-4. Uploads MP3 files to MinIO
-5. Uploads cover art images to MinIO
-6. Inserts metadata into PostgreSQL (musicplayer.tracks table)
-7. Shows progress bar for large libraries
-8. Skips duplicate files (based on filename)
-
-Usage:
-    python upload.py
-
-Configuration:
-    Edit .env file with your credentials and paths
-"""
-
 import os
 import sys
-import subprocess
 from pathlib import Path
 from io import BytesIO
 
-# Third-party imports
 try:
     from minio import Minio
-    from minio.error import S3Error
     import psycopg2
-    from psycopg2 import sql
     from mutagen.mp3 import MP3
     from mutagen.id3 import ID3, APIC
     from tqdm import tqdm
     from dotenv import load_dotenv
     from PIL import Image
-except ImportError as e:
-    print(f"❌ Missing dependency: {e}")
-    print("📦 Install dependencies with: pip install -r requirements.txt")
+except ImportError:
+    print("❌ Dependencies missing. Run: pip install minio psycopg2-binary mutagen tqdm python-dotenv Pillow")
     sys.exit(1)
 
-# Load environment variables from .env file
 load_dotenv()
 
-
-# ============================================================================
-# Configuration from Environment Variables
-# ============================================================================
-
+# Configuration
 MUSIC_FOLDER = os.getenv("MUSIC_FOLDER")
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
-MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET")
-MINIO_SECURE = os.getenv("MINIO_SECURE", "true").lower() == "true"
 
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = int(os.getenv("DB_PORT"))
-DB_NAME = os.getenv("DB_NAME")
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_SCHEMA = os.getenv("DB_SCHEMA")
+# DB Config
+DB_SCHEMA = os.getenv("DB_SCHEMA", "public")  # Default to public if not set
 
 
-# ============================================================================
-# Validation
-# ============================================================================
-
-def validate_config():
-    """Validate that all required configuration is present."""
-    missing = []
-
-    if not MINIO_ACCESS_KEY:
-        missing.append("MINIO_ACCESS_KEY")
-    if not MINIO_SECRET_KEY:
-        missing.append("MINIO_SECRET_KEY")
-    if not DB_PASSWORD:
-        missing.append("DB_PASSWORD")
-
-    if missing:
-        print("❌ Missing required environment variables:")
-        for var in missing:
-            print(f"   - {var}")
-        print("\n💡 Create a .env file with these variables (see .env.example)")
-        sys.exit(1)
-
-    if not os.path.exists(MUSIC_FOLDER):
-        print(f"❌ Music folder not found: {MUSIC_FOLDER}")
-        print("💡 Update MUSIC_FOLDER in your .env file")
-        sys.exit(1)
+def get_db_connection():
+    # We add the 'options' parameter to force the connection to use your specific schema
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT"),
+        dbname=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        options=f"-c search_path={DB_SCHEMA}"
+    )
 
 
-def check_ffmpeg():
-    """Check if ffmpeg is installed and available."""
+# Create table in the correct schema if it's missing
+def create_table_if_not_exists(conn):
     try:
-        subprocess.run(
-            ["ffmpeg", "-version"],
-            capture_output=True,
-            check=True
-        )
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
-
-
-# ============================================================================
-# MinIO Client
-# ============================================================================
-
-def initialize_minio():
-    """Initialize MinIO client and ensure bucket exists."""
-    try:
-        client = Minio(
-            MINIO_ENDPOINT,
-            access_key=MINIO_ACCESS_KEY,
-            secret_key=MINIO_SECRET_KEY,
-            secure=MINIO_SECURE
-        )
-
-        # Check if bucket exists, create if not
-        if not client.bucket_exists(MINIO_BUCKET):
-            print(f"📦 Creating bucket: {MINIO_BUCKET}")
-            client.make_bucket(MINIO_BUCKET)
-            print(f"✅ Bucket created")
-
-        return client
-
-    except S3Error as e:
-        print(f"❌ MinIO connection failed: {e}")
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                           CREATE TABLE IF NOT EXISTS tracks
+                           (
+                               id
+                               SERIAL
+                               PRIMARY
+                               KEY,
+                               title
+                               TEXT,
+                               filename
+                               TEXT
+                               UNIQUE
+                               NOT
+                               NULL,
+                               stream_url
+                               TEXT
+                               NOT
+                               NULL,
+                               cover_art_url
+                               TEXT,
+                               duration_seconds
+                               INTEGER,
+                               file_size_bytes
+                               BIGINT,
+                               created_at
+                               TIMESTAMP
+                               DEFAULT
+                               CURRENT_TIMESTAMP
+                           );
+                           """)
+            conn.commit()
+            print(f"✅ Database table 'tracks' checked in schema '{DB_SCHEMA}'.")
+    except Exception as e:
+        print(f"❌ Failed to create/check table: {e}")
         sys.exit(1)
 
-
-# ============================================================================
-# PostgreSQL Connection
-# ============================================================================
-
-def initialize_database():
-    """Initialize PostgreSQL connection."""
-    try:
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD
-        )
-        return conn
-
-    except psycopg2.Error as e:
-        print(f"❌ Database connection failed: {e}")
-        sys.exit(1)
-
-
-# ============================================================================
-# Metadata Extraction
-# ============================================================================
 
 def extract_metadata(file_path):
-    """
-    Extract metadata from MP3 file.
-
-    Returns:
-        dict: Metadata including title, duration, file_size, bitrate_info
-    """
     try:
         audio = MP3(file_path, ID3=ID3)
-
-        # Extract title from ID3 tags (or use filename)
         title = str(audio.get("TIT2", Path(file_path).stem))
-
-        # Get duration in seconds
-        duration = int(audio.info.length) if audio.info else None
-
-        # Get file size in bytes
-        file_size = os.path.getsize(file_path)
-
-        # Get bitrate info for debugging
-        bitrate = None
-        bitrate_mode = None
-        if audio.info:
-            bitrate = audio.info.bitrate  # in bps
-            # Check if VBR (bitrate_mode: 0=CBR, 1=VBR, 2=ABR)
-            if hasattr(audio.info, 'bitrate_mode'):
-                modes = {0: 'CBR', 1: 'VBR', 2: 'ABR'}
-                bitrate_mode = modes.get(audio.info.bitrate_mode, 'Unknown')
-
+        duration = int(audio.info.length) if audio.info else 0
         return {
             "title": title,
-            "duration_seconds": duration,
-            "file_size_bytes": file_size,
-            "bitrate": bitrate,
-            "bitrate_mode": bitrate_mode,
+            "duration": duration,
+            "size": os.path.getsize(file_path)
         }
-
-    except Exception as e:
-        print(f"⚠️  Warning: Could not extract metadata from {Path(file_path).name}: {e}")
-        return {
-            "title": Path(file_path).stem,
-            "duration_seconds": None,
-            "file_size_bytes": os.path.getsize(file_path),
-            "bitrate": None,
-            "bitrate_mode": None,
-        }
+    except Exception:
+        return {"title": Path(file_path).stem, "duration": 0, "size": 0}
 
 
 def extract_cover_art(file_path):
-    """
-    Extract album cover art from MP3 file.
-
-    Returns:
-        BytesIO: Cover art as JPEG image, or None if not found
-    """
     try:
         audio = ID3(file_path)
-
-        # Look for embedded artwork (APIC frame)
         for tag in audio.values():
             if isinstance(tag, APIC):
-                # Convert to JPEG if needed
                 image = Image.open(BytesIO(tag.data))
-
-                # Resize if too large (max 800x800)
                 if image.width > 800 or image.height > 800:
-                    image.thumbnail((800, 800), Image.Resampling.LANCZOS)
-
-                # Convert to JPEG
+                    image.thumbnail((800, 800))
                 output = BytesIO()
                 image.convert("RGB").save(output, format="JPEG", quality=85)
                 output.seek(0)
                 return output
-
         return None
-
-    except Exception:
-        # No cover art found or error reading
+    except:
         return None
 
 
-def is_vbr(file_path):
-    """Check if an MP3 file is VBR encoded."""
+def get_relative_path_key(file_path, base_folder):
     try:
-        audio = MP3(file_path, ID3=ID3)
-        if audio.info and hasattr(audio.info, 'bitrate_mode'):
-            # bitrate_mode: 0=CBR, 1=VBR, 2=ABR
-            return audio.info.bitrate_mode == 1
-        return False
-    except Exception:
-        return False
+        rel = Path(file_path).relative_to(base_folder)
+        return str(rel).replace("\\", "/")
+    except ValueError:
+        return Path(file_path).name
 
 
-def convert_to_cbr(input_path, output_path, bitrate="320k"):
-    """
-    Convert a VBR MP3 file to CBR using ffmpeg.
-
-    Args:
-        input_path: Path to input VBR file
-        output_path: Path to output CBR file
-        bitrate: Target bitrate (default: 320k)
-
-    Returns:
-        tuple: (success: bool, error_message: str or None)
-    """
+def upload_to_minio(client, file_path, object_name):
     try:
-        result = subprocess.run(
-            [
-                "ffmpeg", "-i", input_path,
-                "-acodec", "libmp3lame",
-                "-b:a", bitrate,
-                "-y",  # Overwrite output
-                "-loglevel", "error",
-                output_path
-            ],
-            capture_output=True,
-            text=True
-        )
-
-        if result.returncode != 0:
-            return False, result.stderr
-        return True, None
-
-    except Exception as e:
-        return False, str(e)
-
-
-# ============================================================================
-# Upload Functions
-# ============================================================================
-
-def upload_to_minio(minio_client, file_path, object_name):
-    """Upload a file to MinIO with proper content-type."""
-    try:
-        # Determine content type based on file extension
-        ext = object_name.lower().split('.')[-1] if '.' in object_name else ''
-        content_types = {
-            'mp3': 'audio/mpeg',
-            'm4a': 'audio/mp4',
-            'aac': 'audio/aac',
-            'ogg': 'audio/ogg',
-            'flac': 'audio/flac',
-            'wav': 'audio/wav',
-        }
-        content_type = content_types.get(ext, 'audio/mpeg')
-
-        minio_client.fput_object(
+        client.fput_object(
             MINIO_BUCKET,
             object_name,
             file_path,
-            content_type=content_type,
+            content_type='audio/mpeg'
         )
-        return f"https://{MINIO_ENDPOINT}/{MINIO_BUCKET}/{object_name}"
-
-    except S3Error as e:
-        print(f"⚠️  MinIO upload failed for {object_name}: {e}")
+        return f"/{MINIO_BUCKET}/{object_name}"
+    except Exception as e:
+        print(f"\n❌ Upload failed for {object_name}: {e}")
         return None
-
-
-def upload_cover_art(minio_client, cover_art_data, filename):
-    """Upload cover art image to MinIO."""
-    try:
-        object_name = f"covers/{Path(filename).stem}.jpg"
-
-        minio_client.put_object(
-            MINIO_BUCKET,
-            object_name,
-            cover_art_data,
-            length=cover_art_data.getbuffer().nbytes,
-            content_type="image/jpeg"
-        )
-
-        return f"https://{MINIO_ENDPOINT}/{MINIO_BUCKET}/{object_name}"
-
-    except S3Error as e:
-        print(f"⚠️  Cover art upload failed: {e}")
-        return None
-
-
-def insert_track(db_conn, metadata, filename, stream_url, cover_art_url, folder_path):
-    """Insert track metadata into PostgreSQL."""
-    cursor = db_conn.cursor()
-
-    try:
-        query = sql.SQL("""
-            INSERT INTO {schema}.tracks
-            (title, filename, stream_url, cover_art_url, folder_path, duration_seconds, file_size_bytes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (filename) DO NOTHING
-            RETURNING id
-        """).format(schema=sql.Identifier(DB_SCHEMA))
-
-        cursor.execute(query, (
-            metadata["title"],
-            filename,
-            stream_url,
-            cover_art_url,
-            folder_path,
-            metadata["duration_seconds"],
-            metadata["file_size_bytes"]
-        ))
-
-        result = cursor.fetchone()
-        db_conn.commit()
-
-        return result is not None  # True if inserted, False if duplicate
-
-    except psycopg2.Error as e:
-        db_conn.rollback()
-        print(f"⚠️  Database insert failed for {filename}: {e}")
-        return False
-
-    finally:
-        cursor.close()
-
-
-def file_exists_in_db(db_conn, filename):
-    """
-    Check if a file already exists in the database.
-
-    Returns:
-        bool: True if file exists, False otherwise
-    """
-    cursor = db_conn.cursor()
-
-    try:
-        query = sql.SQL("""
-            SELECT 1 FROM {schema}.tracks WHERE filename = %s LIMIT 1
-        """).format(schema=sql.Identifier(DB_SCHEMA))
-
-        cursor.execute(query, (filename,))
-        return cursor.fetchone() is not None
-
-    finally:
-        cursor.close()
-
-
-# ============================================================================
-# Main Upload Process
-# ============================================================================
-
-def get_relative_folder_path(file_path, base_folder):
-    """
-    Extract relative folder path from base folder.
-    Files in the root get the base folder name.
-
-    Examples:
-        file_path: /home/user/Music/Animes/song.mp3
-        base_folder: /home/user/Music/Animes
-        returns: "Animes"
-
-        file_path: /home/user/Music/Animes/Naruto/opening1.mp3
-        base_folder: /home/user/Music/Animes
-        returns: "Naruto"
-
-        file_path: /home/user/Music/Animes/Tekken/Tekken 2/track1.mp3
-        base_folder: /home/user/Music/Animes
-        returns: "Tekken/Tekken 2"
-    """
-    file_path = Path(file_path).resolve()
-    base_folder = Path(base_folder).resolve()
-
-    # Get the directory containing the MP3 file
-    file_dir = file_path.parent
-
-    # Get relative path from base folder
-    try:
-        relative_path = file_dir.relative_to(base_folder)
-        # If file is in root (.), use the base folder name
-        if str(relative_path) == '.':
-            return base_folder.name
-        return str(relative_path)
-    except ValueError:
-        # File is not under base_folder
-        return None
-
-
-def find_mp3_files(folder):
-    """Find all MP3 files in folder and subfolders."""
-    mp3_files = []
-    for root, _, files in os.walk(folder):
-        for file in files:
-            if file.lower().endswith(".mp3"):
-                mp3_files.append(os.path.join(root, file))
-    return mp3_files
 
 
 def main():
-    """Main upload process."""
-    print("🎵 Anywhere Music Player - MP3 Uploader")
-    print("=" * 50)
+    if not MUSIC_FOLDER or not os.path.exists(MUSIC_FOLDER):
+        print(f"❌ MUSIC_FOLDER not found: {MUSIC_FOLDER}")
+        sys.exit(1)
 
-    # Validate configuration
-    validate_config()
+    # Init MinIO
+    try:
+        minio_client = Minio(
+            os.getenv("MINIO_ENDPOINT"),
+            access_key=os.getenv("MINIO_ACCESS_KEY"),
+            secret_key=os.getenv("MINIO_SECRET_KEY"),
+            secure=str(os.getenv("MINIO_SECURE", "true")).lower() == "true"
+        )
+        if not minio_client.bucket_exists(MINIO_BUCKET):
+            minio_client.make_bucket(MINIO_BUCKET)
+            print(f"📦 Created bucket: {MINIO_BUCKET}")
+    except Exception as e:
+        print(f"❌ MinIO Connection Error: {e}")
+        sys.exit(1)
 
-    # Initialize connections
-    print("🔌 Connecting to MinIO...")
-    minio_client = initialize_minio()
-    print("✅ MinIO connected")
+    # Init DB
+    try:
+        conn = get_db_connection()
+        create_table_if_not_exists(conn)
+    except Exception as e:
+        print(f"❌ DB Connection Error: {e}")
+        sys.exit(1)
 
-    print("🔌 Connecting to PostgreSQL...")
-    db_conn = initialize_database()
-    print("✅ Database connected")
+    mp3_files = []
+    for root, _, files in os.walk(MUSIC_FOLDER):
+        for file in files:
+            if file.lower().endswith(".mp3"):
+                mp3_files.append(os.path.join(root, file))
 
-    # Find MP3 files
-    print(f"\n📂 Scanning folder: {MUSIC_FOLDER}")
-    mp3_files = find_mp3_files(MUSIC_FOLDER)
+    print(f"🚀 Preparing to upload {len(mp3_files)} files...")
 
-    if not mp3_files:
-        print("❌ No MP3 files found")
-        sys.exit(0)
-
-    print(f"📊 Found {len(mp3_files)} MP3 file(s)")
-
-    # PHASE 1: VBR Detection and Conversion
-    print(f"\n🔍 Scanning {len(mp3_files)} files for VBR encoding...")
-
-    vbr_files = []
-    for file_path in tqdm(mp3_files, desc="Scanning", unit="file"):
-        if is_vbr(file_path):
-            vbr_files.append(file_path)
-
-    if vbr_files:
-        print(f"\n⚠️  Found {len(vbr_files)} VBR file(s) that need conversion")
-
-        # Check ffmpeg availability
-        if not check_ffmpeg():
-            print("❌ ffmpeg not found. Install ffmpeg to convert VBR files:")
-            print("   Ubuntu/Debian: sudo apt install ffmpeg")
-            print("   macOS: brew install ffmpeg")
-            print("   Windows: Download from https://ffmpeg.org/download.html")
-            sys.exit(1)
-
-        print(f"\n🔄 Converting {len(vbr_files)} VBR file(s) to CBR...\n")
-
-        converted = 0
-        failed_conversions = []
-
-        for file_path in tqdm(vbr_files, desc="Converting", unit="file"):
-            file_path = Path(file_path)
-            temp_output = file_path.with_suffix(".cbr_temp.mp3")
-
-            try:
-                success, error = convert_to_cbr(str(file_path), str(temp_output))
-
-                if success and temp_output.exists():
-                    # Replace original with converted
-                    file_path.unlink()
-                    temp_output.rename(file_path)
-                    converted += 1
-                else:
-                    failed_conversions.append((file_path, error))
-                    if temp_output.exists():
-                        temp_output.unlink()
-            except Exception as e:
-                failed_conversions.append((file_path, str(e)))
-                if temp_output.exists():
-                    try:
-                        temp_output.unlink()
-                    except:
-                        pass
-
-        print(f"\n✅ Converted {converted}/{len(vbr_files)} VBR file(s) to CBR")
-
-        if failed_conversions:
-            print(f"❌ {len(failed_conversions)} conversion(s) failed:")
-            for path, error in failed_conversions[:5]:
-                print(f"   - {Path(path).name}: {error[:60]}")
-            if len(failed_conversions) > 5:
-                print(f"   ... and {len(failed_conversions) - 5} more")
-    else:
-        print("\n✅ No VBR files found - all files are CBR compatible")
-
-    # PHASE 2: Upload files
     uploaded = 0
     skipped = 0
-    failed = 0
-    failed_files = []  # Track failed files with reasons
 
-    print("\n⬆️  Uploading files...\n")
+    with conn:
+        with conn.cursor() as cursor:
+            for file_path in tqdm(mp3_files, unit="song"):
 
-    for file_path in tqdm(mp3_files, desc="Progress", unit="file"):
-        filename = Path(file_path).name
+                object_key = get_relative_path_key(file_path, MUSIC_FOLDER)
 
-        try:
-            # Check if file already exists in database (skip MinIO upload if duplicate)
-            if file_exists_in_db(db_conn, filename):
-                skipped += 1
-                continue
+                # Check DB (Now looks in musicplayer.tracks)
+                cursor.execute(
+                    "SELECT 1 FROM tracks WHERE filename = %s LIMIT 1",
+                    (object_key,)
+                )
+                if cursor.fetchone():
+                    skipped += 1
+                    continue
 
-            # Extract metadata
-            metadata = extract_metadata(file_path)
+                # Upload to MinIO
+                stream_url = upload_to_minio(minio_client, file_path, object_key)
+                if not stream_url:
+                    continue
 
-            # Extract folder path
-            folder_path = get_relative_folder_path(file_path, MUSIC_FOLDER)
+                # Cover Art
+                cover_data = extract_cover_art(file_path)
+                cover_url = None
+                if cover_data:
+                    cover_key = f"covers/{Path(object_key).stem}_{os.path.getsize(file_path)}.jpg"
+                    try:
+                        minio_client.put_object(
+                            MINIO_BUCKET,
+                            cover_key,
+                            cover_data,
+                            length=cover_data.getbuffer().nbytes,
+                            content_type="image/jpeg"
+                        )
+                        cover_url = f"/{MINIO_BUCKET}/{cover_key}"
+                    except Exception as e:
+                        pass
 
-            # Upload MP3 to MinIO
-            stream_url = upload_to_minio(minio_client, file_path, filename)
-            if not stream_url:
-                failed += 1
-                failed_files.append((file_path, "MinIO upload failed"))
-                continue
+                meta = extract_metadata(file_path)
 
-            # Extract and upload cover art
-            cover_art = extract_cover_art(file_path)
-            cover_art_url = None
-            if cover_art:
-                cover_art_url = upload_cover_art(minio_client, cover_art, filename)
+                # Insert into DB
+                try:
+                    cursor.execute("""
+                                   INSERT INTO tracks
+                                   (title, filename, stream_url, cover_art_url, duration_seconds, file_size_bytes)
+                                   VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (filename) DO NOTHING
+                                   """, (
+                                       meta['title'],
+                                       object_key,
+                                       stream_url,
+                                       cover_url,
+                                       meta['duration'],
+                                       meta['size']
+                                   ))
+                    uploaded += 1
+                except Exception as e:
+                    print(f"❌ DB Insert Error: {e}")
 
-            # Insert into database
-            inserted = insert_track(db_conn, metadata, filename, stream_url, cover_art_url, folder_path)
-
-            if inserted:
-                uploaded += 1
-            else:
-                # This shouldn't happen since we checked above, but just in case
-                skipped += 1
-
-        except Exception as e:
-            failed += 1
-            failed_files.append((file_path, str(e)))
-
-    # Close database connection
-    db_conn.close()
-
-    # Summary
-    print("\n" + "=" * 50)
-    print("📊 Upload Summary:")
-    print(f"   ✅ Uploaded: {uploaded}")
-    print(f"   ⏭️  Skipped (duplicates): {skipped}")
-    print(f"   ❌ Failed: {failed}")
-    print("=" * 50)
-
-    # Show failed files with reasons
-    if failed_files:
-        print(f"\n❌ Failed files ({len(failed_files)}):")
-        for file_path, reason in failed_files:
-            print(f"   - {Path(file_path).name}")
-            print(f"     Path: {file_path}")
-            print(f"     Reason: {reason}")
-
-        # Save failed files to a log
-        log_file = Path(MUSIC_FOLDER) / "upload_failed.log"
-        with open(log_file, "w") as f:
-            f.write("Failed uploads log\n")
-            f.write("=" * 50 + "\n\n")
-            for file_path, reason in failed_files:
-                f.write(f"File: {file_path}\n")
-                f.write(f"Reason: {reason}\n\n")
-        print(f"\n   📄 Full log saved to: {log_file}")
-
-    if uploaded > 0:
-        print(f"\n🎉 Success! {uploaded} track(s) uploaded to your music library.")
+    print("\n" + "=" * 30)
+    print(f"✅ Uploaded: {uploaded}")
+    print(f"⏭️  Skipped (Already in DB): {skipped}")
+    print("=" * 30)
+    conn.close()
 
 
 if __name__ == "__main__":
