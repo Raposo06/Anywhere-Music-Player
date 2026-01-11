@@ -21,6 +21,7 @@ Configuration:
 
 import os
 import sys
+import subprocess
 from pathlib import Path
 from io import BytesIO
 
@@ -89,6 +90,19 @@ def validate_config():
         print(f"❌ Music folder not found: {MUSIC_FOLDER}")
         print("💡 Update MUSIC_FOLDER in your .env file")
         sys.exit(1)
+
+
+def check_ffmpeg():
+    """Check if ffmpeg is installed and available."""
+    try:
+        subprocess.run(
+            ["ffmpeg", "-version"],
+            capture_output=True,
+            check=True
+        )
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
 
 
 # ============================================================================
@@ -222,6 +236,52 @@ def extract_cover_art(file_path):
     except Exception:
         # No cover art found or error reading
         return None
+
+
+def is_vbr(file_path):
+    """Check if an MP3 file is VBR encoded."""
+    try:
+        audio = MP3(file_path, ID3=ID3)
+        if audio.info and hasattr(audio.info, 'bitrate_mode'):
+            # bitrate_mode: 0=CBR, 1=VBR, 2=ABR
+            return audio.info.bitrate_mode == 1
+        return False
+    except Exception:
+        return False
+
+
+def convert_to_cbr(input_path, output_path, bitrate="320k"):
+    """
+    Convert a VBR MP3 file to CBR using ffmpeg.
+
+    Args:
+        input_path: Path to input VBR file
+        output_path: Path to output CBR file
+        bitrate: Target bitrate (default: 320k)
+
+    Returns:
+        tuple: (success: bool, error_message: str or None)
+    """
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-i", input_path,
+                "-acodec", "libmp3lame",
+                "-b:a", bitrate,
+                "-y",  # Overwrite output
+                "-loglevel", "error",
+                output_path
+            ],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            return False, result.stderr
+        return True, None
+
+    except Exception as e:
+        return False, str(e)
 
 
 # ============================================================================
@@ -411,11 +471,69 @@ def main():
 
     print(f"📊 Found {len(mp3_files)} MP3 file(s)")
 
-    # Process files with progress bar
+    # PHASE 1: VBR Detection and Conversion
+    print(f"\n🔍 Scanning {len(mp3_files)} files for VBR encoding...")
+
+    vbr_files = []
+    for file_path in tqdm(mp3_files, desc="Scanning", unit="file"):
+        if is_vbr(file_path):
+            vbr_files.append(file_path)
+
+    if vbr_files:
+        print(f"\n⚠️  Found {len(vbr_files)} VBR file(s) that need conversion")
+
+        # Check ffmpeg availability
+        if not check_ffmpeg():
+            print("❌ ffmpeg not found. Install ffmpeg to convert VBR files:")
+            print("   Ubuntu/Debian: sudo apt install ffmpeg")
+            print("   macOS: brew install ffmpeg")
+            print("   Windows: Download from https://ffmpeg.org/download.html")
+            sys.exit(1)
+
+        print(f"\n🔄 Converting {len(vbr_files)} VBR file(s) to CBR...\n")
+
+        converted = 0
+        failed_conversions = []
+
+        for file_path in tqdm(vbr_files, desc="Converting", unit="file"):
+            file_path = Path(file_path)
+            temp_output = file_path.with_suffix(".cbr_temp.mp3")
+
+            try:
+                success, error = convert_to_cbr(str(file_path), str(temp_output))
+
+                if success and temp_output.exists():
+                    # Replace original with converted
+                    file_path.unlink()
+                    temp_output.rename(file_path)
+                    converted += 1
+                else:
+                    failed_conversions.append((file_path, error))
+                    if temp_output.exists():
+                        temp_output.unlink()
+            except Exception as e:
+                failed_conversions.append((file_path, str(e)))
+                if temp_output.exists():
+                    try:
+                        temp_output.unlink()
+                    except:
+                        pass
+
+        print(f"\n✅ Converted {converted}/{len(vbr_files)} VBR file(s) to CBR")
+
+        if failed_conversions:
+            print(f"❌ {len(failed_conversions)} conversion(s) failed:")
+            for path, error in failed_conversions[:5]:
+                print(f"   - {Path(path).name}: {error[:60]}")
+            if len(failed_conversions) > 5:
+                print(f"   ... and {len(failed_conversions) - 5} more")
+    else:
+        print("\n✅ No VBR files found - all files are CBR compatible")
+
+    # PHASE 2: Upload files
     uploaded = 0
     skipped = 0
     failed = 0
-    vbr_files = []  # Track VBR files for warning
     failed_files = []  # Track failed files with reasons
 
     print("\n⬆️  Uploading files...\n")
@@ -431,10 +549,6 @@ def main():
 
             # Extract metadata
             metadata = extract_metadata(file_path)
-
-            # Track VBR files (may cause Windows playback issues)
-            if metadata.get("bitrate_mode") == "VBR":
-                vbr_files.append(filename)
 
             # Extract folder path
             folder_path = get_relative_folder_path(file_path, MUSIC_FOLDER)
@@ -493,22 +607,6 @@ def main():
                 f.write(f"File: {file_path}\n")
                 f.write(f"Reason: {reason}\n\n")
         print(f"\n   📄 Full log saved to: {log_file}")
-
-    # VBR warning for Windows compatibility
-    if vbr_files:
-        print(f"\n⚠️  Warning: {len(vbr_files)} VBR-encoded file(s) detected.")
-        print("   VBR files may not play correctly on Windows.")
-        print("   Consider re-encoding to CBR with ffmpeg:")
-        print("   ffmpeg -i input.mp3 -acodec libmp3lame -b:a 320k output.mp3")
-        if len(vbr_files) <= 10:
-            print("\n   VBR files:")
-            for f in vbr_files:
-                print(f"   - {f}")
-        else:
-            print(f"\n   First 10 VBR files:")
-            for f in vbr_files[:10]:
-                print(f"   - {f}")
-            print(f"   ... and {len(vbr_files) - 10} more")
 
     if uploaded > 0:
         print(f"\n🎉 Success! {uploaded} track(s) uploaded to your music library.")

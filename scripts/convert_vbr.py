@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 """
-VBR to CBR Converter for Anywhere Music Player
+VBR to CBR Batch Converter for Anywhere Music Player
 
-This script:
-1. Scans your music folder for VBR-encoded MP3 files
-2. Re-encodes them to CBR 320kbps for Windows/Android compatibility
-3. Re-uploads converted files to MinIO
-4. Updates the database with new file sizes
+This standalone utility batch-converts VBR files to CBR.
+NOTE: upload.py now handles VBR conversion automatically.
+      Use this tool to batch-convert your library BEFORE first upload.
 
 Requirements:
     - ffmpeg installed and in PATH
-    - pip install mutagen tqdm python-dotenv minio psycopg2-binary
+    - pip install mutagen tqdm python-dotenv
 
 Usage:
     python convert_vbr.py                    # Dry run (shows what would be converted)
-    python convert_vbr.py --convert          # Convert, backup originals, re-upload to MinIO
-    python convert_vbr.py --convert --replace # Convert, replace originals, re-upload to MinIO
+    python convert_vbr.py --convert          # Convert and backup originals
+    python convert_vbr.py --convert --replace # Convert and replace originals
 """
 
 import os
@@ -30,31 +28,15 @@ try:
     from mutagen.id3 import ID3
     from tqdm import tqdm
     from dotenv import load_dotenv
-    from minio import Minio
-    from minio.error import S3Error
-    import psycopg2
-    from psycopg2 import sql
 except ImportError as e:
     print(f"❌ Missing dependency: {e}")
-    print("📦 Install with: pip install mutagen tqdm python-dotenv minio psycopg2-binary")
+    print("📦 Install with: pip install mutagen tqdm python-dotenv")
     sys.exit(1)
 
 load_dotenv()
 
 # Configuration from environment
 MUSIC_FOLDER = os.getenv("MUSIC_FOLDER")
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
-MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
-MINIO_BUCKET = os.getenv("MINIO_BUCKET")
-MINIO_SECURE = os.getenv("MINIO_SECURE", "true").lower() == "true"
-
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT")
-DB_NAME = os.getenv("DB_NAME")
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_SCHEMA = os.getenv("DB_SCHEMA")
 
 
 def check_ffmpeg():
@@ -149,80 +131,12 @@ def convert_to_cbr(input_path, output_path, bitrate="320k"):
         return False, str(e)
 
 
-def initialize_minio():
-    """Initialize MinIO client."""
-    try:
-        client = Minio(
-            MINIO_ENDPOINT,
-            access_key=MINIO_ACCESS_KEY,
-            secret_key=MINIO_SECRET_KEY,
-            secure=MINIO_SECURE
-        )
-        return client
-    except Exception as e:
-        print(f"❌ MinIO connection failed: {e}")
-        return None
-
-
-def initialize_database():
-    """Initialize PostgreSQL connection."""
-    try:
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD
-        )
-        return conn
-    except psycopg2.Error as e:
-        print(f"❌ Database connection failed: {e}")
-        return None
-
-
-def upload_to_minio(minio_client, file_path, object_name):
-    """Upload a file to MinIO, replacing existing."""
-    try:
-        minio_client.fput_object(
-            MINIO_BUCKET,
-            object_name,
-            file_path,
-            content_type="audio/mpeg",
-        )
-        return True
-    except S3Error as e:
-        print(f"⚠️  MinIO upload failed for {object_name}: {e}")
-        return False
-
-
-def update_database_filesize(db_conn, filename, new_size):
-    """Update file size in database after conversion."""
-    cursor = db_conn.cursor()
-    try:
-        query = sql.SQL("""
-            UPDATE {schema}.tracks
-            SET file_size_bytes = %s
-            WHERE filename = %s
-        """).format(schema=sql.Identifier(DB_SCHEMA))
-
-        cursor.execute(query, (new_size, filename))
-        db_conn.commit()
-        return cursor.rowcount > 0
-    except psycopg2.Error as e:
-        db_conn.rollback()
-        print(f"⚠️  Database update failed for {filename}: {e}")
-        return False
-    finally:
-        cursor.close()
-
-
 def main():
     parser = argparse.ArgumentParser(description="Convert VBR MP3s to CBR for maximum compatibility")
     parser.add_argument("--convert", action="store_true", help="Actually convert files (default is dry run)")
     parser.add_argument("--replace", action="store_true", help="Replace originals instead of backing up")
     parser.add_argument("--bitrate", default="320k", help="Target bitrate (default: 320k)")
     parser.add_argument("--folder", default=MUSIC_FOLDER, help="Music folder to scan")
-    parser.add_argument("--skip-upload", action="store_true", help="Skip MinIO re-upload (local only)")
     args = parser.parse_args()
 
     print("🎵 VBR to CBR Converter")
@@ -269,25 +183,6 @@ def main():
         print(f"   python convert_vbr.py --convert --replace # Replace originals")
         sys.exit(0)
 
-    # Initialize connections for upload
-    minio_client = None
-    db_conn = None
-
-    if not args.skip_upload:
-        print("\n🔌 Connecting to MinIO...")
-        minio_client = initialize_minio()
-        if not minio_client:
-            print("⚠️  Could not connect to MinIO. Use --skip-upload to convert locally only.")
-            sys.exit(1)
-        print("✅ MinIO connected")
-
-        print("🔌 Connecting to PostgreSQL...")
-        db_conn = initialize_database()
-        if not db_conn:
-            print("⚠️  Could not connect to database. Use --skip-upload to convert locally only.")
-            sys.exit(1)
-        print("✅ Database connected")
-
     # Create backup folder if not replacing
     backup_folder = None
     if not args.replace:
@@ -299,7 +194,6 @@ def main():
     print(f"\n🔄 Converting {len(vbr_files)} files to CBR {args.bitrate}...\n")
 
     converted = 0
-    uploaded = 0
     failed = 0
     failed_files = []
 
@@ -313,8 +207,6 @@ def main():
             success, error = convert_to_cbr(str(file_path), str(temp_output), args.bitrate)
 
             if success and temp_output.exists():
-                new_size = temp_output.stat().st_size
-
                 if not args.replace and backup_folder:
                     # Backup original
                     backup_path = backup_folder / filename
@@ -330,12 +222,6 @@ def main():
                 # Rename temp to original name
                 temp_output.rename(file_path)
                 converted += 1
-
-                # Re-upload to MinIO and update database
-                if minio_client and db_conn:
-                    if upload_to_minio(minio_client, str(file_path), filename):
-                        uploaded += 1
-                        update_database_filesize(db_conn, filename, new_size)
             else:
                 failed += 1
                 failed_files.append((str(file_path), error or "Conversion failed"))
@@ -354,16 +240,10 @@ def main():
             # Print error but continue with next file
             tqdm.write(f"⚠️  Error on {filename}: {str(e)[:50]}")
 
-    # Close database connection
-    if db_conn:
-        db_conn.close()
-
     # Summary
     print("\n" + "=" * 50)
     print("📊 Conversion Summary:")
     print(f"   ✅ Converted: {converted}")
-    if not args.skip_upload:
-        print(f"   ☁️  Re-uploaded to MinIO: {uploaded}")
     print(f"   ❌ Failed: {failed}")
     if backup_folder and not args.replace:
         print(f"   📁 Backups saved to: {backup_folder}")
@@ -390,13 +270,7 @@ def main():
 
     if converted > 0:
         print(f"\n🎉 Successfully converted {converted} file(s) to CBR {args.bitrate}!")
-        print("\n✅ Your library is now compatible with:")
-        print("   • Windows (Media Foundation)")
-        print("   • Android Phone")
-        print("   • Android TV")
-
-        if args.skip_upload:
-            print("\n💡 Don't forget to re-upload converted files to MinIO!")
+        print("\n💡 Next step: Run upload.py to upload converted files")
 
 
 if __name__ == "__main__":
