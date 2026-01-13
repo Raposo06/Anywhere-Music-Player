@@ -20,11 +20,9 @@ dependencies:
   http: any
 
   # Audio Player
-  just_audio: any
-  just_audio_windows: any
-
-  # Windows System Media Transport Controls (taskbar media controls)
-  smtc_windows: any
+  just_audio: ^0.9.34
+  just_audio_windows: ^0.2.0
+  audio_service: ^0.18.12
 
   # Local Storage (JWT tokens)
   shared_preferences: any

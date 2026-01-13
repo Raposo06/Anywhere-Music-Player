@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
+import 'package:audio_service/audio_service.dart';
 import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
+import 'services/audio_handler.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
 

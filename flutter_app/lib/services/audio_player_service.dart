@@ -2,18 +2,23 @@ import 'dart:math';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:audio_service/audio_service.dart';
 import '../models/track.dart';
-import 'windows_media_controls_service.dart';
+import 'audio_handler.dart';
+
+enum RepeatMode { off, all, one }
 
 class AudioPlayerService with ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
-  final WindowsMediaControlsService _windowsMediaControls = WindowsMediaControlsService.instance;
+  MusicAudioHandler? _audioHandler;
   Track? _currentTrack;
   List<Track> _playlist = [];
   List<Track> _originalPlaylist = [];
   int _currentIndex = -1;
   bool _isLoading = false;
   bool _isShuffleEnabled = false;
+  RepeatMode _repeatMode = RepeatMode.off;
+  double _volume = 1.0; // 0.0 to 1.0
   String? _lastError;
   final _random = Random();
 
@@ -23,6 +28,8 @@ class AudioPlayerService with ChangeNotifier {
   int get currentIndex => _currentIndex;
   bool get isLoading => _isLoading;
   bool get isShuffleEnabled => _isShuffleEnabled;
+  RepeatMode get repeatMode => _repeatMode;
+  double get volume => _volume;
   String? get lastError => _lastError;
 
   bool get isPlaying => _player.playing;
@@ -33,11 +40,11 @@ class AudioPlayerService with ChangeNotifier {
   bool get _isWindows => !kIsWeb && Platform.isWindows;
 
   AudioPlayerService() {
-    _initializeWindowsMediaControls();
+    // Initialize audio handler for system media controls
+    _initializeAudioHandler();
 
     // Listen to player state changes
-    _player.playingStream.listen((playing) {
-      _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
+    _player.playingStream.listen((_) {
       notifyListeners();
     });
 
@@ -52,7 +59,14 @@ class AudioPlayerService with ChangeNotifier {
     // Auto-play next track when current finishes
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        playNext();
+        if (_repeatMode == RepeatMode.one) {
+          // Replay current track
+          _player.seek(Duration.zero);
+          _player.play();
+        } else {
+          // Advance to next track
+          playNext();
+        }
       }
     });
 
@@ -65,25 +79,25 @@ class AudioPlayerService with ChangeNotifier {
     );
   }
 
-  /// Initialize Windows taskbar media controls
-  Future<void> _initializeWindowsMediaControls() async {
-    await _windowsMediaControls.initialize(
-      onPlay: () => _player.play(),
-      onPause: () => _player.pause(),
-      onNext: () => playNext(),
-      onPrevious: () => playPrevious(),
-      onStop: () => stop(),
-    );
-  }
-
-  /// Update Windows media controls with current track info
-  Future<void> _updateWindowsMediaControls() async {
-    if (_currentTrack != null) {
-      await _windowsMediaControls.updateMetadata(_currentTrack!);
-      await _windowsMediaControls.updateButtonStates(
-        canPrevious: _currentIndex > 0,
-        canNext: _currentIndex < _playlist.length - 1,
-      );
+  /// Initialize the audio handler for system media controls
+  Future<void> _initializeAudioHandler() async {
+    try {
+      _audioHandler = await AudioService.init(
+        builder: () => MusicAudioHandler(
+          player: _player,
+          onNext: playNext,
+          onPrevious: playPrevious,
+        ),
+        config: const AudioServiceConfig(
+          androidNotificationChannelId: 'com.anywhere_music_player.audio',
+          androidNotificationChannelName: 'Music Playback',
+          androidNotificationOngoing: true,
+          androidStopForegroundOnPause: true,
+        ),
+      ) as MusicAudioHandler;
+    } catch (e) {
+      debugPrint('⚠️ Audio service not available: $e');
+      // Audio service may not be available on web or in some environments
     }
   }
 
@@ -132,8 +146,10 @@ class AudioPlayerService with ChangeNotifier {
       await _player.setUrl(track.streamUrl);
       await _player.play();
 
+      // Update system media controls with track info
+      _audioHandler?.updateTrackInfo(track);
+
       _isLoading = false;
-      await _updateWindowsMediaControls();
       notifyListeners();
     } catch (e) {
       _isLoading = false;
@@ -179,8 +195,10 @@ class AudioPlayerService with ChangeNotifier {
       await _player.setUrl(_playlist[_currentIndex].streamUrl);
       await _player.play();
 
+      // Update system media controls with track info
+      _audioHandler?.updateTrackInfo(_currentTrack!);
+
       _isLoading = false;
-      await _updateWindowsMediaControls();
       notifyListeners();
     } catch (e) {
       _isLoading = false;
@@ -192,7 +210,7 @@ class AudioPlayerService with ChangeNotifier {
 
   /// Play next track in playlist
   Future<void> playNext() async {
-    if (_playlist.isEmpty || _currentIndex >= _playlist.length - 1) {
+    if (_playlist.isEmpty) {
       return;
     }
 
@@ -201,7 +219,21 @@ class AudioPlayerService with ChangeNotifier {
     // Clear any previous error
     _lastError = null;
 
-    _currentIndex++;
+    // Handle end of playlist
+    if (_currentIndex >= _playlist.length - 1) {
+      if (_repeatMode == RepeatMode.all) {
+        // Loop back to first track
+        _currentIndex = 0;
+      } else {
+        // Stop playback
+        stop();
+        return;
+      }
+    } else {
+      // Normal next track
+      _currentIndex++;
+    }
+
     _currentTrack = _playlist[_currentIndex];
     _isLoading = true;
     notifyListeners();
@@ -220,8 +252,10 @@ class AudioPlayerService with ChangeNotifier {
       // Explicitly call play and wait for it to start
       await _player.play();
 
+      // Update system media controls with track info
+      _audioHandler?.updateTrackInfo(_currentTrack!);
+
       _isLoading = false;
-      await _updateWindowsMediaControls();
       notifyListeners();
     } catch (e) {
       _isLoading = false;
@@ -264,8 +298,10 @@ class AudioPlayerService with ChangeNotifier {
       // Explicitly call play and wait for it to start
       await _player.play();
 
+      // Update system media controls with track info
+      _audioHandler?.updateTrackInfo(_currentTrack!);
+
       _isLoading = false;
-      await _updateWindowsMediaControls();
       notifyListeners();
     } catch (e) {
       _isLoading = false;
@@ -297,7 +333,6 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> stop() async {
     await _player.stop();
     _currentTrack = null;
-    await _windowsMediaControls.clear();
     notifyListeners();
   }
 
@@ -335,6 +370,29 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Toggle repeat mode (off -> all -> one -> off)
+  void toggleRepeatMode() {
+    switch (_repeatMode) {
+      case RepeatMode.off:
+        _repeatMode = RepeatMode.all;
+        break;
+      case RepeatMode.all:
+        _repeatMode = RepeatMode.one;
+        break;
+      case RepeatMode.one:
+        _repeatMode = RepeatMode.off;
+        break;
+    }
+    notifyListeners();
+  }
+
+  /// Set volume (0.0 to 1.0)
+  Future<void> setVolume(double volume) async {
+    _volume = volume.clamp(0.0, 1.0);
+    await _player.setVolume(_volume);
+    notifyListeners();
+  }
+
   /// Shuffle the playlist, keeping the track at startIndex at position 0
   void _shufflePlaylist(int startIndex) {
     if (_playlist.isEmpty) return;
@@ -358,7 +416,6 @@ class AudioPlayerService with ChangeNotifier {
   @override
   void dispose() {
     _player.dispose();
-    _windowsMediaControls.dispose();
     super.dispose();
   }
 }

@@ -56,7 +56,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
 
     final position = playerService.position ?? Duration.zero;
-    final duration = playerService.duration ?? Duration.zero;
+    // Always use database duration since it's accurate
+    final duration = track.durationSeconds != null
+        ? Duration(seconds: track.durationSeconds!)
+        : Duration.zero;
+
     final progress = duration.inMilliseconds > 0
         ? position.inMilliseconds / duration.inMilliseconds
         : 0.0;
@@ -219,11 +223,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Shuffle Button
+                  // Shuffle and Repeat Buttons
                   if (playerService.playlist.length > 1)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
+                        // Shuffle Button
                         IconButton(
                           icon: Icon(
                             Icons.shuffle,
@@ -250,8 +255,84 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 : FontWeight.normal,
                           ),
                         ),
+                        const SizedBox(width: 32),
+
+                        // Repeat Button
+                        IconButton(
+                          icon: Icon(
+                            playerService.repeatMode == RepeatMode.one
+                                ? Icons.repeat_one
+                                : Icons.repeat,
+                            color: playerService.repeatMode != RepeatMode.off
+                                ? Theme.of(context).primaryColor
+                                : Colors.grey,
+                          ),
+                          iconSize: 32,
+                          onPressed: playerService.toggleRepeatMode,
+                          tooltip: playerService.repeatMode == RepeatMode.off
+                              ? 'Repeat: OFF'
+                              : playerService.repeatMode == RepeatMode.all
+                                  ? 'Repeat: ALL'
+                                  : 'Repeat: ONE',
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          playerService.repeatMode == RepeatMode.off
+                              ? 'Repeat OFF'
+                              : playerService.repeatMode == RepeatMode.all
+                                  ? 'Repeat ALL'
+                                  : 'Repeat ONE',
+                          style: TextStyle(
+                            color: playerService.repeatMode != RepeatMode.off
+                                ? Theme.of(context).primaryColor
+                                : Colors.grey[600],
+                            fontSize: 14,
+                            fontWeight: playerService.repeatMode != RepeatMode.off
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
                       ],
                     ),
+                  const SizedBox(height: 32),
+
+                  // Volume Control
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          playerService.volume == 0
+                              ? Icons.volume_off
+                              : playerService.volume < 0.5
+                                  ? Icons.volume_down
+                                  : Icons.volume_up,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Slider(
+                            value: playerService.volume,
+                            onChanged: (value) => playerService.setVolume(value),
+                            min: 0.0,
+                            max: 1.0,
+                            divisions: 20,
+                            label: '${(playerService.volume * 100).round()}%',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 40,
+                          child: Text(
+                            '${(playerService.volume * 100).round()}%',
+                            style: const TextStyle(fontSize: 14),
+                            textAlign: TextAlign.right,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 20),
 
                   // Playlist Info
