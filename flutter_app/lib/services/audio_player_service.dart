@@ -3,9 +3,11 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/track.dart';
+import 'windows_media_controls_service.dart';
 
 class AudioPlayerService with ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
+  final WindowsMediaControlsService _windowsMediaControls = WindowsMediaControlsService.instance;
   Track? _currentTrack;
   List<Track> _playlist = [];
   List<Track> _originalPlaylist = [];
@@ -31,8 +33,11 @@ class AudioPlayerService with ChangeNotifier {
   bool get _isWindows => !kIsWeb && Platform.isWindows;
 
   AudioPlayerService() {
+    _initializeWindowsMediaControls();
+
     // Listen to player state changes
-    _player.playingStream.listen((_) {
+    _player.playingStream.listen((playing) {
+      _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
       notifyListeners();
     });
 
@@ -58,6 +63,28 @@ class AudioPlayerService with ChangeNotifier {
         _handlePlaybackError(e);
       },
     );
+  }
+
+  /// Initialize Windows taskbar media controls
+  Future<void> _initializeWindowsMediaControls() async {
+    await _windowsMediaControls.initialize(
+      onPlay: () => _player.play(),
+      onPause: () => _player.pause(),
+      onNext: () => playNext(),
+      onPrevious: () => playPrevious(),
+      onStop: () => stop(),
+    );
+  }
+
+  /// Update Windows media controls with current track info
+  Future<void> _updateWindowsMediaControls() async {
+    if (_currentTrack != null) {
+      await _windowsMediaControls.updateMetadata(_currentTrack!);
+      await _windowsMediaControls.updateButtonStates(
+        canPrevious: _currentIndex > 0,
+        canNext: _currentIndex < _playlist.length - 1,
+      );
+    }
   }
 
   /// Handle playback errors with platform-specific messages
@@ -106,6 +133,7 @@ class AudioPlayerService with ChangeNotifier {
       await _player.play();
 
       _isLoading = false;
+      await _updateWindowsMediaControls();
       notifyListeners();
     } catch (e) {
       _isLoading = false;
@@ -152,6 +180,7 @@ class AudioPlayerService with ChangeNotifier {
       await _player.play();
 
       _isLoading = false;
+      await _updateWindowsMediaControls();
       notifyListeners();
     } catch (e) {
       _isLoading = false;
@@ -192,6 +221,7 @@ class AudioPlayerService with ChangeNotifier {
       await _player.play();
 
       _isLoading = false;
+      await _updateWindowsMediaControls();
       notifyListeners();
     } catch (e) {
       _isLoading = false;
@@ -235,6 +265,7 @@ class AudioPlayerService with ChangeNotifier {
       await _player.play();
 
       _isLoading = false;
+      await _updateWindowsMediaControls();
       notifyListeners();
     } catch (e) {
       _isLoading = false;
@@ -266,6 +297,7 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> stop() async {
     await _player.stop();
     _currentTrack = null;
+    await _windowsMediaControls.clear();
     notifyListeners();
   }
 
@@ -326,6 +358,7 @@ class AudioPlayerService with ChangeNotifier {
   @override
   void dispose() {
     _player.dispose();
+    _windowsMediaControls.dispose();
     super.dispose();
   }
 }

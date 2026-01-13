@@ -23,6 +23,9 @@ dependencies:
   just_audio: any
   just_audio_windows: any
 
+  # Windows System Media Transport Controls (taskbar media controls)
+  smtc_windows: any
+
   # Local Storage (JWT tokens)
   shared_preferences: any
 
