@@ -131,7 +131,7 @@ def create_table_if_not_exists(conn):
 def get_relative_path_key(file_path, base_folder):
     """
     Generates a MinIO-safe object key with folder structure preserved.
-    Fixes the 400 Bad Request error by sanitizing #, &, :, ;
+    Fixes 400 Errors and Backend Header Crashes.
     """
     try:
         # Preserve folder structure (Artist/Album/Song.mp3)
@@ -140,14 +140,18 @@ def get_relative_path_key(file_path, base_folder):
     except ValueError:
         path_str = Path(file_path).name
 
-    # --- SANITIZATION (Fixes 400 Errors) ---
+    # --- SANITIZATION ---
     path_str = path_str.replace("#", "No.")
     path_str = path_str.replace("&", "and")
     path_str = path_str.replace("：", "-")
     path_str = path_str.replace(":", "-")
     path_str = path_str.replace("?", "")
     path_str = path_str.replace(";", "")
-    # ---------------------------------------
+
+    # FIX FOR THE CRASH (The Big Solidus / Fake Slash)
+    path_str = path_str.replace("\u29f8", "-")
+    path_str = path_str.replace("⧸", "-")
+    # --------------------
 
     return path_str
 
