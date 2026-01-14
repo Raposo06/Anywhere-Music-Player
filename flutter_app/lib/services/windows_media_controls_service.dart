@@ -56,9 +56,8 @@ class WindowsMediaControlsService {
         ),
         metadata: const MusicMetadata(
           title: 'Anywhere Music Player',
-          artist: '',
-          album: '',
-          thumbnail: '',
+          artist: 'Unknown Artist',
+          album: 'Unknown Album',
         ),
       );
 
@@ -97,13 +96,27 @@ class WindowsMediaControlsService {
     if (!isSupported || !_isInitialized || _smtc == null) return;
 
     try {
-      await _smtc!.updateMetadata(MusicMetadata(
-        title: track.title,
-        artist: track.folderPath,
-        album: track.folderPath,
-        thumbnail: track.coverArtUrl ?? '',
-      ));
-      debugPrint('📻 Updated SMTC metadata: ${track.title}');
+      // smtc_windows crashes with empty strings, so provide defaults
+      final title = track.title.isNotEmpty ? track.title : 'Unknown Track';
+      final artist = track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist';
+      final thumbnail = track.coverArtUrl;
+
+      // Only include thumbnail if it's a valid non-empty URL
+      if (thumbnail != null && thumbnail.isNotEmpty) {
+        await _smtc!.updateMetadata(MusicMetadata(
+          title: title,
+          artist: artist,
+          album: artist,
+          thumbnail: thumbnail,
+        ));
+      } else {
+        await _smtc!.updateMetadata(MusicMetadata(
+          title: title,
+          artist: artist,
+          album: artist,
+        ));
+      }
+      debugPrint('📻 Updated SMTC metadata: $title');
     } catch (e) {
       debugPrint('⚠️ Failed to update SMTC metadata: $e');
     }
