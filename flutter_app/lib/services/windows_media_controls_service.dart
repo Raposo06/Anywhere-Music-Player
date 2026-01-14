@@ -115,7 +115,7 @@ class WindowsMediaControlsService {
 
     try {
       await _smtc!.setPlaybackStatus(
-        isPlaying ? PlaybackStatus.playing : PlaybackStatus.paused,
+        isPlaying ? PlaybackStatus.Playing : PlaybackStatus.Paused,
       );
     } catch (e) {
       debugPrint('⚠️ Failed to update SMTC playback status: $e');
@@ -150,7 +150,7 @@ class WindowsMediaControlsService {
 
     try {
       await _smtc!.clearMetadata();
-      await _smtc!.setPlaybackStatus(PlaybackStatus.stopped);
+      await _smtc!.setPlaybackStatus(PlaybackStatus.Stopped);
     } catch (e) {
       debugPrint('⚠️ Failed to clear SMTC: $e');
     }
