@@ -5,12 +5,14 @@ import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
 import '../models/track.dart';
 import 'audio_handler.dart';
+import 'windows_media_controls_service.dart';
 
 enum RepeatMode { off, all, one }
 
 class AudioPlayerService with ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   MusicAudioHandler? _audioHandler;
+  final WindowsMediaControlsService _windowsMediaControls = WindowsMediaControlsService.instance;
   Track? _currentTrack;
   List<Track> _playlist = [];
   List<Track> _originalPlaylist = [];
@@ -43,8 +45,12 @@ class AudioPlayerService with ChangeNotifier {
     // Initialize audio handler for system media controls
     _initializeAudioHandler();
 
+    // Initialize Windows taskbar media controls
+    _initializeWindowsMediaControls();
+
     // Listen to player state changes
-    _player.playingStream.listen((_) {
+    _player.playingStream.listen((playing) {
+      _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
       notifyListeners();
     });
 
@@ -101,6 +107,30 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
+  /// Initialize Windows taskbar media controls (SMTC)
+  Future<void> _initializeWindowsMediaControls() async {
+    if (!_isWindows) return;
+
+    await _windowsMediaControls.initialize(
+      onPlay: () => _player.play(),
+      onPause: () => _player.pause(),
+      onNext: playNext,
+      onPrevious: playPrevious,
+      onStop: stop,
+    );
+  }
+
+  /// Update Windows media controls with current track info
+  void _updateWindowsMediaControls() {
+    if (!_isWindows || _currentTrack == null) return;
+
+    _windowsMediaControls.updateMetadata(_currentTrack!);
+    _windowsMediaControls.updateButtonStates(
+      canPrevious: _currentIndex > 0,
+      canNext: _currentIndex < _playlist.length - 1 || _repeatMode == RepeatMode.all,
+    );
+  }
+
   /// Handle playback errors with platform-specific messages
   void _handlePlaybackError(Object error) {
     final errorStr = error.toString();
@@ -148,6 +178,7 @@ class AudioPlayerService with ChangeNotifier {
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(track);
+      _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
@@ -197,6 +228,7 @@ class AudioPlayerService with ChangeNotifier {
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
+      _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
@@ -254,6 +286,7 @@ class AudioPlayerService with ChangeNotifier {
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
+      _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
@@ -300,6 +333,7 @@ class AudioPlayerService with ChangeNotifier {
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
+      _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
@@ -333,6 +367,7 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> stop() async {
     await _player.stop();
     _currentTrack = null;
+    _windowsMediaControls.clear();
     notifyListeners();
   }
 
@@ -416,6 +451,7 @@ class AudioPlayerService with ChangeNotifier {
   @override
   void dispose() {
     _player.dispose();
+    _windowsMediaControls.dispose();
     super.dispose();
   }
 }
