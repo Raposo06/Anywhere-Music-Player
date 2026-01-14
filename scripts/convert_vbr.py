@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+"""
+VBR to CBR Batch Converter (Stricter Version)
+Forces 44.1kHz and checks for non-MP3 layers.
+"""
+
 import os
 import sys
 import subprocess
@@ -17,10 +23,11 @@ except ImportError as e:
 load_dotenv()
 MUSIC_FOLDER = os.getenv("MUSIC_FOLDER")
 
-# Standard sample rates that Windows Media Foundation handles well
-STANDARD_SAMPLE_RATES = {44100, 48000}
-# Minimum bitrate for quality (files below this are likely problematic)
-MIN_BITRATE = 128000  # 128 kbps
+# --- SETTINGS ---
+# ONLY allow 44.1kHz. Mobile players are happiest here.
+STANDARD_SAMPLE_RATES = {44100}
+# Increase min bitrate check to catch low-quality legacy files
+MIN_BITRATE = 192000
 
 
 def check_ffmpeg():
@@ -44,11 +51,8 @@ def is_vbr(file_path):
 
 def needs_conversion(file_path):
     """
-    Check if file needs conversion due to:
-    - VBR encoding
-    - Non-standard sample rate
-    - Very low bitrate
-    - Unreadable/corrupted headers
+    Check if file needs conversion.
+    NOW STRICTER: Checks for Layer 1/2 and 48kHz.
     """
     try:
         audio = MP3(file_path, ID3=ID3)
@@ -56,19 +60,25 @@ def needs_conversion(file_path):
         if not audio.info:
             return True, "No audio info (corrupted)"
 
-        # Check for VBR
+        # 1. Check for VBR
         if hasattr(audio.info, 'bitrate_mode') and audio.info.bitrate_mode == 1:
             return True, "VBR encoding"
 
-        # Check sample rate
+        # 2. Check Sample Rate (Strict 44.1kHz)
         sample_rate = getattr(audio.info, 'sample_rate', 0)
         if sample_rate not in STANDARD_SAMPLE_RATES:
             return True, f"Non-standard sample rate ({sample_rate} Hz)"
 
-        # Check bitrate (very low bitrates cause issues)
+        # 3. Check Bitrate
         bitrate = getattr(audio.info, 'bitrate', 0)
         if bitrate < MIN_BITRATE:
             return True, f"Low bitrate ({bitrate // 1000}k)"
+
+        # 4. Check MPEG Layer (New)
+        # 3 = Layer III (MP3). 1 or 2 means it's an MP1/MP2 file disguised as MP3.
+        layer = getattr(audio.info, 'layer', 3)
+        if layer != 3:
+             return True, f"Wrong MPEG Layer ({layer})"
 
         return False, None
 
@@ -108,22 +118,21 @@ def convert_to_cbr(input_path, output_path, bitrate="320k"):
             "ffmpeg",
             "-i", input_path,
             "-acodec", "libmp3lame",
-            "-ar", "44100",  # Standard sample rate (fixes 48kHz issues)
+            "-ar", "44100",       # Force 44.1kHz
             "-b:a", bitrate,
-            "-minrate", bitrate,  # Force minimum bitrate to match target
-            "-maxrate", bitrate,  # Force maximum bitrate to match target
-            "-bufsize", "2M",  # Set buffer size (required for min/maxrate)
-            "-write_xing", "0",  # Disable VBR/Xing header
-            "-map", "0:a",  # Map audio
-            "-map", "0:v?",  # Map cover art if exists
-            "-map_metadata", "0",  # Copy metadata
-            "-id3v2_version", "3",  # Windows friendly tags
-            "-y",  # Overwrite
+            "-minrate", bitrate,
+            "-maxrate", bitrate,
+            "-bufsize", "2M",
+            "-write_xing", "0",
+            "-map", "0:a",
+            "-map", "0:v?",
+            "-map_metadata", "0",
+            "-id3v2_version", "3",
+            "-y",
             "-loglevel", "error",
             output_path
         ]
 
-        # Windows-specific subprocess flags to hide console window
         startupinfo = None
         if os.name == 'nt':
             startupinfo = subprocess.STARTUPINFO()
@@ -139,10 +148,9 @@ def convert_to_cbr(input_path, output_path, bitrate="320k"):
         if result.returncode != 0:
             return False, result.stderr
 
-        # Double check: ensure the new file is actually detected as CBR
-        # If mutagen still says it's VBR, we shouldn't replace the original
+        # Verification
         if is_vbr(output_path):
-            return False, "Converted file still detected as VBR (FFmpeg flag failed)"
+            return False, "Converted file still detected as VBR"
 
         return True, None
 
@@ -151,17 +159,11 @@ def convert_to_cbr(input_path, output_path, bitrate="320k"):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Convert problematic MP3s for Windows compatibility"
-    )
-    parser.add_argument("--convert", action="store_true",
-                        help="Actually perform the conversion")
-    parser.add_argument("--replace", action="store_true",
-                        help="Replace originals (no backup)")
-    parser.add_argument("--all", action="store_true",
-                        help="Re-encode ALL MP3 files, not just problematic ones")
-    parser.add_argument("--folder", default=MUSIC_FOLDER,
-                        help="Music folder to scan")
+    parser = argparse.ArgumentParser(description="Convert problematic MP3s")
+    parser.add_argument("--convert", action="store_true", help="Actually perform the conversion")
+    parser.add_argument("--replace", action="store_true", help="Replace originals (no backup)")
+    parser.add_argument("--all", action="store_true", help="Re-encode ALL MP3 files")
+    parser.add_argument("--folder", default=MUSIC_FOLDER, help="Music folder to scan")
     args = parser.parse_args()
 
     if not args.folder or not os.path.exists(args.folder):
@@ -172,14 +174,12 @@ def main():
         print("❌ ffmpeg missing.")
         sys.exit(1)
 
-    # Find problematic files (or all files if --all)
     problematic_files = get_problematic_files(args.folder, check_all=args.all)
 
     if not problematic_files:
         print("✅ No problematic files found.")
         sys.exit(0)
 
-    # Show summary by reason
     print(f"\n📊 Found {len(problematic_files)} files to convert:")
     reasons = {}
     for _, reason in problematic_files:
@@ -189,14 +189,12 @@ def main():
 
     if not args.convert:
         print("\nℹ️  Run with --convert to process these files.")
-        print("   Add --all to re-encode ALL files (safest for Windows).")
         sys.exit(0)
 
     backup_folder = None
     if not args.replace:
         backup_folder = Path(args.folder) / "_converted_backups"
         backup_folder.mkdir(exist_ok=True)
-        print(f"\n📁 Backups will be saved to: {backup_folder}")
 
     converted = 0
     failed = 0
@@ -209,7 +207,6 @@ def main():
 
         if success:
             if not args.replace and backup_folder:
-                # Create subdirectory structure in backup
                 rel_path = file_path.relative_to(args.folder)
                 backup_path = backup_folder / rel_path
                 backup_path.parent.mkdir(parents=True, exist_ok=True)
@@ -225,10 +222,7 @@ def main():
                 os.remove(temp_output)
             failed += 1
 
-    print(f"\n{'=' * 50}")
-    print(f"📊 Summary: ✅ {converted} converted | ❌ {failed} failed")
-    print(f"{'=' * 50}")
-
+    print(f"\n✅ Converted {converted} files. ❌ Failed {failed}.")
 
 if __name__ == "__main__":
     main()
