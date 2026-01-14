@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:smtc_windows/smtc_windows.dart';
+import 'package:windows_taskbar/windows_taskbar.dart';
 import '../models/track.dart';
 
 /// Service to handle Windows System Media Transport Controls
@@ -9,6 +12,8 @@ class WindowsMediaControlsService {
   static WindowsMediaControlsService? _instance;
   SMTCWindows? _smtc;
   bool _isInitialized = false;
+  bool _taskbarButtonsInitialized = false;
+  bool _isPlaying = false;
 
   // Callbacks for button presses
   VoidCallback? onPlay;
@@ -86,8 +91,72 @@ class WindowsMediaControlsService {
 
       _isInitialized = true;
       debugPrint('✅ Windows Media Controls initialized');
+
+      // Initialize taskbar thumbnail buttons
+      await _initializeTaskbarButtons();
     } catch (e) {
       debugPrint('⚠️ Failed to initialize Windows Media Controls: $e');
+    }
+  }
+
+  /// Initialize taskbar thumbnail toolbar buttons (prev, play/pause, next)
+  Future<void> _initializeTaskbarButtons() async {
+    if (_taskbarButtonsInitialized) return;
+
+    try {
+      // Check if icon files exist
+      final iconsExist = await _checkIconsExist();
+      if (!iconsExist) {
+        debugPrint('⚠️ Taskbar icons not found. Skipping thumbnail buttons.');
+        debugPrint('   Add prev.ico, play.ico, pause.ico, next.ico to assets/icons/');
+        return;
+      }
+
+      await _updateTaskbarButtons();
+      _taskbarButtonsInitialized = true;
+      debugPrint('✅ Taskbar thumbnail buttons initialized');
+    } catch (e) {
+      debugPrint('⚠️ Failed to initialize taskbar buttons: $e');
+    }
+  }
+
+  /// Check if required icon files exist
+  Future<bool> _checkIconsExist() async {
+    try {
+      // Try to load one of the icons to verify assets are available
+      await rootBundle.load('assets/icons/play.ico');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Update taskbar buttons with current play state
+  Future<void> _updateTaskbarButtons() async {
+    if (!isSupported) return;
+
+    try {
+      await WindowsTaskbar.setThumbnailToolbar([
+        ThumbnailToolbarButton(
+          ThumbnailToolbarAssetIcon('assets/icons/prev.ico'),
+          'Previous',
+          () => onPrevious?.call(),
+        ),
+        ThumbnailToolbarButton(
+          ThumbnailToolbarAssetIcon(
+            _isPlaying ? 'assets/icons/pause.ico' : 'assets/icons/play.ico'
+          ),
+          _isPlaying ? 'Pause' : 'Play',
+          () => _isPlaying ? onPause?.call() : onPlay?.call(),
+        ),
+        ThumbnailToolbarButton(
+          ThumbnailToolbarAssetIcon('assets/icons/next.ico'),
+          'Next',
+          () => onNext?.call(),
+        ),
+      ]);
+    } catch (e) {
+      debugPrint('⚠️ Failed to update taskbar buttons: $e');
     }
   }
 
@@ -124,14 +193,24 @@ class WindowsMediaControlsService {
 
   /// Update playback status
   Future<void> updatePlaybackStatus({required bool isPlaying}) async {
-    if (!isSupported || !_isInitialized || _smtc == null) return;
+    if (!isSupported) return;
 
-    try {
-      await _smtc!.setPlaybackStatus(
-        isPlaying ? PlaybackStatus.Playing : PlaybackStatus.Paused,
-      );
-    } catch (e) {
-      debugPrint('⚠️ Failed to update SMTC playback status: $e');
+    _isPlaying = isPlaying;
+
+    // Update SMTC
+    if (_isInitialized && _smtc != null) {
+      try {
+        await _smtc!.setPlaybackStatus(
+          isPlaying ? PlaybackStatus.Playing : PlaybackStatus.Paused,
+        );
+      } catch (e) {
+        debugPrint('⚠️ Failed to update SMTC playback status: $e');
+      }
+    }
+
+    // Update taskbar buttons to show play/pause correctly
+    if (_taskbarButtonsInitialized) {
+      await _updateTaskbarButtons();
     }
   }
 
