@@ -379,7 +379,14 @@ def stream_track(track_id: str, request: Request):
             headers["Range"] = range_header
 
         # Stream the file from MinIO with Range support
-        response = requests.get(stream_url, headers=headers, stream=True, timeout=30)
+        # Use a session for connection pooling and keep-alive
+        session = requests.Session()
+        response = session.get(
+            stream_url,
+            headers=headers,
+            stream=True,
+            timeout=60  # Increased timeout for large files
+        )
         response.raise_for_status()
 
         # Prepare response headers with proper content type
@@ -388,6 +395,7 @@ def stream_track(track_id: str, request: Request):
             "Accept-Ranges": "bytes",
             "Cache-Control": "public, max-age=3600",
             "Content-Disposition": f'inline; filename="{filename}"',
+            "Connection": "keep-alive",
         }
 
         # Forward Content-Length from MinIO, or use database value as fallback
@@ -404,8 +412,9 @@ def stream_track(track_id: str, request: Request):
         # Return streaming response with proper status code
         status_code = response.status_code  # 200 or 206 (partial content)
 
+        # Use larger chunk size (64KB) for faster seeking and streaming
         return StreamingResponse(
-            response.iter_content(chunk_size=8192),
+            response.iter_content(chunk_size=65536),
             status_code=status_code,
             headers=response_headers,
         )

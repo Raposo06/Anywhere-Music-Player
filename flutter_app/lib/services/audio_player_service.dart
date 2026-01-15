@@ -10,7 +10,7 @@ import 'windows_media_controls_service.dart';
 enum RepeatMode { off, all, one }
 
 class AudioPlayerService with ChangeNotifier {
-  final AudioPlayer _player = AudioPlayer();
+  late final AudioPlayer _player;
   MusicAudioHandler? _audioHandler;
   final WindowsMediaControlsService _windowsMediaControls = WindowsMediaControlsService.instance;
   Track? _currentTrack;
@@ -18,6 +18,7 @@ class AudioPlayerService with ChangeNotifier {
   List<Track> _originalPlaylist = [];
   int _currentIndex = -1;
   bool _isLoading = false;
+  bool _isSeeking = false;
   bool _isShuffleEnabled = false;
   RepeatMode _repeatMode = RepeatMode.off;
   double _volume = 1.0; // 0.0 to 1.0
@@ -29,6 +30,7 @@ class AudioPlayerService with ChangeNotifier {
   List<Track> get playlist => _playlist;
   int get currentIndex => _currentIndex;
   bool get isLoading => _isLoading;
+  bool get isSeeking => _isSeeking;
   bool get isShuffleEnabled => _isShuffleEnabled;
   RepeatMode get repeatMode => _repeatMode;
   double get volume => _volume;
@@ -37,11 +39,15 @@ class AudioPlayerService with ChangeNotifier {
   bool get isPlaying => _player.playing;
   Duration? get duration => _player.duration;
   Duration? get position => _player.position;
+  Duration? get bufferedPosition => _player.bufferedPosition;
 
   /// Check if we're running on Windows
   bool get _isWindows => !kIsWeb && Platform.isWindows;
 
   AudioPlayerService() {
+    // Initialize audio player
+    _player = AudioPlayer();
+
     // Initialize audio handler for system media controls
     _initializeAudioHandler();
 
@@ -59,6 +65,10 @@ class AudioPlayerService with ChangeNotifier {
     });
 
     _player.durationStream.listen((_) {
+      notifyListeners();
+    });
+
+    _player.bufferedPositionStream.listen((_) {
       notifyListeners();
     });
 
@@ -359,8 +369,25 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   /// Seek to a specific position
+  /// Shows loading state for large seeks to give user feedback
   Future<void> seek(Duration position) async {
-    await _player.seek(position);
+    final currentPos = _player.position;
+    final seekDistance = (position - currentPos).abs();
+
+    // For seeks > 30 seconds, show loading indicator
+    if (seekDistance.inSeconds > 30) {
+      _isSeeking = true;
+      notifyListeners();
+    }
+
+    try {
+      await _player.seek(position);
+    } finally {
+      if (_isSeeking) {
+        _isSeeking = false;
+        notifyListeners();
+      }
+    }
   }
 
   /// Stop playback and clear current track
