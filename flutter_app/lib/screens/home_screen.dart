@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/track.dart';
@@ -41,31 +42,33 @@ class _HomeScreenState extends State<HomeScreen> {
       _errorMessage = null;
     });
 
+    final apiService = context.read<ApiService>();
+
+    // Load folders and root tracks separately to handle partial failures
+    List<Folder> folders = [];
+    List<Track> rootTracks = [];
+    String? error;
+
     try {
-      final apiService = context.read<ApiService>();
-
-      // Load folders and root tracks in parallel
-      final results = await Future.wait([
-        apiService.getFolders(),
-        apiService.getRootTracks(),
-      ]);
-
-      setState(() {
-        _folders = results[0] as List<Folder>;
-        _rootTracks = results[1] as List<Track>;
-        _isLoading = false;
-      });
-    } on ApiException catch (e) {
-      setState(() {
-        _errorMessage = e.message;
-        _isLoading = false;
-      });
+      folders = await apiService.getFolders();
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to load data: $e';
-        _isLoading = false;
-      });
+      debugPrint('Failed to load folders: $e');
+      error = 'Failed to load folders';
     }
+
+    try {
+      rootTracks = await apiService.getRootTracks();
+    } catch (e) {
+      debugPrint('Failed to load root tracks: $e');
+      // Don't overwrite folders error, root tracks are optional
+    }
+
+    setState(() {
+      _folders = folders;
+      _rootTracks = rootTracks;
+      _isLoading = false;
+      _errorMessage = folders.isEmpty && rootTracks.isEmpty ? error : null;
+    });
   }
 
   Future<void> _handleSearch(String query) async {
