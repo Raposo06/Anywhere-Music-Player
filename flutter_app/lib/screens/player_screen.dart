@@ -36,9 +36,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
   String _formatDuration(Duration? duration) {
     if (duration == null) return '0:00';
     String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return '$minutes:$seconds';
+
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+
+    if (hours > 0) {
+      // HH:MM:SS for 1 hour+ tracks
+      return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
+    } else {
+      // MM:SS for shorter tracks
+      return '${twoDigits(minutes)}:${twoDigits(seconds)}';
+    }
   }
 
   @override

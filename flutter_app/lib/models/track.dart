@@ -41,12 +41,18 @@ class Track {
   factory Track.fromJson(Map<String, dynamic> json) => _$TrackFromJson(json);
   Map<String, dynamic> toJson() => _$TrackToJson(this);
 
-  /// Format duration as MM:SS
+  /// Format duration as MM:SS or H:MM:SS for 1 hour+ tracks
   String get formattedDuration {
     if (durationSeconds == null) return '--:--';
-    final minutes = durationSeconds! ~/ 60;
+    final hours = durationSeconds! ~/ 3600;
+    final minutes = (durationSeconds! % 3600) ~/ 60;
     final seconds = durationSeconds! % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    } else {
+      return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
   }
 
   /// Format file size as MB
