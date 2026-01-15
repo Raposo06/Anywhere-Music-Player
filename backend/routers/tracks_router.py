@@ -23,7 +23,8 @@ def _build_stream_url(track_id: str) -> str:
 def get_tracks(
     current_user: dict = Depends(get_current_user),
     folder_path: Optional[str] = Query(None, description="Filter by folder path"),
-    limit: int = Query(1000, description="Maximum number of tracks to return"),
+    parent_folder: Optional[str] = Query(None, description="Filter by parent folder (includes subfolders)"),
+    limit: int = Query(10000, description="Maximum number of tracks to return"),
     offset: int = Query(0, description="Number of tracks to skip")
 ):
     """
@@ -33,8 +34,9 @@ def get_tracks(
 
     Args:
         current_user: Authenticated user (from JWT token)
-        folder_path: Optional folder path filter
-        limit: Maximum tracks to return (default 1000)
+        folder_path: Exact folder path filter
+        parent_folder: Parent folder filter (includes all subfolders)
+        limit: Maximum tracks to return (default 10000)
         offset: Pagination offset (default 0)
 
     Returns:
@@ -47,16 +49,28 @@ def get_tracks(
                    folder_path, duration_seconds, file_size_bytes, created_at
             FROM musicplayer.tracks
             WHERE folder_path = %s
-            ORDER BY created_at DESC
+            ORDER BY title ASC
             LIMIT %s OFFSET %s
         """
         params = (folder_path, limit, offset)
+    elif parent_folder:
+        # Get all tracks in parent folder and its subfolders
+        query = """
+            SELECT id, title, filename, stream_url, cover_art_url,
+                   folder_path, duration_seconds, file_size_bytes, created_at
+            FROM musicplayer.tracks
+            WHERE folder_path = %s OR folder_path LIKE %s
+            ORDER BY folder_path ASC, title ASC
+            LIMIT %s OFFSET %s
+        """
+        parent_pattern = f"{parent_folder}/%"
+        params = (parent_folder, parent_pattern, limit, offset)
     else:
         query = """
             SELECT id, title, filename, stream_url, cover_art_url,
                    folder_path, duration_seconds, file_size_bytes, created_at
             FROM musicplayer.tracks
-            ORDER BY created_at DESC
+            ORDER BY title ASC
             LIMIT %s OFFSET %s
         """
         params = (limit, offset)
@@ -113,8 +127,9 @@ def get_folders(
     """
     Get folders with hierarchical support.
 
-    - Without parent_path: Returns only root-level folders (no "/" in path)
-    - With parent_path="Animes": Returns direct children like "Animes/Pokemon", "Animes/Naruto"
+    - Without parent_path: Returns only top-level parent folders
+      (extracts first segment: "Tekken/Tekken 2" -> "Tekken")
+    - With parent_path="Tekken": Returns direct children like "Tekken/Tekken 2"
 
     Requires authentication (JWT token in Authorization header).
 
@@ -123,17 +138,26 @@ def get_folders(
         parent_path: Optional parent folder to get children from
 
     Returns:
-        List of folders with track counts
+        List of folders with track counts (includes all nested tracks)
     """
     if parent_path is None:
-        # Get root-level folders (no "/" in folder_path)
+        # Get top-level parent folders by extracting first segment
+        # "Tekken/Tekken 2/Stage 1" -> "Tekken"
+        # Also count ALL tracks in that parent and its subfolders
         query = """
             SELECT
-                folder_path,
+                CASE
+                    WHEN folder_path LIKE '%/%' THEN SPLIT_PART(folder_path, '/', 1)
+                    ELSE folder_path
+                END as folder_path,
                 COUNT(*) as track_count
             FROM musicplayer.tracks
-            WHERE folder_path NOT LIKE '%/%'
-            GROUP BY folder_path
+            WHERE folder_path != ''
+            GROUP BY
+                CASE
+                    WHEN folder_path LIKE '%/%' THEN SPLIT_PART(folder_path, '/', 1)
+                    ELSE folder_path
+                END
             ORDER BY folder_path
         """
         folders = execute_query(query)
@@ -156,6 +180,30 @@ def get_folders(
         folders = execute_query(query, (parent_pattern, parent_path, parent_path, parent_path))
 
     return [FolderResponse(**folder) for folder in folders]
+
+
+@router.get("/root-tracks", response_model=List[TrackResponse])
+def get_root_tracks(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get tracks that are in the root folder (empty folder_path).
+
+    These are songs not organized into any folder.
+    """
+    query = """
+        SELECT id, title, filename, stream_url, cover_art_url,
+               folder_path, duration_seconds, file_size_bytes, created_at
+        FROM musicplayer.tracks
+        WHERE folder_path = '' OR folder_path IS NULL
+        ORDER BY title ASC
+    """
+    tracks = execute_query(query)
+
+    for track in tracks:
+        track["stream_url"] = _build_stream_url(track["id"])
+
+    return [TrackResponse(**track) for track in tracks]
 
 
 @router.get("/folders/search", response_model=List[FolderResponse])

@@ -101,7 +101,7 @@ class ApiService {
   }
 
   /// Fetch all tracks
-  Future<List<Track>> getTracks({String? folderPath}) async {
+  Future<List<Track>> getTracks({String? folderPath, String? parentFolder, int? limit}) async {
     try {
       var uri = Uri.parse('$baseUrl/tracks');
 
@@ -110,6 +110,14 @@ class ApiService {
 
       if (folderPath != null && folderPath.isNotEmpty) {
         queryParams['folder_path'] = folderPath;
+      }
+
+      if (parentFolder != null && parentFolder.isNotEmpty) {
+        queryParams['parent_folder'] = parentFolder;
+      }
+
+      if (limit != null) {
+        queryParams['limit'] = limit.toString();
       }
 
       if (queryParams.isNotEmpty) {
@@ -127,6 +135,29 @@ class ApiService {
       } else {
         throw ApiException(
           'Failed to fetch tracks',
+          response.statusCode,
+        );
+      }
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException('Network error: $e');
+    }
+  }
+
+  /// Fetch root-level tracks (not in any folder)
+  Future<List<Track>> getRootTracks() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/tracks/root-tracks'),
+        headers: _getHeaders(authenticated: true),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((json) => Track.fromJson(json)).toList();
+      } else {
+        throw ApiException(
+          'Failed to fetch root tracks',
           response.statusCode,
         );
       }

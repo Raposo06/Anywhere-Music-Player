@@ -106,10 +106,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     final playerService = context.read<AudioPlayerService>();
     final trackIndex = _tracks.indexOf(track);
     playerService.playPlaylist(_tracks, trackIndex);
-
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PlayerScreen()),
-    );
+    // Start playing immediately without navigating to player screen
   }
 
   void _playAll() {
@@ -117,10 +114,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
 
     final playerService = context.read<AudioPlayerService>();
     playerService.playPlaylist(_tracks, 0);
-
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PlayerScreen()),
-    );
+    // Start playing immediately without navigating to player screen
   }
 
   @override

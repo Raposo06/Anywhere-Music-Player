@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/track.dart';
+import '../models/folder.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/audio_player_service.dart';
@@ -16,8 +17,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
-  List<Track> _tracks = [];
-  Map<String, List<Track>> _groupedTracks = {};
+  List<Folder> _folders = [];
+  List<Track> _rootTracks = [];
   bool _isLoading = false;
   String? _errorMessage;
   String _searchQuery = '';
@@ -25,7 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadTracks();
+    _loadData();
   }
 
   @override
@@ -34,7 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> _loadTracks() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -42,11 +43,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final apiService = context.read<ApiService>();
-      final tracks = await apiService.getTracks();
+
+      // Load folders and root tracks in parallel
+      final results = await Future.wait([
+        apiService.getFolders(),
+        apiService.getRootTracks(),
+      ]);
 
       setState(() {
-        _tracks = tracks;
-        _groupedTracks = _groupTracksByFolder(tracks);
+        _folders = results[0] as List<Folder>;
+        _rootTracks = results[1] as List<Track>;
         _isLoading = false;
       });
     } on ApiException catch (e) {
@@ -56,19 +62,10 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Failed to load tracks';
+        _errorMessage = 'Failed to load data: $e';
         _isLoading = false;
       });
     }
-  }
-
-  Map<String, List<Track>> _groupTracksByFolder(List<Track> tracks) {
-    final grouped = <String, List<Track>>{};
-    for (var track in tracks) {
-      grouped[track.folderPath] ??= [];
-      grouped[track.folderPath]!.add(track);
-    }
-    return grouped;
   }
 
   Future<void> _handleSearch(String query) async {
@@ -77,7 +74,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     if (query.isEmpty) {
-      _loadTracks();
+      _loadData();
       return;
     }
 
@@ -88,11 +85,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final apiService = context.read<ApiService>();
-      final tracks = await apiService.searchTracks(query);
+      final folders = await apiService.searchFolders(query);
 
       setState(() {
-        _tracks = tracks;
-        _groupedTracks = _groupTracksByFolder(tracks);
+        _folders = folders;
+        _rootTracks = []; // Clear root tracks during search
         _isLoading = false;
       });
     } on ApiException catch (e) {
@@ -114,14 +111,49 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _playTrack(Track track, List<Track> folderTracks) {
+  void _playRootTrack(Track track) {
     final playerService = context.read<AudioPlayerService>();
-    final trackIndex = folderTracks.indexOf(track);
-    playerService.playPlaylist(folderTracks, trackIndex);
+    final trackIndex = _rootTracks.indexOf(track);
+    playerService.playPlaylist(_rootTracks, trackIndex);
+  }
 
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+  Future<void> _playFolder(Folder folder) async {
+    final apiService = context.read<ApiService>();
+    final playerService = context.read<AudioPlayerService>();
+
+    // Show loading indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Loading ${folder.folderPath}...'),
+        duration: const Duration(seconds: 1),
+      ),
     );
+
+    try {
+      // Get all tracks in this folder and subfolders
+      final tracks = await apiService.getTracks(parentFolder: folder.folderPath);
+
+      if (tracks.isNotEmpty) {
+        playerService.playPlaylist(tracks, 0);
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Playing ${tracks.length} tracks from ${folder.folderPath}'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No tracks found in this folder')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
   }
 
   @override
@@ -131,9 +163,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Music Library'),
+        title: const Text('Folders'),
         actions: [
-          // Current playing indicator
           if (playerService.currentTrack != null)
             IconButton(
               icon: const Icon(Icons.music_note),
@@ -143,7 +174,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
-          // Logout button
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _handleLogout,
@@ -159,7 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Search tracks or folders...',
+                hintText: 'Search folders...',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
@@ -189,9 +219,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Track list
+          // Content
           Expanded(
-            child: _buildTrackList(),
+            child: _buildContent(),
           ),
         ],
       ),
@@ -210,7 +240,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTrackList() {
+  Widget _buildContent() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -226,7 +256,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _loadTracks,
+              onPressed: _loadData,
               child: const Text('Retry'),
             ),
           ],
@@ -234,71 +264,119 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    if (_tracks.isEmpty) {
+    if (_folders.isEmpty && _rootTracks.isEmpty) {
       return const Center(
-        child: Text('No tracks found'),
+        child: Text('No content found'),
       );
     }
 
-    // Sort folders alphabetically
-    final sortedFolders = _groupedTracks.keys.toList()..sort();
-
-    return ListView.builder(
-      itemCount: sortedFolders.length,
-      itemBuilder: (context, index) {
-        final folder = sortedFolders[index];
-        final tracks = _groupedTracks[folder]!;
-
-        return ExpansionTile(
-          leading: const Icon(Icons.folder, color: Colors.blue),
-          title: Text(
-            folder,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
+    return ListView(
+      children: [
+        // Root tracks section (songs not in any folder)
+        if (_rootTracks.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Row(
+              children: [
+                const Icon(Icons.music_note, color: Colors.orange),
+                const SizedBox(width: 8),
+                Text(
+                  'Loose Tracks (${_rootTracks.length})',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () {
+                    final playerService = context.read<AudioPlayerService>();
+                    playerService.playPlaylist(_rootTracks, 0);
+                  },
+                  icon: const Icon(Icons.play_arrow, size: 20),
+                  label: const Text('Play All'),
+                ),
+              ],
             ),
           ),
-          subtitle: Text('${tracks.length} track(s)'),
-          initiallyExpanded: sortedFolders.length == 1,
-          children: tracks.map((track) {
-            final isCurrentTrack = context
-                    .watch<AudioPlayerService>()
-                    .currentTrack
-                    ?.id ==
-                track.id;
+          ..._rootTracks.map((track) => _buildTrackTile(track)),
+          const Divider(height: 32),
+        ],
 
-            return ListTile(
-              leading: track.coverArtUrl != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: Image.network(
-                        track.coverArtUrl!,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.music_note,
-                          size: 48,
-                        ),
-                      ),
-                    )
-                  : const Icon(Icons.music_note, size: 48),
-              title: Text(
-                track.title,
-                style: TextStyle(
-                  fontWeight: isCurrentTrack ? FontWeight.bold : null,
-                  color: isCurrentTrack ? Colors.blue : null,
+        // Folders section
+        if (_folders.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Row(
+              children: [
+                const Icon(Icons.folder, color: Colors.blue),
+                const SizedBox(width: 8),
+                Text(
+                  'Folders (${_folders.length})',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ..._folders.map((folder) => _buildFolderTile(folder)),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildTrackTile(Track track) {
+    final playerService = context.watch<AudioPlayerService>();
+    final isCurrentTrack = playerService.currentTrack?.id == track.id;
+
+    return ListTile(
+      leading: track.coverArtUrl != null
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Image.network(
+                track.coverArtUrl!,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.music_note,
+                  size: 48,
                 ),
               ),
-              subtitle: Text(track.formattedDuration),
-              trailing: isCurrentTrack
-                  ? const Icon(Icons.equalizer, color: Colors.blue)
-                  : null,
-              onTap: () => _playTrack(track, tracks),
-            );
-          }).toList(),
-        );
-      },
+            )
+          : const Icon(Icons.music_note, size: 48),
+      title: Text(
+        track.title,
+        style: TextStyle(
+          fontWeight: isCurrentTrack ? FontWeight.bold : null,
+          color: isCurrentTrack ? Colors.blue : null,
+        ),
+      ),
+      subtitle: Text(track.formattedDuration),
+      trailing: isCurrentTrack
+          ? const Icon(Icons.equalizer, color: Colors.blue)
+          : null,
+      onTap: () => _playRootTrack(track),
+    );
+  }
+
+  Widget _buildFolderTile(Folder folder) {
+    return ListTile(
+      leading: const Icon(Icons.folder, size: 48, color: Colors.blue),
+      title: Text(
+        folder.folderPath,
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+        ),
+      ),
+      subtitle: Text('${folder.trackCount} track(s)'),
+      trailing: IconButton(
+        icon: const Icon(Icons.play_circle_fill, size: 36, color: Colors.green),
+        onPressed: () => _playFolder(folder),
+        tooltip: 'Play all tracks in this folder',
+      ),
+      onTap: () => _playFolder(folder),
     );
   }
 }
