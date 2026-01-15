@@ -8,6 +8,7 @@ import '../services/auth_service.dart';
 import '../services/audio_player_service.dart';
 import 'player_screen.dart';
 import 'login_screen.dart';
+import 'folder_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -363,6 +364,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openFolder(Folder folder) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FolderDetailScreen(
+          folderPath: folder.folderPath,
+          folderName: folder.folderPath,
+        ),
+      ),
+    );
+  }
+
   Widget _buildFolderTile(Folder folder) {
     return ListTile(
       leading: const Icon(Icons.folder, size: 48, color: Colors.blue),
@@ -379,7 +391,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: () => _playFolder(folder),
         tooltip: 'Play all tracks in this folder',
       ),
-      onTap: () => _playFolder(folder),
+      onTap: () => _openFolder(folder),  // Navigate to folder instead of play
     );
   }
 }
