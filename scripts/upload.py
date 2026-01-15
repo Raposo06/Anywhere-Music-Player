@@ -130,8 +130,8 @@ def create_table_if_not_exists(conn):
 
 def get_relative_path_key(file_path, base_folder):
     """
-    Generates a MinIO-safe object key with folder structure preserved.
-    Fixes 400 Errors and Backend Header Crashes.
+    Generates a MinIO-safe object key.
+    Fixes 400 Errors, Fake Slashes, and Emojis.
     """
     try:
         # Preserve folder structure (Artist/Album/Song.mp3)
@@ -140,7 +140,7 @@ def get_relative_path_key(file_path, base_folder):
     except ValueError:
         path_str = Path(file_path).name
 
-    # --- SANITIZATION ---
+    # --- SPECIFIC REPLACEMENTS (For aesthetics/safety) ---
     path_str = path_str.replace("#", "No.")
     path_str = path_str.replace("&", "and")
     path_str = path_str.replace("：", "-")
@@ -148,10 +148,20 @@ def get_relative_path_key(file_path, base_folder):
     path_str = path_str.replace("?", "")
     path_str = path_str.replace(";", "")
 
-    # FIX FOR THE CRASH (The Big Solidus / Fake Slash)
+    # Fix Fake Slash
     path_str = path_str.replace("\u29f8", "-")
     path_str = path_str.replace("⧸", "-")
-    # --------------------
+
+    # --- THE NUCLEAR FIX (Removes Emojis) ---
+    # This keeps standard text and accents (ã, é) but drops 👈, 🔥, etc.
+    try:
+        path_str = path_str.encode('latin-1', 'ignore').decode('latin-1')
+    except Exception:
+        pass  # Safety net
+    # ----------------------------------------
+
+    # Clean up double spaces created by removing emojis
+    path_str = path_str.replace("  ", " ").strip()
 
     return path_str
 
