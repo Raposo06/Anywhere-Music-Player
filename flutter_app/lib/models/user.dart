@@ -1,14 +1,7 @@
-import 'package:json_annotation/json_annotation.dart';
-
-part 'user.g.dart';
-
-@JsonSerializable()
 class User {
   final String id;
   final String email;
   final String username;
-
-  @JsonKey(name: 'created_at')
   final DateTime createdAt;
 
   User({
@@ -18,11 +11,23 @@ class User {
     required this.createdAt,
   });
 
-  factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);
-  Map<String, dynamic> toJson() => _$UserToJson(this);
+  factory User.fromJson(Map<String, dynamic> json) {
+    return User(
+      id: json['id'] as String,
+      email: json['email'] as String,
+      username: json['username'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'email': email,
+    'username': username,
+    'created_at': createdAt.toIso8601String(),
+  };
 }
 
-@JsonSerializable()
 class AuthResponse {
   final String token;
   final User user;
@@ -32,7 +37,15 @@ class AuthResponse {
     required this.user,
   });
 
-  factory AuthResponse.fromJson(Map<String, dynamic> json) =>
-      _$AuthResponseFromJson(json);
-  Map<String, dynamic> toJson() => _$AuthResponseToJson(this);
+  factory AuthResponse.fromJson(Map<String, dynamic> json) {
+    return AuthResponse(
+      token: json['token'] as String,
+      user: User.fromJson(json['user'] as Map<String, dynamic>),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'token': token,
+    'user': user.toJson(),
+  };
 }

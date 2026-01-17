@@ -1,29 +1,12 @@
-import 'package:json_annotation/json_annotation.dart';
-
-part 'track.g.dart';
-
-@JsonSerializable()
 class Track {
   final String id;
   final String title;
   final String filename;
-
-  @JsonKey(name: 'stream_url')
   final String streamUrl;
-
-  @JsonKey(name: 'cover_art_url')
   final String? coverArtUrl;
-
-  @JsonKey(name: 'folder_path')
   final String folderPath;
-
-  @JsonKey(name: 'duration_seconds')
   final int? durationSeconds;
-
-  @JsonKey(name: 'file_size_bytes')
   final int? fileSizeBytes;
-
-  @JsonKey(name: 'created_at')
   final DateTime createdAt;
 
   Track({
@@ -38,8 +21,31 @@ class Track {
     required this.createdAt,
   });
 
-  factory Track.fromJson(Map<String, dynamic> json) => _$TrackFromJson(json);
-  Map<String, dynamic> toJson() => _$TrackToJson(this);
+  factory Track.fromJson(Map<String, dynamic> json) {
+    return Track(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      filename: json['filename'] as String,
+      streamUrl: json['stream_url'] as String,
+      coverArtUrl: json['cover_art_url'] as String?,
+      folderPath: json['folder_path'] as String? ?? '',
+      durationSeconds: json['duration_seconds'] as int?,
+      fileSizeBytes: json['file_size_bytes'] as int?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'filename': filename,
+    'stream_url': streamUrl,
+    'cover_art_url': coverArtUrl,
+    'folder_path': folderPath,
+    'duration_seconds': durationSeconds,
+    'file_size_bytes': fileSizeBytes,
+    'created_at': createdAt.toIso8601String(),
+  };
 
   /// Format duration as MM:SS or H:MM:SS for 1 hour+ tracks
   String get formattedDuration {
