@@ -74,11 +74,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ? position.inMilliseconds / duration.inMilliseconds
         : 0.0;
 
-    final bufferedPosition = playerService.bufferedPosition ?? Duration.zero;
-    final bufferedProgress = duration.inMilliseconds > 0
-        ? bufferedPosition.inMilliseconds / duration.inMilliseconds
-        : 0.0;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Now Playing'),
@@ -156,88 +151,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   // Progress Bar
                   Column(
                     children: [
-                      Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              trackHeight: 4,
-                              thumbShape: const RoundSliderThumbShape(
-                                enabledThumbRadius: 8,
-                              ),
-                              // Show buffered content as lighter track
-                              inactiveTrackColor: Colors.grey[300],
-                            ),
-                            child: Stack(
-                              children: [
-                                // Buffered progress indicator (underneath)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(2),
-                                    child: LinearProgressIndicator(
-                                      value: bufferedProgress.clamp(0.0, 1.0),
-                                      backgroundColor: Colors.grey[300],
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.grey[400]!,
-                                      ),
-                                      minHeight: 4,
-                                    ),
-                                  ),
-                                ),
-                                // Main slider (on top)
-                                Slider(
-                                  value: progress.clamp(0.0, 1.0),
-                                  onChanged: (value) {
-                                    final newPosition = Duration(
-                                      milliseconds:
-                                          (value * duration.inMilliseconds).round(),
-                                    );
-                                    playerService.seek(newPosition);
-                                  },
-                                ),
-                              ],
-                            ),
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 4,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 8,
                           ),
-                          // Show seeking indicator when buffering after a long seek
-                          if (playerService.isSeeking)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black87,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'Seeking...',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
+                        ),
+                        child: Slider(
+                          value: progress.clamp(0.0, 1.0),
+                          onChanged: (value) {
+                            final newPosition = Duration(
+                              milliseconds:
+                                  (value * duration.inMilliseconds).round(),
+                            );
+                            playerService.seek(newPosition);
+                          },
+                        ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
