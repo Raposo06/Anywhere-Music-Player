@@ -13,8 +13,20 @@ from database import execute_query
 router = APIRouter(prefix="/tracks", tags=["Tracks"])
 
 
-def _build_stream_url(track_id: str) -> str:
-    """Build streaming URL for a track using our proxy endpoint."""
+def _use_direct_minio() -> bool:
+    """Check if direct MinIO URLs should be used (bypasses proxy for better seeking)."""
+    return os.getenv("USE_DIRECT_MINIO_URLS", "false").lower() == "true"
+
+
+def _build_stream_url(track_id: str, original_url: str = None) -> str:
+    """Build streaming URL for a track.
+
+    If USE_DIRECT_MINIO_URLS is true and original_url is provided,
+    returns the direct MinIO URL for better seeking performance.
+    Otherwise returns the proxy endpoint URL.
+    """
+    if _use_direct_minio() and original_url:
+        return original_url
     api_base = os.getenv("API_BASE_URL", "http://localhost:8000")
     return f"{api_base}/tracks/{track_id}/stream"
 
@@ -79,9 +91,9 @@ def get_tracks(
     tracks = execute_query(query, params)
     print(f"✅ Query returned {len(tracks)} tracks")
 
-    # Replace stream_url with proxy endpoint
+    # Replace stream_url with proxy endpoint (or keep direct MinIO URL if configured)
     for track in tracks:
-        track["stream_url"] = _build_stream_url(track["id"])
+        track["stream_url"] = _build_stream_url(track["id"], track.get("stream_url"))
 
     return [TrackResponse(**track) for track in tracks]
 
@@ -114,9 +126,9 @@ def search_tracks(
     search_pattern = f"%{query}%"
     tracks = execute_query(search_query, (search_pattern, search_pattern))
 
-    # Replace stream_url with proxy endpoint
+    # Replace stream_url with proxy endpoint (or keep direct MinIO URL if configured)
     for track in tracks:
-        track["stream_url"] = _build_stream_url(track["id"])
+        track["stream_url"] = _build_stream_url(track["id"], track.get("stream_url"))
 
     return [TrackResponse(**track) for track in tracks]
 
@@ -203,7 +215,7 @@ def get_root_tracks(
     tracks = execute_query(query)
 
     for track in tracks:
-        track["stream_url"] = _build_stream_url(track["id"])
+        track["stream_url"] = _build_stream_url(track["id"], track.get("stream_url"))
 
     return [TrackResponse(**track) for track in tracks]
 
@@ -269,8 +281,8 @@ def get_track(
     if not track:
         raise HTTPException(status_code=404, detail="Track not found")
 
-    # Replace stream_url with proxy endpoint
-    track["stream_url"] = _build_stream_url(track["id"])
+    # Replace stream_url with proxy endpoint (or keep direct MinIO URL if configured)
+    track["stream_url"] = _build_stream_url(track["id"], track.get("stream_url"))
 
     return TrackResponse(**track)
 
