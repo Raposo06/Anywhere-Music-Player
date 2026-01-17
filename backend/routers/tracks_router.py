@@ -65,6 +65,7 @@ def get_tracks(
         """
         parent_pattern = f"{parent_folder}/%"
         params = (parent_folder, parent_pattern, limit, offset)
+        print(f"🔍 parent_folder query: folder_path='{parent_folder}' OR folder_path LIKE '{parent_pattern}'")
     else:
         query = """
             SELECT id, title, filename, stream_url, cover_art_url,
@@ -76,6 +77,7 @@ def get_tracks(
         params = (limit, offset)
 
     tracks = execute_query(query, params)
+    print(f"✅ Query returned {len(tracks)} tracks")
 
     # Replace stream_url with proxy endpoint
     for track in tracks:

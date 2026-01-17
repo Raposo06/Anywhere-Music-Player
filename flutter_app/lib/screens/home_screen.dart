@@ -53,6 +53,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       folders = await apiService.getFolders();
+      debugPrint('📁 Loaded ${folders.length} folders');
+      for (var folder in folders) {
+        debugPrint('  - "${folder.folderPath}" (${folder.trackCount} tracks)');
+      }
     } catch (e) {
       debugPrint('Failed to load folders: $e');
       error = 'Failed to load folders';
@@ -130,6 +134,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final apiService = context.read<ApiService>();
     final playerService = context.read<AudioPlayerService>();
 
+    debugPrint('🎵 _playFolder called for: ${folder.folderPath}');
+
     // Show loading indicator
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -140,7 +146,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       // Get all tracks in this folder and subfolders
+      debugPrint('📡 Fetching tracks with parentFolder: ${folder.folderPath}');
       final tracks = await apiService.getTracks(parentFolder: folder.folderPath);
+      debugPrint('✅ Received ${tracks.length} tracks from API');
 
       if (tracks.isNotEmpty) {
         playerService.playPlaylist(tracks, 0);

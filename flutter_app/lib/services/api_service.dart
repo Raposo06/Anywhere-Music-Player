@@ -124,6 +124,8 @@ class ApiService {
         uri = uri.replace(queryParameters: queryParams);
       }
 
+      debugPrint('🌐 API Request: $uri');
+
       final response = await http.get(
         uri,
         headers: _getHeaders(authenticated: true),
