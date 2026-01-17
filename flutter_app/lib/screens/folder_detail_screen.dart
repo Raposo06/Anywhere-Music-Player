@@ -32,6 +32,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   }
 
   Future<void> _loadTracks() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -41,11 +42,13 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
       final apiService = context.read<ApiService>();
       final tracks = await apiService.getTracks(parentFolder: widget.folderPath);
 
+      if (!mounted) return;
       setState(() {
         _tracks = tracks;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Failed to load tracks: $e';
         _isLoading = false;

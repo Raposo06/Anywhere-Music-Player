@@ -34,6 +34,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
   }
 
   Future<void> _loadTracks() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -43,16 +44,19 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
       final apiService = context.read<ApiService>();
       final tracks = await apiService.getTracks();
 
+      if (!mounted) return;
       setState(() {
         _tracks = tracks;
         _isLoading = false;
       });
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = e.message;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Failed to load tracks';
         _isLoading = false;
@@ -61,6 +65,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
   }
 
   Future<void> _handleSearch(String query) async {
+    if (!mounted) return;
     setState(() {
       _searchQuery = query;
     });
@@ -79,11 +84,13 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
       final apiService = context.read<ApiService>();
       final tracks = await apiService.searchTracks(query);
 
+      if (!mounted) return;
       setState(() {
         _tracks = tracks;
         _isLoading = false;
       });
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = e.message;
         _isLoading = false;

@@ -38,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -64,6 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // Don't overwrite folders error, root tracks are optional
     }
 
+    if (!mounted) return;
     setState(() {
       _folders = folders;
       _rootTracks = rootTracks;
@@ -73,6 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleSearch(String query) async {
+    if (!mounted) return;
     setState(() {
       _searchQuery = query;
     });
@@ -91,12 +94,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final apiService = context.read<ApiService>();
       final folders = await apiService.searchFolders(query);
 
+      if (!mounted) return;
       setState(() {
         _folders = folders;
         _rootTracks = []; // Clear root tracks during search
         _isLoading = false;
       });
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = e.message;
         _isLoading = false;
