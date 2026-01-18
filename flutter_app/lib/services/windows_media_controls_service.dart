@@ -146,8 +146,10 @@ class WindowsMediaControlsService {
       _isInitialized = true;
       debugPrint('✅ Windows Media Controls initialized');
 
-      // Initialize taskbar thumbnail buttons
-      await _initializeTaskbarButtons();
+      // Temporarily disable taskbar thumbnail buttons to test keyboard controls
+      // The windows_taskbar package may interfere with SMTC keyboard event handling
+      // await _initializeTaskbarButtons();
+      debugPrint('⚠️ Taskbar thumbnail buttons disabled - testing SMTC keyboard controls');
     } catch (e) {
       debugPrint('⚠️ Failed to initialize Windows Media Controls: $e');
     }
@@ -263,11 +265,12 @@ class WindowsMediaControlsService {
       }
     }
 
+    // Taskbar buttons disabled for testing - windows_taskbar may interfere with keyboard controls
     // Only update taskbar buttons when play state actually changes
     // to avoid interfering with SMTC keyboard controls
-    if (_taskbarButtonsInitialized && playStateChanged) {
-      await _updateTaskbarButtons();
-    }
+    // if (_taskbarButtonsInitialized && playStateChanged) {
+    //   await _updateTaskbarButtons();
+    // }
   }
 
   /// Enable/disable previous button based on playlist position
