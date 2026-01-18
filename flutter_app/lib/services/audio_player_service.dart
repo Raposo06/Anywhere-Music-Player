@@ -48,10 +48,11 @@ class AudioPlayerService with ChangeNotifier {
     // Initialize audio player
     _player = AudioPlayer();
 
-    // DISABLED: audio_service causing auto-pause - testing without it
-    // _initializeAudioHandler();
+    // Initialize audio handler for system media controls
+    _initializeAudioHandler();
 
-    // DISABLED: Windows SMTC causing auto-pause - testing without it
+    // DISABLED: Windows SMTC causes keyboard control issues
+    // Will re-enable after confirming just_audio_windows fix works
     // _initializeWindowsMediaControls();
 
     // Listen to player state changes
@@ -187,8 +188,9 @@ class AudioPlayerService with ChangeNotifier {
       await _player.setUrl(track.streamUrl);
       await _player.play();
 
-      // DISABLED: No system media controls to prevent auto-pause
-      // _audioHandler?.updateTrackInfo(track);
+      // Update system media controls with track info
+      _audioHandler?.updateTrackInfo(track);
+      // DISABLED: Windows media controls still have keyboard issues
       // _updateWindowsMediaControls();
 
       _isLoading = false;
@@ -238,7 +240,7 @@ class AudioPlayerService with ChangeNotifier {
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
-      // DISABLED: No Windows media control updates to prevent auto-pause
+      // DISABLED: Windows media controls still have keyboard issues
       // _updateWindowsMediaControls();
 
       _isLoading = false;
@@ -293,7 +295,7 @@ class AudioPlayerService with ChangeNotifier {
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
-      // DISABLED: No Windows media control updates to prevent auto-pause
+      // DISABLED: Windows media controls still have keyboard issues
       // _updateWindowsMediaControls();
 
       _isLoading = false;
@@ -337,7 +339,7 @@ class AudioPlayerService with ChangeNotifier {
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
-      // DISABLED: No Windows media control updates to prevent auto-pause
+      // DISABLED: Windows media controls still have keyboard issues
       // _updateWindowsMediaControls();
 
       _isLoading = false;
