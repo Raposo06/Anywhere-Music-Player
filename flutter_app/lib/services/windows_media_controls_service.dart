@@ -283,19 +283,24 @@ class WindowsMediaControlsService {
   }) async {
     if (!isSupported || !_isInitialized || _smtc == null) return;
 
-    try {
-      await _smtc!.updateConfig(SMTCConfig(
-        fastForwardEnabled: false,
-        rewindEnabled: false,
-        prevEnabled: canPrevious,
-        nextEnabled: canNext,
-        pauseEnabled: true,
-        playEnabled: true,
-        stopEnabled: true,
-      ));
-    } catch (e) {
-      debugPrint('⚠️ Failed to update SMTC button states: $e');
-    }
+    // DISABLED: updateConfig() disrupts the buttonPressStream keyboard event routing
+    // Calling updateConfig seems to reset or interfere with the keyboard event listener
+    // Keeping all buttons enabled at all times is acceptable for consistent keyboard controls
+    debugPrint('⚠️ updateButtonStates called but disabled to prevent keyboard interference (canPrev: $canPrevious, canNext: $canNext)');
+
+    // try {
+    //   await _smtc!.updateConfig(SMTCConfig(
+    //     fastForwardEnabled: false,
+    //     rewindEnabled: false,
+    //     prevEnabled: canPrevious,
+    //     nextEnabled: canNext,
+    //     pauseEnabled: true,
+    //     playEnabled: true,
+    //     stopEnabled: true,
+    //   ));
+    // } catch (e) {
+    //   debugPrint('⚠️ Failed to update SMTC button states: $e');
+    // }
   }
 
   /// Clear metadata and disable controls
