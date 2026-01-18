@@ -146,10 +146,11 @@ class WindowsMediaControlsService {
       _isInitialized = true;
       debugPrint('✅ Windows Media Controls initialized');
 
-      // Initialize taskbar thumbnail buttons
-      await _initializeTaskbarButtons();
+      // DISABLED: Taskbar thumbnail buttons initialization also causes auto-pause
+      // WindowsTaskbar.setThumbnailToolbar() appears to send pause event on initialization
+      // await _initializeTaskbarButtons();
 
-      debugPrint('✅ SMTC ready for keyboard input');
+      debugPrint('✅ SMTC ready for keyboard input (taskbar buttons disabled)');
     } catch (e) {
       debugPrint('⚠️ Failed to initialize Windows Media Controls: $e');
     }
