@@ -11,6 +11,7 @@ import '../models/track.dart';
 class WindowsMediaControlsService {
   static WindowsMediaControlsService? _instance;
   SMTCWindows? _smtc;
+  StreamSubscription<PressedButton>? _buttonPressSubscription;
   bool _isInitialized = false;
   bool _taskbarButtonsInitialized = false;
   bool _isPlaying = false;
@@ -40,13 +41,24 @@ class WindowsMediaControlsService {
     VoidCallback? onPrevious,
     VoidCallback? onStop,
   }) async {
-    if (!isSupported || _isInitialized) return;
+    if (!isSupported) {
+      debugPrint('⚠️ Windows Media Controls not supported on this platform');
+      return;
+    }
 
+    if (_isInitialized) {
+      debugPrint('⚠️ Windows Media Controls already initialized');
+      return;
+    }
+
+    debugPrint('🎹 Initializing Windows Media Controls...');
     this.onPlay = onPlay;
     this.onPause = onPause;
     this.onNext = onNext;
     this.onPrevious = onPrevious;
     this.onStop = onStop;
+
+    debugPrint('🎹 Callbacks registered: play=${onPlay != null}, pause=${onPause != null}, next=${onNext != null}, previous=${onPrevious != null}, stop=${onStop != null}');
 
     try {
       _smtc = SMTCWindows(
@@ -66,28 +78,43 @@ class WindowsMediaControlsService {
         ),
       );
 
-      // Listen for button presses
-      _smtc!.buttonPressStream.listen((event) {
-        switch (event) {
-          case PressedButton.play:
-            onPlay?.call();
-            break;
-          case PressedButton.pause:
-            onPause?.call();
-            break;
-          case PressedButton.next:
-            onNext?.call();
-            break;
-          case PressedButton.previous:
-            onPrevious?.call();
-            break;
-          case PressedButton.stop:
-            onStop?.call();
-            break;
-          default:
-            break;
-        }
-      });
+      // Listen for button presses with error handling
+      _buttonPressSubscription = _smtc!.buttonPressStream.listen(
+        (event) {
+          debugPrint('🎹 Windows keyboard button pressed: $event');
+          switch (event) {
+            case PressedButton.play:
+              debugPrint('▶️ Play button pressed');
+              onPlay?.call();
+              break;
+            case PressedButton.pause:
+              debugPrint('⏸️ Pause button pressed');
+              onPause?.call();
+              break;
+            case PressedButton.next:
+              debugPrint('⏭️ Next button pressed');
+              onNext?.call();
+              break;
+            case PressedButton.previous:
+              debugPrint('⏮️ Previous button pressed');
+              onPrevious?.call();
+              break;
+            case PressedButton.stop:
+              debugPrint('⏹️ Stop button pressed');
+              onStop?.call();
+              break;
+            default:
+              debugPrint('⚠️ Unknown button pressed: $event');
+              break;
+          }
+        },
+        onError: (error) {
+          debugPrint('🔴 Error in button press stream: $error');
+          // Try to reinitialize if the stream fails
+          _handleStreamError();
+        },
+        cancelOnError: false, // Keep listening even if there's an error
+      );
 
       _isInitialized = true;
       debugPrint('✅ Windows Media Controls initialized');
@@ -248,12 +275,39 @@ class WindowsMediaControlsService {
     }
   }
 
+  /// Handle stream errors by attempting to recover
+  Future<void> _handleStreamError() async {
+    debugPrint('🔄 Attempting to recover from button press stream error...');
+
+    // Cancel existing subscription
+    await _buttonPressSubscription?.cancel();
+    _buttonPressSubscription = null;
+
+    // Mark as not initialized to allow re-initialization
+    _isInitialized = false;
+
+    // Try to reinitialize after a short delay
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    await initialize(
+      onPlay: onPlay,
+      onPause: onPause,
+      onNext: onNext,
+      onPrevious: onPrevious,
+      onStop: onStop,
+    );
+  }
+
   /// Dispose the service
   Future<void> dispose() async {
+    await _buttonPressSubscription?.cancel();
+    _buttonPressSubscription = null;
+
     if (_smtc != null) {
       await _smtc!.dispose();
       _smtc = null;
     }
     _isInitialized = false;
+    _taskbarButtonsInitialized = false;
   }
 }
