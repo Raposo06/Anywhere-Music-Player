@@ -51,8 +51,8 @@ class AudioPlayerService with ChangeNotifier {
     // Initialize audio handler for system media controls
     _initializeAudioHandler();
 
-    // Initialize Windows taskbar media controls
-    _initializeWindowsMediaControls();
+    // DISABLED: Windows SMTC causing auto-pause - testing without it
+    // _initializeWindowsMediaControls();
 
     // Listen to player state changes
     _player.playingStream.listen((playing) {
@@ -189,7 +189,8 @@ class AudioPlayerService with ChangeNotifier {
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(track);
-      _updateWindowsMediaControls();
+      // DISABLED: No Windows media control updates to prevent auto-pause
+      // _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
@@ -238,7 +239,8 @@ class AudioPlayerService with ChangeNotifier {
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
-      _updateWindowsMediaControls();
+      // DISABLED: No Windows media control updates to prevent auto-pause
+      // _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
@@ -292,7 +294,8 @@ class AudioPlayerService with ChangeNotifier {
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
-      _updateWindowsMediaControls();
+      // DISABLED: No Windows media control updates to prevent auto-pause
+      // _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
@@ -335,7 +338,8 @@ class AudioPlayerService with ChangeNotifier {
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
-      _updateWindowsMediaControls();
+      // DISABLED: No Windows media control updates to prevent auto-pause
+      // _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
@@ -470,7 +474,8 @@ class AudioPlayerService with ChangeNotifier {
   @override
   void dispose() {
     _player.dispose();
-    _windowsMediaControls.dispose();
+    // DISABLED: Windows media controls not initialized
+    // _windowsMediaControls.dispose();
     super.dispose();
   }
 }
