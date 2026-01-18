@@ -57,7 +57,8 @@ class AudioPlayerService with ChangeNotifier {
     // Listen to player state changes
     _player.playingStream.listen((playing) {
       debugPrint('🎵 Player state changed: ${playing ? "Playing" : "Paused/Stopped"}');
-      _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
+      // DISABLED: updatePlaybackStatus call removed to prevent any SMTC interaction
+      // _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
       notifyListeners();
     });
 
