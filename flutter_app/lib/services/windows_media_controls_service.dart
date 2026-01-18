@@ -262,24 +262,23 @@ class WindowsMediaControlsService {
     final bool playStateChanged = _isPlaying != isPlaying;
     _isPlaying = isPlaying;
 
-    debugPrint('🎵 SMTC playback status: ${isPlaying ? "Playing" : "Paused"} (state changed: $playStateChanged)');
+    debugPrint('🎵 Player playback status: ${isPlaying ? "Playing" : "Paused"} (state changed: $playStateChanged)');
 
-    // Update SMTC
-    if (_isInitialized && _smtc != null) {
-      try {
-        await _smtc!.setPlaybackStatus(
-          isPlaying ? PlaybackStatus.Playing : PlaybackStatus.Paused,
-        );
-      } catch (e) {
-        debugPrint('⚠️ Failed to update SMTC playback status: $e');
-      }
-    }
+    // DISABLED: setPlaybackStatus() ALSO disrupts keyboard controls AND causes immediate pause
+    // Calling _smtc!.setPlaybackStatus() creates a feedback loop:
+    // 1. Player plays -> stream fires -> setPlaybackStatus(Playing)
+    // 2. Windows/SMTC sends pause event back through buttonPressStream
+    // 3. Player immediately pauses
+    // Static playback status from initialization is acceptable for keyboard controls
 
-    // DISABLED: updateTaskbarButtons also disrupts keyboard controls
-    // WindowsTaskbar.setThumbnailToolbar() appears to interfere with SMTC keyboard routing
-    // Taskbar buttons will show the initial state only (acceptable trade-off)
-    // if (_taskbarButtonsInitialized && playStateChanged) {
-    //   await _updateTaskbarButtons();
+    // if (_isInitialized && _smtc != null) {
+    //   try {
+    //     await _smtc!.setPlaybackStatus(
+    //       isPlaying ? PlaybackStatus.Playing : PlaybackStatus.Paused,
+    //     );
+    //   } catch (e) {
+    //     debugPrint('⚠️ Failed to update SMTC playback status: $e');
+    //   }
     // }
   }
 
