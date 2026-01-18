@@ -60,12 +60,22 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     final playerService = context.read<AudioPlayerService>();
     final trackIndex = _tracks.indexOf(track);
     playerService.playPlaylist(_tracks, trackIndex);
+
+    // Navigate to player screen
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+    );
   }
 
   void _playAll() {
     if (_tracks.isEmpty) return;
     final playerService = context.read<AudioPlayerService>();
     playerService.playPlaylist(_tracks, 0);
+
+    // Navigate to player screen
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+    );
   }
 
   void _shufflePlay() {
@@ -76,6 +86,11 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
       playerService.toggleShuffle();
     }
     playerService.playPlaylist(_tracks, 0);
+
+    // Navigate to player screen
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+    );
   }
 
   @override

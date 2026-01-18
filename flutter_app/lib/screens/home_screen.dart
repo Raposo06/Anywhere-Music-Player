@@ -129,6 +129,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final playerService = context.read<AudioPlayerService>();
     final trackIndex = _rootTracks.indexOf(track);
     playerService.playPlaylist(_rootTracks, trackIndex);
+
+    // Navigate to player screen
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+    );
   }
 
   Future<void> _playFolder(Folder folder) async {
@@ -154,12 +159,13 @@ class _HomeScreenState extends State<HomeScreen> {
       if (tracks.isNotEmpty) {
         playerService.playPlaylist(tracks, 0);
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Playing ${tracks.length} tracks from ${folder.folderPath}'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+
+        // Navigate to player screen
+        if (mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PlayerScreen()),
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -322,6 +328,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   onPressed: () {
                     final playerService = context.read<AudioPlayerService>();
                     playerService.playPlaylist(_rootTracks, 0);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                    );
                   },
                   icon: const Icon(Icons.play_arrow, size: 20),
                   label: const Text('Play All'),
