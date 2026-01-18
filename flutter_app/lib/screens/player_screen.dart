@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_player_service.dart';
+import '../utils/responsive.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -74,6 +75,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ? position.inMilliseconds / duration.inMilliseconds
         : 0.0;
 
+    // Responsive album art size
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = Responsive.isDesktopOrLarger(context);
+    final albumArtSize = isDesktop
+        ? 350.0
+        : (screenWidth * 0.7).clamp(200.0, 300.0);
+    final horizontalPadding = Responsive.getHorizontalPadding(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Now Playing'),
@@ -81,16 +90,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
       body: Center(
         child: SingleChildScrollView(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
+            constraints: const BoxConstraints(maxWidth: 700),
             child: Padding(
-              padding: const EdgeInsets.all(24.0),
+              padding: EdgeInsets.all(horizontalPadding),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   // Album Art
                   Container(
-                    width: 300,
-                    height: 300,
+                    width: albumArtSize,
+                    height: albumArtSize,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(8),
                       boxShadow: [
@@ -109,18 +118,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) => Container(
                                 color: Colors.grey[800],
-                                child: const Icon(
+                                child: Icon(
                                   Icons.music_note,
-                                  size: 120,
+                                  size: albumArtSize * 0.4,
                                   color: Colors.white54,
                                 ),
                               ),
                             )
                           : Container(
                               color: Colors.grey[800],
-                              child: const Icon(
+                              child: Icon(
                                 Icons.music_note,
-                                size: 120,
+                                size: albumArtSize * 0.4,
                                 color: Colors.white54,
                               ),
                             ),
