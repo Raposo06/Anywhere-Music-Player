@@ -254,6 +254,8 @@ class WindowsMediaControlsService {
     final bool playStateChanged = _isPlaying != isPlaying;
     _isPlaying = isPlaying;
 
+    debugPrint('🎵 SMTC playback status: ${isPlaying ? "Playing" : "Paused"} (state changed: $playStateChanged)');
+
     // Update SMTC
     if (_isInitialized && _smtc != null) {
       try {

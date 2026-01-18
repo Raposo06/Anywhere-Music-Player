@@ -190,6 +190,9 @@ class AudioPlayerService with ChangeNotifier {
       _audioHandler?.updateTrackInfo(track);
       _updateWindowsMediaControls();
 
+      // Explicitly set playback status to Playing to activate Windows keyboard routing
+      _windowsMediaControls.updatePlaybackStatus(isPlaying: true);
+
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -239,6 +242,9 @@ class AudioPlayerService with ChangeNotifier {
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
       _updateWindowsMediaControls();
+
+      // Explicitly set playback status to Playing to activate Windows keyboard routing
+      _windowsMediaControls.updatePlaybackStatus(isPlaying: true);
 
       _isLoading = false;
       notifyListeners();
@@ -298,6 +304,9 @@ class AudioPlayerService with ChangeNotifier {
       _audioHandler?.updateTrackInfo(_currentTrack!);
       _updateWindowsMediaControls();
 
+      // Explicitly set playback status to Playing to activate Windows keyboard routing
+      _windowsMediaControls.updatePlaybackStatus(isPlaying: true);
+
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -344,6 +353,9 @@ class AudioPlayerService with ChangeNotifier {
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
       _updateWindowsMediaControls();
+
+      // Explicitly set playback status to Playing to activate Windows keyboard routing
+      _windowsMediaControls.updatePlaybackStatus(isPlaying: true);
 
       _isLoading = false;
       notifyListeners();
