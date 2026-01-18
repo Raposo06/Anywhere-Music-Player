@@ -48,8 +48,8 @@ class AudioPlayerService with ChangeNotifier {
     // Initialize audio player
     _player = AudioPlayer();
 
-    // Initialize audio handler for system media controls
-    _initializeAudioHandler();
+    // DISABLED: audio_service causing auto-pause - testing without it
+    // _initializeAudioHandler();
 
     // DISABLED: Windows SMTC causing auto-pause - testing without it
     // _initializeWindowsMediaControls();
@@ -187,9 +187,8 @@ class AudioPlayerService with ChangeNotifier {
       await _player.setUrl(track.streamUrl);
       await _player.play();
 
-      // Update system media controls with track info
-      _audioHandler?.updateTrackInfo(track);
-      // DISABLED: No Windows media control updates to prevent auto-pause
+      // DISABLED: No system media controls to prevent auto-pause
+      // _audioHandler?.updateTrackInfo(track);
       // _updateWindowsMediaControls();
 
       _isLoading = false;
