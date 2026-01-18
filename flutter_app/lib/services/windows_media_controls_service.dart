@@ -222,31 +222,37 @@ class WindowsMediaControlsService {
   Future<void> updateMetadata(Track track) async {
     if (!isSupported || !_isInitialized || _smtc == null) return;
 
-    try {
-      // smtc_windows crashes with empty strings, so provide defaults
-      final title = track.title.isNotEmpty ? track.title : 'Unknown Track';
-      final artist = track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist';
-      final thumbnail = track.coverArtUrl;
+    // DISABLED: updateMetadata() also disrupts keyboard controls
+    // Calling _smtc!.updateMetadata() appears to reset/interfere with buttonPressStream
+    // Static metadata from initialization is acceptable for consistent keyboard controls
+    debugPrint('⚠️ updateMetadata called but disabled to prevent keyboard interference: ${track.title}');
+    return;
 
-      // Only include thumbnail if it's a valid non-empty URL
-      if (thumbnail != null && thumbnail.isNotEmpty) {
-        await _smtc!.updateMetadata(MusicMetadata(
-          title: title,
-          artist: artist,
-          album: artist,
-          thumbnail: thumbnail,
-        ));
-      } else {
-        await _smtc!.updateMetadata(MusicMetadata(
-          title: title,
-          artist: artist,
-          album: artist,
-        ));
-      }
-      debugPrint('📻 Updated SMTC metadata: $title');
-    } catch (e) {
-      debugPrint('⚠️ Failed to update SMTC metadata: $e');
-    }
+    // try {
+    //   // smtc_windows crashes with empty strings, so provide defaults
+    //   final title = track.title.isNotEmpty ? track.title : 'Unknown Track';
+    //   final artist = track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist';
+    //   final thumbnail = track.coverArtUrl;
+
+    //   // Only include thumbnail if it's a valid non-empty URL
+    //   if (thumbnail != null && thumbnail.isNotEmpty) {
+    //     await _smtc!.updateMetadata(MusicMetadata(
+    //       title: title,
+    //       artist: artist,
+    //       album: artist,
+    //       thumbnail: thumbnail,
+    //     ));
+    //   } else {
+    //     await _smtc!.updateMetadata(MusicMetadata(
+    //       title: title,
+    //       artist: artist,
+    //       album: artist,
+    //     ));
+    //   }
+    //   debugPrint('📻 Updated SMTC metadata: $title');
+    // } catch (e) {
+    //   debugPrint('⚠️ Failed to update SMTC metadata: $e');
+    // }
   }
 
   /// Update playback status
@@ -269,11 +275,12 @@ class WindowsMediaControlsService {
       }
     }
 
-    // Only update taskbar buttons when play state actually changes
-    // to avoid interfering with SMTC keyboard controls
-    if (_taskbarButtonsInitialized && playStateChanged) {
-      await _updateTaskbarButtons();
-    }
+    // DISABLED: updateTaskbarButtons also disrupts keyboard controls
+    // WindowsTaskbar.setThumbnailToolbar() appears to interfere with SMTC keyboard routing
+    // Taskbar buttons will show the initial state only (acceptable trade-off)
+    // if (_taskbarButtonsInitialized && playStateChanged) {
+    //   await _updateTaskbarButtons();
+    // }
   }
 
   /// Enable/disable previous button based on playlist position

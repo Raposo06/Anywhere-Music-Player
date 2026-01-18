@@ -178,12 +178,11 @@ class AudioPlayerService with ChangeNotifier {
       _currentIndex = 0;
       notifyListeners();
 
-      // Stop and clear previous track
-      await _player.stop();
-
       debugPrint('🎵 Playing: ${track.title}');
       debugPrint('📡 Stream URL: ${track.streamUrl}');
 
+      // Set URL and play immediately without stopping first
+      // just_audio handles switching between tracks automatically
       await _player.setUrl(track.streamUrl);
       await _player.play();
 
@@ -227,13 +226,12 @@ class AudioPlayerService with ChangeNotifier {
       _currentTrack = _playlist[_currentIndex];
       notifyListeners();
 
-      // Stop and clear previous track
-      await _player.stop();
-
       // Debug: Print the stream URL being attempted
       debugPrint('🎵 Playing: ${_currentTrack!.title}');
       debugPrint('📡 Stream URL: ${_playlist[_currentIndex].streamUrl}');
 
+      // Set URL and play immediately without stopping first
+      // just_audio handles switching between tracks automatically
       await _player.setUrl(_playlist[_currentIndex].streamUrl);
       await _player.play();
 
@@ -286,13 +284,9 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('🎵 Next: ${_currentTrack!.title}');
       debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
 
-      // Stop previous track
-      await _player.stop();
-
-      // Set new URL and play - await both to ensure proper sequencing
+      // Set new URL and play immediately
+      // just_audio handles switching between tracks automatically
       await _player.setUrl(_currentTrack!.streamUrl);
-
-      // Explicitly call play and wait for it to start
       await _player.play();
 
       // Update system media controls with track info
@@ -333,13 +327,9 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('🎵 Previous: ${_currentTrack!.title}');
       debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
 
-      // Stop previous track
-      await _player.stop();
-
-      // Set new URL and play - await both to ensure proper sequencing
+      // Set new URL and play immediately
+      // just_audio handles switching between tracks automatically
       await _player.setUrl(_currentTrack!.streamUrl);
-
-      // Explicitly call play and wait for it to start
       await _player.play();
 
       // Update system media controls with track info
