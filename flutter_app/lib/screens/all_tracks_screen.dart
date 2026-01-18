@@ -4,6 +4,7 @@ import '../models/track.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/audio_player_service.dart';
+import '../utils/responsive.dart';
 import 'player_screen.dart';
 import 'login_screen.dart';
 
@@ -128,6 +129,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
     final playerService = context.watch<AudioPlayerService>();
+    final horizontalPadding = Responsive.getHorizontalPadding(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -151,57 +153,64 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search tracks...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          _handleSearch('');
-                        },
-                      )
-                    : null,
-                border: const OutlineInputBorder(),
-              ),
-              onChanged: _handleSearch,
-            ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: Responsive.getContentMaxWidth(context) ?? double.infinity,
           ),
-
-          // User info and play all button
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Welcome, ${authService.currentUser?.username ?? "User"}',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                if (_tracks.isNotEmpty)
-                  ElevatedButton.icon(
-                    onPressed: _playAll,
-                    icon: const Icon(Icons.play_arrow),
-                    label: Text('Play All (${_tracks.length})'),
+          child: Column(
+            children: [
+              // Search bar
+              Padding(
+                padding: EdgeInsets.all(horizontalPadding),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search tracks...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              _handleSearch('');
+                            },
+                          )
+                        : null,
+                    border: const OutlineInputBorder(),
                   ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
+                  onChanged: _handleSearch,
+                ),
+              ),
 
-          // Track list
-          Expanded(
-            child: _buildTrackList(),
+              // User info and play all button
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Welcome, ${authService.currentUser?.username ?? "User"}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    if (_tracks.isNotEmpty)
+                      ElevatedButton.icon(
+                        onPressed: _playAll,
+                        icon: const Icon(Icons.play_arrow),
+                        label: Text('Play All (${_tracks.length})'),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Track list
+              Expanded(
+                child: _buildTrackList(),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
       floatingActionButton: playerService.currentTrack != null
           ? FloatingActionButton(
