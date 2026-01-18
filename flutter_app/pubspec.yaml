@@ -41,6 +41,7 @@ dev_dependencies:
   flutter_lints: any
   build_runner: any
   json_serializable: any
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
@@ -48,3 +49,9 @@ flutter:
   assets:
     - .env
     - assets/icons/
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icons/psx.png"
+  min_sdk_android: 21

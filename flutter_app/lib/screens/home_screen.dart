@@ -6,6 +6,7 @@ import '../models/folder.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/audio_player_service.dart';
+import '../utils/responsive.dart';
 import 'player_screen.dart';
 import 'login_screen.dart';
 import 'folder_detail_screen.dart';
@@ -128,6 +129,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final playerService = context.read<AudioPlayerService>();
     final trackIndex = _rootTracks.indexOf(track);
     playerService.playPlaylist(_rootTracks, trackIndex);
+
+    // Navigate to player screen
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+    );
   }
 
   Future<void> _playFolder(Folder folder) async {
@@ -153,12 +159,13 @@ class _HomeScreenState extends State<HomeScreen> {
       if (tracks.isNotEmpty) {
         playerService.playPlaylist(tracks, 0);
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Playing ${tracks.length} tracks from ${folder.folderPath}'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+
+        // Navigate to player screen
+        if (mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PlayerScreen()),
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -177,6 +184,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
     final playerService = context.watch<AudioPlayerService>();
+    final horizontalPadding = Responsive.getHorizontalPadding(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -198,49 +206,56 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search folders...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          _handleSearch('');
-                        },
-                      )
-                    : null,
-                border: const OutlineInputBorder(),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: Responsive.getContentMaxWidth(context) ?? double.infinity,
+          ),
+          child: Column(
+            children: [
+              // Search bar
+              Padding(
+                padding: EdgeInsets.all(horizontalPadding),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search folders...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              _handleSearch('');
+                            },
+                          )
+                        : null,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: _handleSearch,
+                ),
               ),
-              onChanged: _handleSearch,
-            ),
-          ),
 
-          // User info
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Welcome, ${authService.currentUser?.username ?? "User"}',
-                style: Theme.of(context).textTheme.titleMedium,
+              // User info
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Welcome, ${authService.currentUser?.username ?? "User"}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-          // Content
-          Expanded(
-            child: _buildContent(),
+              // Content
+              Expanded(
+                child: _buildContent(),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
       floatingActionButton: playerService.currentTrack != null
           ? FloatingActionButton(
@@ -258,6 +273,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildContent() {
+    final horizontalPadding = Responsive.getHorizontalPadding(context);
+    final isDesktop = Responsive.isDesktopOrLarger(context);
+    final gridColumns = Responsive.getGridColumns(context);
+
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -288,11 +307,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return ListView(
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
       children: [
         // Root tracks section (songs not in any folder)
         if (_rootTracks.isNotEmpty) ...[
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
               children: [
                 const Icon(Icons.music_note, color: Colors.orange),
@@ -308,6 +328,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   onPressed: () {
                     final playerService = context.read<AudioPlayerService>();
                     playerService.playPlaylist(_rootTracks, 0);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                    );
                   },
                   icon: const Icon(Icons.play_arrow, size: 20),
                   label: const Text('Play All'),
@@ -322,7 +345,7 @@ class _HomeScreenState extends State<HomeScreen> {
         // Folders section
         if (_folders.isNotEmpty) ...[
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
               children: [
                 const Icon(Icons.folder, color: Colors.blue),
@@ -336,8 +359,24 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          ..._folders.map((folder) => _buildFolderTile(folder)),
+          // Use grid on desktop, list on mobile
+          if (isDesktop)
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: gridColumns,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                childAspectRatio: 1.2,
+              ),
+              itemCount: _folders.length,
+              itemBuilder: (context, index) => _buildFolderCard(_folders[index]),
+            )
+          else
+            ..._folders.map((folder) => _buildFolderTile(folder)),
         ],
+        const SizedBox(height: 16),
       ],
     );
   }
@@ -404,7 +443,58 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: () => _playFolder(folder),
         tooltip: 'Play all tracks in this folder',
       ),
-      onTap: () => _openFolder(folder),  // Navigate to folder instead of play
+      onTap: () => _openFolder(folder),
+    );
+  }
+
+  /// Card-style folder widget for grid layout on desktop
+  Widget _buildFolderCard(Folder folder) {
+    return Card(
+      elevation: 2,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openFolder(folder),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.folder, size: 64, color: Colors.blue),
+              const SizedBox(height: 12),
+              Text(
+                folder.folderPath,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${folder.trackCount} track(s)',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 12,
+                ),
+              ),
+              const Spacer(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.play_circle_fill, color: Colors.green),
+                    iconSize: 32,
+                    onPressed: () => _playFolder(folder),
+                    tooltip: 'Play all',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
