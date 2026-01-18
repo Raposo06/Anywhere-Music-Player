@@ -144,14 +144,12 @@ class WindowsMediaControlsService {
       );
 
       _isInitialized = true;
-
-      // Set initial playback status to Stopped to establish SMTC state
-      // This is required for Windows to route keyboard events properly
-      await _smtc!.setPlaybackStatus(PlaybackStatus.Stopped);
-      debugPrint('✅ Windows Media Controls initialized (status: Stopped)');
+      debugPrint('✅ Windows Media Controls initialized');
 
       // Initialize taskbar thumbnail buttons
       await _initializeTaskbarButtons();
+
+      debugPrint('✅ SMTC ready for keyboard input');
     } catch (e) {
       debugPrint('⚠️ Failed to initialize Windows Media Controls: $e');
     }
@@ -194,23 +192,25 @@ class WindowsMediaControlsService {
     if (!isSupported) return;
 
     try {
+      // Set taskbar buttons with empty callbacks to prevent interference with keyboard events
+      // All media control events will be routed through SMTC buttonPressStream instead
       await WindowsTaskbar.setThumbnailToolbar([
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon('assets/icons/prev.ico'),
           'Previous',
-          () => onPrevious?.call(),
+          () {}, // Empty callback - let SMTC handle it
         ),
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon(
             _isPlaying ? 'assets/icons/pause.ico' : 'assets/icons/play.ico'
           ),
           _isPlaying ? 'Pause' : 'Play',
-          () => _isPlaying ? onPause?.call() : onPlay?.call(),
+          () {}, // Empty callback - let SMTC handle it
         ),
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon('assets/icons/next.ico'),
           'Next',
-          () => onNext?.call(),
+          () {}, // Empty callback - let SMTC handle it
         ),
       ]);
     } catch (e) {
