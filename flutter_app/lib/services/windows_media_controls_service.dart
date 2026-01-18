@@ -58,7 +58,12 @@ class WindowsMediaControlsService {
     this.onPrevious = onPrevious;
     this.onStop = onStop;
 
-    debugPrint('🎹 Callbacks registered: play=${onPlay != null}, pause=${onPause != null}, next=${onNext != null}, previous=${onPrevious != null}, stop=${onStop != null}');
+    debugPrint('🎹 Callbacks registered:');
+    debugPrint('   Play: ${this.onPlay != null}');
+    debugPrint('   Pause: ${this.onPause != null}');
+    debugPrint('   Next: ${this.onNext != null}');
+    debugPrint('   Previous: ${this.onPrevious != null}');
+    debugPrint('   Stop: ${this.onStop != null}');
 
     try {
       _smtc = SMTCWindows(
@@ -79,29 +84,51 @@ class WindowsMediaControlsService {
       );
 
       // Listen for button presses with error handling
+      // Using instance variables (this.onPlay, etc.) instead of parameters to ensure
+      // callbacks are always current and not stale closures
       _buttonPressSubscription = _smtc!.buttonPressStream.listen(
         (event) {
           debugPrint('🎹 Windows keyboard button pressed: $event');
           switch (event) {
             case PressedButton.play:
-              debugPrint('▶️ Play button pressed');
-              onPlay?.call();
+              debugPrint('▶️ Play button pressed (callback: ${this.onPlay != null ? "available" : "NULL"})');
+              if (this.onPlay != null) {
+                this.onPlay!();
+              } else {
+                debugPrint('⚠️ Play callback is null!');
+              }
               break;
             case PressedButton.pause:
-              debugPrint('⏸️ Pause button pressed');
-              onPause?.call();
+              debugPrint('⏸️ Pause button pressed (callback: ${this.onPause != null ? "available" : "NULL"})');
+              if (this.onPause != null) {
+                this.onPause!();
+              } else {
+                debugPrint('⚠️ Pause callback is null!');
+              }
               break;
             case PressedButton.next:
-              debugPrint('⏭️ Next button pressed');
-              onNext?.call();
+              debugPrint('⏭️ Next button pressed (callback: ${this.onNext != null ? "available" : "NULL"})');
+              if (this.onNext != null) {
+                this.onNext!();
+              } else {
+                debugPrint('⚠️ Next callback is null!');
+              }
               break;
             case PressedButton.previous:
-              debugPrint('⏮️ Previous button pressed');
-              onPrevious?.call();
+              debugPrint('⏮️ Previous button pressed (callback: ${this.onPrevious != null ? "available" : "NULL"})');
+              if (this.onPrevious != null) {
+                this.onPrevious!();
+              } else {
+                debugPrint('⚠️ Previous callback is null!');
+              }
               break;
             case PressedButton.stop:
-              debugPrint('⏹️ Stop button pressed');
-              onStop?.call();
+              debugPrint('⏹️ Stop button pressed (callback: ${this.onStop != null ? "available" : "NULL"})');
+              if (this.onStop != null) {
+                this.onStop!();
+              } else {
+                debugPrint('⚠️ Stop callback is null!');
+              }
               break;
             default:
               debugPrint('⚠️ Unknown button pressed: $event');
@@ -222,6 +249,7 @@ class WindowsMediaControlsService {
   Future<void> updatePlaybackStatus({required bool isPlaying}) async {
     if (!isSupported) return;
 
+    final bool playStateChanged = _isPlaying != isPlaying;
     _isPlaying = isPlaying;
 
     // Update SMTC
@@ -235,8 +263,9 @@ class WindowsMediaControlsService {
       }
     }
 
-    // Update taskbar buttons to show play/pause correctly
-    if (_taskbarButtonsInitialized) {
+    // Only update taskbar buttons when play state actually changes
+    // to avoid interfering with SMTC keyboard controls
+    if (_taskbarButtonsInitialized && playStateChanged) {
       await _updateTaskbarButtons();
     }
   }
