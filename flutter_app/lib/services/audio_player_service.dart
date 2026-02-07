@@ -115,7 +115,7 @@ class AudioPlayerService with ChangeNotifier {
           androidNotificationOngoing: true,
           androidStopForegroundOnPause: true,
         ),
-      ) as MusicAudioHandler;
+      );
     } catch (e) {
       debugPrint('⚠️ Audio service not available: $e');
       // Audio service may not be available on web or in some environments

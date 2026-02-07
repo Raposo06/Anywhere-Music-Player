@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
-import 'package:audio_service/audio_service.dart';
 import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
-import 'services/audio_handler.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
 
@@ -26,20 +24,20 @@ class MyApp extends StatelessWidget {
     final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
 
     if (apiBaseUrl.isEmpty) {
-      return MaterialApp(
+      return const MaterialApp(
         home: Scaffold(
           body: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error, size: 64, color: Colors.red),
-                const SizedBox(height: 16),
-                const Text(
+                Icon(Icons.error, size: 64, color: Colors.red),
+                SizedBox(height: 16),
+                Text(
                   'Configuration Error',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 8),
-                const Padding(
+                SizedBox(height: 8),
+                Padding(
                   padding: EdgeInsets.symmetric(horizontal: 32),
                   child: Text(
                     'API_BASE_URL not found in .env file.\nPlease create a .env file with your API configuration.',
