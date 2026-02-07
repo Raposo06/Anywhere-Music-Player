@@ -5,7 +5,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
 import '../models/track.dart';
 import 'audio_handler.dart';
-import 'windows_media_controls_service.dart';
+// import 'windows_media_controls_service.dart';  // REMOVED: smtc_windows package removed
 import 'api_service.dart';
 
 enum RepeatMode { off, all, one }
@@ -14,7 +14,7 @@ class AudioPlayerService with ChangeNotifier {
   late final AudioPlayer _player;
   final ApiService _apiService;
   MusicAudioHandler? _audioHandler;
-  final WindowsMediaControlsService _windowsMediaControls = WindowsMediaControlsService.instance;
+  // final WindowsMediaControlsService _windowsMediaControls = WindowsMediaControlsService.instance;  // REMOVED
   Track? _currentTrack;
   List<Track> _playlist = [];
   List<Track> _originalPlaylist = [];
@@ -122,29 +122,9 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  /// Initialize Windows taskbar media controls (SMTC)
-  Future<void> _initializeWindowsMediaControls() async {
-    if (!_isWindows) return;
-
-    await _windowsMediaControls.initialize(
-      onPlay: () => _player.play(),
-      onPause: () => _player.pause(),
-      onNext: playNext,
-      onPrevious: playPrevious,
-      onStop: stop,
-    );
-  }
-
-  /// Update Windows media controls with current track info
-  void _updateWindowsMediaControls() {
-    if (!_isWindows || _currentTrack == null) return;
-
-    _windowsMediaControls.updateMetadata(_currentTrack!);
-    _windowsMediaControls.updateButtonStates(
-      canPrevious: _currentIndex > 0,
-      canNext: _currentIndex < _playlist.length - 1 || _repeatMode == RepeatMode.all,
-    );
-  }
+  // REMOVED: Windows media controls methods (smtc_windows package removed)
+  // _initializeWindowsMediaControls() - no longer needed
+  // _updateWindowsMediaControls() - no longer needed
 
   /// Handle playback errors with platform-specific messages
   void _handlePlaybackError(Object error) {
@@ -450,7 +430,7 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> stop() async {
     await _player.stop();
     _currentTrack = null;
-    _windowsMediaControls.clear();
+    // _windowsMediaControls.clear();  // REMOVED: SMTC disabled
     notifyListeners();
   }
 
