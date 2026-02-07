@@ -5,14 +5,16 @@ import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
 import '../models/track.dart';
 import 'audio_handler.dart';
-import 'windows_media_controls_service.dart';
+// import 'windows_media_controls_service.dart';  // REMOVED: smtc_windows package removed
+import 'api_service.dart';
 
 enum RepeatMode { off, all, one }
 
 class AudioPlayerService with ChangeNotifier {
   late final AudioPlayer _player;
+  final ApiService _apiService;
   MusicAudioHandler? _audioHandler;
-  final WindowsMediaControlsService _windowsMediaControls = WindowsMediaControlsService.instance;
+  // final WindowsMediaControlsService _windowsMediaControls = WindowsMediaControlsService.instance;  // REMOVED
   Track? _currentTrack;
   List<Track> _playlist = [];
   List<Track> _originalPlaylist = [];
@@ -44,19 +46,22 @@ class AudioPlayerService with ChangeNotifier {
   /// Check if we're running on Windows
   bool get _isWindows => !kIsWeb && Platform.isWindows;
 
-  AudioPlayerService() {
+  AudioPlayerService(this._apiService) {
     // Initialize audio player
     _player = AudioPlayer();
 
     // Initialize audio handler for system media controls
     _initializeAudioHandler();
 
-    // Initialize Windows taskbar media controls
-    _initializeWindowsMediaControls();
+    // DISABLED: Windows SMTC causes keyboard control issues
+    // Will re-enable after confirming just_audio_windows fix works
+    // _initializeWindowsMediaControls();
 
     // Listen to player state changes
     _player.playingStream.listen((playing) {
-      _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
+      debugPrint('🎵 Player state changed: ${playing ? "Playing" : "Paused/Stopped"}');
+      // DISABLED: updatePlaybackStatus call removed to prevent any SMTC interaction
+      // _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
       notifyListeners();
     });
 
@@ -117,29 +122,9 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  /// Initialize Windows taskbar media controls (SMTC)
-  Future<void> _initializeWindowsMediaControls() async {
-    if (!_isWindows) return;
-
-    await _windowsMediaControls.initialize(
-      onPlay: () => _player.play(),
-      onPause: () => _player.pause(),
-      onNext: playNext,
-      onPrevious: playPrevious,
-      onStop: stop,
-    );
-  }
-
-  /// Update Windows media controls with current track info
-  void _updateWindowsMediaControls() {
-    if (!_isWindows || _currentTrack == null) return;
-
-    _windowsMediaControls.updateMetadata(_currentTrack!);
-    _windowsMediaControls.updateButtonStates(
-      canPrevious: _currentIndex > 0,
-      canNext: _currentIndex < _playlist.length - 1 || _repeatMode == RepeatMode.all,
-    );
-  }
+  // REMOVED: Windows media controls methods (smtc_windows package removed)
+  // _initializeWindowsMediaControls() - no longer needed
+  // _updateWindowsMediaControls() - no longer needed
 
   /// Handle playback errors with platform-specific messages
   void _handlePlaybackError(Object error) {
@@ -177,18 +162,33 @@ class AudioPlayerService with ChangeNotifier {
       _currentIndex = 0;
       notifyListeners();
 
-      // Stop and clear previous track
-      await _player.stop();
-
       debugPrint('🎵 Playing: ${track.title}');
       debugPrint('📡 Stream URL: ${track.streamUrl}');
 
-      await _player.setUrl(track.streamUrl);
+      // Create AudioSource with authentication headers
+      // This fixes the auto-pause issue caused by 401/403 errors
+      final source = AudioSource.uri(
+        Uri.parse(track.streamUrl),
+        headers: _apiService.getHeaders(authenticated: true),
+        tag: MediaItem(
+          id: track.id,
+          title: track.title,
+          artist: track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist',
+          duration: track.durationSeconds != null
+              ? Duration(seconds: track.durationSeconds!)
+              : null,
+          artUri: track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
+        ),
+      );
+
+      // Use setAudioSource instead of setUrl for proper state management
+      await _player.setAudioSource(source);
       await _player.play();
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(track);
-      _updateWindowsMediaControls();
+      // DISABLED: Windows media controls still have keyboard issues
+      // _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
@@ -226,19 +226,33 @@ class AudioPlayerService with ChangeNotifier {
       _currentTrack = _playlist[_currentIndex];
       notifyListeners();
 
-      // Stop and clear previous track
-      await _player.stop();
-
       // Debug: Print the stream URL being attempted
       debugPrint('🎵 Playing: ${_currentTrack!.title}');
       debugPrint('📡 Stream URL: ${_playlist[_currentIndex].streamUrl}');
 
-      await _player.setUrl(_playlist[_currentIndex].streamUrl);
+      // Create AudioSource with authentication headers
+      final source = AudioSource.uri(
+        Uri.parse(_playlist[_currentIndex].streamUrl),
+        headers: _apiService.getHeaders(authenticated: true),
+        tag: MediaItem(
+          id: _currentTrack!.id,
+          title: _currentTrack!.title,
+          artist: _currentTrack!.folderPath.isNotEmpty ? _currentTrack!.folderPath : 'Unknown Artist',
+          duration: _currentTrack!.durationSeconds != null
+              ? Duration(seconds: _currentTrack!.durationSeconds!)
+              : null,
+          artUri: _currentTrack!.coverArtUrl != null ? Uri.parse(_currentTrack!.coverArtUrl!) : null,
+        ),
+      );
+
+      // Use setAudioSource for proper state management
+      await _player.setAudioSource(source);
       await _player.play();
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
-      _updateWindowsMediaControls();
+      // DISABLED: Windows media controls still have keyboard issues
+      // _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
@@ -285,18 +299,29 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('🎵 Next: ${_currentTrack!.title}');
       debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
 
-      // Stop previous track
-      await _player.stop();
+      // Create AudioSource with authentication headers
+      final source = AudioSource.uri(
+        Uri.parse(_currentTrack!.streamUrl),
+        headers: _apiService.getHeaders(authenticated: true),
+        tag: MediaItem(
+          id: _currentTrack!.id,
+          title: _currentTrack!.title,
+          artist: _currentTrack!.folderPath.isNotEmpty ? _currentTrack!.folderPath : 'Unknown Artist',
+          duration: _currentTrack!.durationSeconds != null
+              ? Duration(seconds: _currentTrack!.durationSeconds!)
+              : null,
+          artUri: _currentTrack!.coverArtUrl != null ? Uri.parse(_currentTrack!.coverArtUrl!) : null,
+        ),
+      );
 
-      // Set new URL and play - await both to ensure proper sequencing
-      await _player.setUrl(_currentTrack!.streamUrl);
-
-      // Explicitly call play and wait for it to start
+      // Use setAudioSource for proper state management
+      await _player.setAudioSource(source);
       await _player.play();
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
-      _updateWindowsMediaControls();
+      // DISABLED: Windows media controls still have keyboard issues
+      // _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
@@ -332,18 +357,29 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('🎵 Previous: ${_currentTrack!.title}');
       debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
 
-      // Stop previous track
-      await _player.stop();
+      // Create AudioSource with authentication headers
+      final source = AudioSource.uri(
+        Uri.parse(_currentTrack!.streamUrl),
+        headers: _apiService.getHeaders(authenticated: true),
+        tag: MediaItem(
+          id: _currentTrack!.id,
+          title: _currentTrack!.title,
+          artist: _currentTrack!.folderPath.isNotEmpty ? _currentTrack!.folderPath : 'Unknown Artist',
+          duration: _currentTrack!.durationSeconds != null
+              ? Duration(seconds: _currentTrack!.durationSeconds!)
+              : null,
+          artUri: _currentTrack!.coverArtUrl != null ? Uri.parse(_currentTrack!.coverArtUrl!) : null,
+        ),
+      );
 
-      // Set new URL and play - await both to ensure proper sequencing
-      await _player.setUrl(_currentTrack!.streamUrl);
-
-      // Explicitly call play and wait for it to start
+      // Use setAudioSource for proper state management
+      await _player.setAudioSource(source);
       await _player.play();
 
       // Update system media controls with track info
       _audioHandler?.updateTrackInfo(_currentTrack!);
-      _updateWindowsMediaControls();
+      // DISABLED: Windows media controls still have keyboard issues
+      // _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
@@ -394,7 +430,7 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> stop() async {
     await _player.stop();
     _currentTrack = null;
-    _windowsMediaControls.clear();
+    // _windowsMediaControls.clear();  // REMOVED: SMTC disabled
     notifyListeners();
   }
 
@@ -478,7 +514,8 @@ class AudioPlayerService with ChangeNotifier {
   @override
   void dispose() {
     _player.dispose();
-    _windowsMediaControls.dispose();
+    // DISABLED: Windows media controls not initialized
+    // _windowsMediaControls.dispose();
     super.dispose();
   }
 }

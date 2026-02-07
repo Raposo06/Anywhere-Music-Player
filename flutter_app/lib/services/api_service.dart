@@ -29,7 +29,7 @@ class ApiService {
     _authToken = null;
   }
 
-  Map<String, String> _getHeaders({bool authenticated = false}) {
+  Map<String, String> getHeaders({bool authenticated = false}) {
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -48,7 +48,7 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/auth/signup'),
-        headers: _getHeaders(),
+        headers: getHeaders(),
         body: jsonEncode({
           'email': email,
           'username': username,
@@ -77,7 +77,7 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/auth/login'),
-        headers: _getHeaders(),
+        headers: getHeaders(),
         body: jsonEncode({
           'email': email,
           'password': password,
@@ -128,7 +128,7 @@ class ApiService {
 
       final response = await http.get(
         uri,
-        headers: _getHeaders(authenticated: true),
+        headers: getHeaders(authenticated: true),
       );
 
       if (response.statusCode == 200) {
@@ -151,7 +151,7 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/tracks/root-tracks'),
-        headers: _getHeaders(authenticated: true),
+        headers: getHeaders(authenticated: true),
       );
 
       if (response.statusCode == 200) {
@@ -183,7 +183,7 @@ class ApiService {
 
       final response = await http.get(
         uri,
-        headers: _getHeaders(authenticated: true),
+        headers: getHeaders(authenticated: true),
       );
 
       if (response.statusCode == 200) {
@@ -209,7 +209,7 @@ class ApiService {
 
       final response = await http.get(
         uri,
-        headers: _getHeaders(authenticated: true),
+        headers: getHeaders(authenticated: true),
       );
 
       if (response.statusCode == 200) {
@@ -236,7 +236,7 @@ class ApiService {
 
       final response = await http.get(
         uri,
-        headers: _getHeaders(authenticated: true),
+        headers: getHeaders(authenticated: true),
       );
 
       if (response.statusCode == 200) {

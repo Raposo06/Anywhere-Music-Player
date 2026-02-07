@@ -11,6 +11,7 @@ import '../models/track.dart';
 class WindowsMediaControlsService {
   static WindowsMediaControlsService? _instance;
   SMTCWindows? _smtc;
+  StreamSubscription<PressedButton>? _buttonPressSubscription;
   bool _isInitialized = false;
   bool _taskbarButtonsInitialized = false;
   bool _isPlaying = false;
@@ -40,13 +41,29 @@ class WindowsMediaControlsService {
     VoidCallback? onPrevious,
     VoidCallback? onStop,
   }) async {
-    if (!isSupported || _isInitialized) return;
+    if (!isSupported) {
+      debugPrint('⚠️ Windows Media Controls not supported on this platform');
+      return;
+    }
 
+    if (_isInitialized) {
+      debugPrint('⚠️ Windows Media Controls already initialized');
+      return;
+    }
+
+    debugPrint('🎹 Initializing Windows Media Controls...');
     this.onPlay = onPlay;
     this.onPause = onPause;
     this.onNext = onNext;
     this.onPrevious = onPrevious;
     this.onStop = onStop;
+
+    debugPrint('🎹 Callbacks registered:');
+    debugPrint('   Play: ${this.onPlay != null}');
+    debugPrint('   Pause: ${this.onPause != null}');
+    debugPrint('   Next: ${this.onNext != null}');
+    debugPrint('   Previous: ${this.onPrevious != null}');
+    debugPrint('   Stop: ${this.onStop != null}');
 
     try {
       _smtc = SMTCWindows(
@@ -66,34 +83,74 @@ class WindowsMediaControlsService {
         ),
       );
 
-      // Listen for button presses
-      _smtc!.buttonPressStream.listen((event) {
-        switch (event) {
-          case PressedButton.play:
-            onPlay?.call();
-            break;
-          case PressedButton.pause:
-            onPause?.call();
-            break;
-          case PressedButton.next:
-            onNext?.call();
-            break;
-          case PressedButton.previous:
-            onPrevious?.call();
-            break;
-          case PressedButton.stop:
-            onStop?.call();
-            break;
-          default:
-            break;
-        }
-      });
+      // Listen for button presses with error handling
+      // Using instance variables (this.onPlay, etc.) instead of parameters to ensure
+      // callbacks are always current and not stale closures
+      _buttonPressSubscription = _smtc!.buttonPressStream.listen(
+        (event) {
+          debugPrint('🎹 Windows keyboard button pressed: $event');
+          switch (event) {
+            case PressedButton.play:
+              debugPrint('▶️ Play button pressed (callback: ${this.onPlay != null ? "available" : "NULL"})');
+              if (this.onPlay != null) {
+                this.onPlay!();
+              } else {
+                debugPrint('⚠️ Play callback is null!');
+              }
+              break;
+            case PressedButton.pause:
+              debugPrint('⏸️ Pause button pressed (callback: ${this.onPause != null ? "available" : "NULL"})');
+              if (this.onPause != null) {
+                this.onPause!();
+              } else {
+                debugPrint('⚠️ Pause callback is null!');
+              }
+              break;
+            case PressedButton.next:
+              debugPrint('⏭️ Next button pressed (callback: ${this.onNext != null ? "available" : "NULL"})');
+              if (this.onNext != null) {
+                this.onNext!();
+              } else {
+                debugPrint('⚠️ Next callback is null!');
+              }
+              break;
+            case PressedButton.previous:
+              debugPrint('⏮️ Previous button pressed (callback: ${this.onPrevious != null ? "available" : "NULL"})');
+              if (this.onPrevious != null) {
+                this.onPrevious!();
+              } else {
+                debugPrint('⚠️ Previous callback is null!');
+              }
+              break;
+            case PressedButton.stop:
+              debugPrint('⏹️ Stop button pressed (callback: ${this.onStop != null ? "available" : "NULL"})');
+              if (this.onStop != null) {
+                this.onStop!();
+              } else {
+                debugPrint('⚠️ Stop callback is null!');
+              }
+              break;
+            default:
+              debugPrint('⚠️ Unknown button pressed: $event');
+              break;
+          }
+        },
+        onError: (error) {
+          debugPrint('🔴 Error in button press stream: $error');
+          // Try to reinitialize if the stream fails
+          _handleStreamError();
+        },
+        cancelOnError: false, // Keep listening even if there's an error
+      );
 
       _isInitialized = true;
       debugPrint('✅ Windows Media Controls initialized');
 
-      // Initialize taskbar thumbnail buttons
-      await _initializeTaskbarButtons();
+      // DISABLED: Taskbar thumbnail buttons initialization also causes auto-pause
+      // WindowsTaskbar.setThumbnailToolbar() appears to send pause event on initialization
+      // await _initializeTaskbarButtons();
+
+      debugPrint('✅ SMTC ready for keyboard input (taskbar buttons disabled)');
     } catch (e) {
       debugPrint('⚠️ Failed to initialize Windows Media Controls: $e');
     }
@@ -136,23 +193,25 @@ class WindowsMediaControlsService {
     if (!isSupported) return;
 
     try {
+      // Set taskbar buttons with empty callbacks to prevent interference with keyboard events
+      // All media control events will be routed through SMTC buttonPressStream instead
       await WindowsTaskbar.setThumbnailToolbar([
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon('assets/icons/prev.ico'),
           'Previous',
-          () => onPrevious?.call(),
+          () {}, // Empty callback - let SMTC handle it
         ),
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon(
             _isPlaying ? 'assets/icons/pause.ico' : 'assets/icons/play.ico'
           ),
           _isPlaying ? 'Pause' : 'Play',
-          () => _isPlaying ? onPause?.call() : onPlay?.call(),
+          () {}, // Empty callback - let SMTC handle it
         ),
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon('assets/icons/next.ico'),
           'Next',
-          () => onNext?.call(),
+          () {}, // Empty callback - let SMTC handle it
         ),
       ]);
     } catch (e) {
@@ -164,54 +223,64 @@ class WindowsMediaControlsService {
   Future<void> updateMetadata(Track track) async {
     if (!isSupported || !_isInitialized || _smtc == null) return;
 
-    try {
-      // smtc_windows crashes with empty strings, so provide defaults
-      final title = track.title.isNotEmpty ? track.title : 'Unknown Track';
-      final artist = track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist';
-      final thumbnail = track.coverArtUrl;
+    // DISABLED: updateMetadata() also disrupts keyboard controls
+    // Calling _smtc!.updateMetadata() appears to reset/interfere with buttonPressStream
+    // Static metadata from initialization is acceptable for consistent keyboard controls
+    debugPrint('⚠️ updateMetadata called but disabled to prevent keyboard interference: ${track.title}');
+    return;
 
-      // Only include thumbnail if it's a valid non-empty URL
-      if (thumbnail != null && thumbnail.isNotEmpty) {
-        await _smtc!.updateMetadata(MusicMetadata(
-          title: title,
-          artist: artist,
-          album: artist,
-          thumbnail: thumbnail,
-        ));
-      } else {
-        await _smtc!.updateMetadata(MusicMetadata(
-          title: title,
-          artist: artist,
-          album: artist,
-        ));
-      }
-      debugPrint('📻 Updated SMTC metadata: $title');
-    } catch (e) {
-      debugPrint('⚠️ Failed to update SMTC metadata: $e');
-    }
+    // try {
+    //   // smtc_windows crashes with empty strings, so provide defaults
+    //   final title = track.title.isNotEmpty ? track.title : 'Unknown Track';
+    //   final artist = track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist';
+    //   final thumbnail = track.coverArtUrl;
+
+    //   // Only include thumbnail if it's a valid non-empty URL
+    //   if (thumbnail != null && thumbnail.isNotEmpty) {
+    //     await _smtc!.updateMetadata(MusicMetadata(
+    //       title: title,
+    //       artist: artist,
+    //       album: artist,
+    //       thumbnail: thumbnail,
+    //     ));
+    //   } else {
+    //     await _smtc!.updateMetadata(MusicMetadata(
+    //       title: title,
+    //       artist: artist,
+    //       album: artist,
+    //     ));
+    //   }
+    //   debugPrint('📻 Updated SMTC metadata: $title');
+    // } catch (e) {
+    //   debugPrint('⚠️ Failed to update SMTC metadata: $e');
+    // }
   }
 
   /// Update playback status
   Future<void> updatePlaybackStatus({required bool isPlaying}) async {
     if (!isSupported) return;
 
+    final bool playStateChanged = _isPlaying != isPlaying;
     _isPlaying = isPlaying;
 
-    // Update SMTC
-    if (_isInitialized && _smtc != null) {
-      try {
-        await _smtc!.setPlaybackStatus(
-          isPlaying ? PlaybackStatus.Playing : PlaybackStatus.Paused,
-        );
-      } catch (e) {
-        debugPrint('⚠️ Failed to update SMTC playback status: $e');
-      }
-    }
+    debugPrint('🎵 Player playback status: ${isPlaying ? "Playing" : "Paused"} (state changed: $playStateChanged)');
 
-    // Update taskbar buttons to show play/pause correctly
-    if (_taskbarButtonsInitialized) {
-      await _updateTaskbarButtons();
-    }
+    // DISABLED: setPlaybackStatus() ALSO disrupts keyboard controls AND causes immediate pause
+    // Calling _smtc!.setPlaybackStatus() creates a feedback loop:
+    // 1. Player plays -> stream fires -> setPlaybackStatus(Playing)
+    // 2. Windows/SMTC sends pause event back through buttonPressStream
+    // 3. Player immediately pauses
+    // Static playback status from initialization is acceptable for keyboard controls
+
+    // if (_isInitialized && _smtc != null) {
+    //   try {
+    //     await _smtc!.setPlaybackStatus(
+    //       isPlaying ? PlaybackStatus.Playing : PlaybackStatus.Paused,
+    //     );
+    //   } catch (e) {
+    //     debugPrint('⚠️ Failed to update SMTC playback status: $e');
+    //   }
+    // }
   }
 
   /// Enable/disable previous button based on playlist position
@@ -221,19 +290,24 @@ class WindowsMediaControlsService {
   }) async {
     if (!isSupported || !_isInitialized || _smtc == null) return;
 
-    try {
-      await _smtc!.updateConfig(SMTCConfig(
-        fastForwardEnabled: false,
-        rewindEnabled: false,
-        prevEnabled: canPrevious,
-        nextEnabled: canNext,
-        pauseEnabled: true,
-        playEnabled: true,
-        stopEnabled: true,
-      ));
-    } catch (e) {
-      debugPrint('⚠️ Failed to update SMTC button states: $e');
-    }
+    // DISABLED: updateConfig() disrupts the buttonPressStream keyboard event routing
+    // Calling updateConfig seems to reset or interfere with the keyboard event listener
+    // Keeping all buttons enabled at all times is acceptable for consistent keyboard controls
+    debugPrint('⚠️ updateButtonStates called but disabled to prevent keyboard interference (canPrev: $canPrevious, canNext: $canNext)');
+
+    // try {
+    //   await _smtc!.updateConfig(SMTCConfig(
+    //     fastForwardEnabled: false,
+    //     rewindEnabled: false,
+    //     prevEnabled: canPrevious,
+    //     nextEnabled: canNext,
+    //     pauseEnabled: true,
+    //     playEnabled: true,
+    //     stopEnabled: true,
+    //   ));
+    // } catch (e) {
+    //   debugPrint('⚠️ Failed to update SMTC button states: $e');
+    // }
   }
 
   /// Clear metadata and disable controls
@@ -248,12 +322,39 @@ class WindowsMediaControlsService {
     }
   }
 
+  /// Handle stream errors by attempting to recover
+  Future<void> _handleStreamError() async {
+    debugPrint('🔄 Attempting to recover from button press stream error...');
+
+    // Cancel existing subscription
+    await _buttonPressSubscription?.cancel();
+    _buttonPressSubscription = null;
+
+    // Mark as not initialized to allow re-initialization
+    _isInitialized = false;
+
+    // Try to reinitialize after a short delay
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    await initialize(
+      onPlay: onPlay,
+      onPause: onPause,
+      onNext: onNext,
+      onPrevious: onPrevious,
+      onStop: onStop,
+    );
+  }
+
   /// Dispose the service
   Future<void> dispose() async {
+    await _buttonPressSubscription?.cancel();
+    _buttonPressSubscription = null;
+
     if (_smtc != null) {
       await _smtc!.dispose();
       _smtc = null;
     }
     _isInitialized = false;
+    _taskbarButtonsInitialized = false;
   }
 }

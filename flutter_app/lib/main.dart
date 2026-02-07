@@ -67,9 +67,11 @@ class MyApp extends StatelessWidget {
           ),
         ),
 
-        // Audio Player Service
-        ChangeNotifierProvider<AudioPlayerService>(
-          create: (_) => AudioPlayerService(),
+        // Audio Player Service (depends on ApiService for auth headers)
+        ChangeNotifierProxyProvider<ApiService, AudioPlayerService>(
+          create: (context) => AudioPlayerService(context.read<ApiService>()),
+          update: (context, apiService, previous) =>
+              previous ?? AudioPlayerService(apiService),
         ),
       ],
       child: MaterialApp(

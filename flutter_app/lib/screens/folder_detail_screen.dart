@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/track.dart';
-import '../models/folder.dart';
 import '../services/api_service.dart';
 import '../services/audio_player_service.dart';
+import '../utils/responsive.dart';
 import 'player_screen.dart';
 
 class FolderDetailScreen extends StatefulWidget {
@@ -60,12 +60,22 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     final playerService = context.read<AudioPlayerService>();
     final trackIndex = _tracks.indexOf(track);
     playerService.playPlaylist(_tracks, trackIndex);
+
+    // Navigate to player screen
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+    );
   }
 
   void _playAll() {
     if (_tracks.isEmpty) return;
     final playerService = context.read<AudioPlayerService>();
     playerService.playPlaylist(_tracks, 0);
+
+    // Navigate to player screen
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+    );
   }
 
   void _shufflePlay() {
@@ -76,6 +86,11 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
       playerService.toggleShuffle();
     }
     playerService.playPlaylist(_tracks, 0);
+
+    // Navigate to player screen
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+    );
   }
 
   @override
@@ -97,7 +112,14 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
             ),
         ],
       ),
-      body: _buildBody(),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: Responsive.getContentMaxWidth(context) ?? double.infinity,
+          ),
+          child: _buildBody(),
+        ),
+      ),
       floatingActionButton: playerService.currentTrack != null
           ? FloatingActionButton(
               onPressed: () {
@@ -114,6 +136,8 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   }
 
   Widget _buildBody() {
+    final horizontalPadding = Responsive.getHorizontalPadding(context);
+
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -142,7 +166,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
       children: [
         // Header with play buttons
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(horizontalPadding),
           child: Row(
             children: [
               Expanded(
@@ -172,6 +196,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
         // Track list
         Expanded(
           child: ListView.builder(
+            padding: EdgeInsets.symmetric(horizontal: horizontalPadding - 16),
             itemCount: _tracks.length,
             itemBuilder: (context, index) {
               final track = _tracks[index];
