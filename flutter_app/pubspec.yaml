@@ -21,7 +21,7 @@ dependencies:
 
   # Audio Player
   just_audio: ^0.9.40
-  # just_audio_windows: ^0.2.1  # REMOVED: Also has native Rust code that fails with spaces in username
+  just_audio_windows: ^0.2.1  # Required for Windows audio playback
   audio_service: ^0.18.12
   # smtc_windows: ^0.1.3  # REMOVED: Build fails with spaces in username + functionality disabled anyway
   # windows_taskbar: ^1.1.2  # REMOVED: Causes issues + functionality disabled anyway
