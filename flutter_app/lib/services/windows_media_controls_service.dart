@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:smtc_windows/smtc_windows.dart';
-import 'package:windows_taskbar/windows_taskbar.dart';
+// import 'package:smtc_windows/smtc_windows.dart';  // REMOVED: Package removed from pubspec.yaml
+// import 'package:windows_taskbar/windows_taskbar.dart';  // REMOVED: Package removed from pubspec.yaml
 import '../models/track.dart';
 
 /// Service to handle Windows System Media Transport Controls
