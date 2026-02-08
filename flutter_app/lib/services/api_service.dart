@@ -134,14 +134,27 @@ class ApiService {
         headers: getHeaders(authenticated: true),
       );
 
+      debugPrint('📡 Response status: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
         return data.map((json) => Track.fromJson(json)).toList();
       } else {
-        throw ApiException(
-          'Failed to fetch tracks',
-          response.statusCode,
-        );
+        debugPrint('❌ Failed to fetch tracks. Status: ${response.statusCode}');
+        debugPrint('❌ Response body: ${response.body}');
+
+        String errorMessage = 'Failed to fetch tracks (${response.statusCode})';
+        try {
+          final error = jsonDecode(response.body);
+          errorMessage = error['detail'] ?? errorMessage;
+        } catch (_) {
+          // Response body is not JSON, use the raw body
+          if (response.body.isNotEmpty) {
+            errorMessage = response.body;
+          }
+        }
+
+        throw ApiException(errorMessage, response.statusCode);
       }
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -152,19 +165,35 @@ class ApiService {
   /// Fetch root-level tracks (not in any folder)
   Future<List<Track>> getRootTracks() async {
     try {
+      final uri = Uri.parse('$baseUrl/tracks/root-tracks');
+      debugPrint('🌐 API Request: $uri');
+
       final response = await http.get(
-        Uri.parse('$baseUrl/tracks/root-tracks'),
+        uri,
         headers: getHeaders(authenticated: true),
       );
+
+      debugPrint('📡 Response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
         return data.map((json) => Track.fromJson(json)).toList();
       } else {
-        throw ApiException(
-          'Failed to fetch root tracks',
-          response.statusCode,
-        );
+        debugPrint('❌ Failed to fetch root tracks. Status: ${response.statusCode}');
+        debugPrint('❌ Response body: ${response.body}');
+
+        String errorMessage = 'Failed to fetch root tracks (${response.statusCode})';
+        try {
+          final error = jsonDecode(response.body);
+          errorMessage = error['detail'] ?? errorMessage;
+        } catch (_) {
+          // Response body is not JSON, use the raw body
+          if (response.body.isNotEmpty) {
+            errorMessage = response.body;
+          }
+        }
+
+        throw ApiException(errorMessage, response.statusCode);
       }
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -184,19 +213,34 @@ class ApiService {
         uri = uri.replace(queryParameters: {'parent_path': parentPath});
       }
 
+      debugPrint('🌐 API Request: $uri');
+
       final response = await http.get(
         uri,
         headers: getHeaders(authenticated: true),
       );
 
+      debugPrint('📡 Response status: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
         return data.map((json) => Folder.fromJson(json)).toList();
       } else {
-        throw ApiException(
-          'Failed to fetch folders',
-          response.statusCode,
-        );
+        debugPrint('❌ Failed to fetch folders. Status: ${response.statusCode}');
+        debugPrint('❌ Response body: ${response.body}');
+
+        String errorMessage = 'Failed to fetch folders (${response.statusCode})';
+        try {
+          final error = jsonDecode(response.body);
+          errorMessage = error['detail'] ?? errorMessage;
+        } catch (_) {
+          // Response body is not JSON, use the raw body
+          if (response.body.isNotEmpty) {
+            errorMessage = response.body;
+          }
+        }
+
+        throw ApiException(errorMessage, response.statusCode);
       }
     } catch (e) {
       if (e is ApiException) rethrow;
