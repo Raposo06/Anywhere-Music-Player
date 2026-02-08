@@ -37,6 +37,9 @@ class ApiService {
 
     if (authenticated && _authToken != null) {
       headers['Authorization'] = 'Bearer $_authToken';
+      debugPrint('🔑 Using auth token: ${_authToken!.substring(0, 20)}...');
+    } else if (authenticated && _authToken == null) {
+      debugPrint('⚠️ AUTH REQUIRED but token is NULL!');
     }
 
     return headers;
