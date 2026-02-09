@@ -29,6 +29,9 @@ class ApiService {
     _authToken = null;
   }
 
+  /// Get the current auth token (for use in audio stream URLs with query parameters)
+  String? get token => _authToken;
+
   Map<String, String> getHeaders({bool authenticated = false}) {
     final headers = {
       'Content-Type': 'application/json',

@@ -165,11 +165,18 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('🎵 Playing: ${track.title}');
       debugPrint('📡 Stream URL: ${track.streamUrl}');
 
-      // Create AudioSource with authentication headers
-      // This fixes the auto-pause issue caused by 401/403 errors
+      // Add auth token as query parameter (avoids just_audio_windows threading bug with headers)
+      final token = _apiService.token;
+      final uri = Uri.parse(track.streamUrl);
+      final authenticatedUrl = uri.replace(
+        queryParameters: {...uri.queryParameters, 'token': token},
+      ).toString();
+
+      debugPrint('🔑 Authenticated URL: ${authenticatedUrl.substring(0, 50)}...');
+
+      // Create AudioSource WITHOUT custom headers (just_audio_windows crashes with headers)
       final source = AudioSource.uri(
-        Uri.parse(track.streamUrl),
-        headers: _apiService.getHeaders(authenticated: true),
+        Uri.parse(authenticatedUrl),
         tag: MediaItem(
           id: track.id,
           title: track.title,
@@ -230,10 +237,16 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('🎵 Playing: ${_currentTrack!.title}');
       debugPrint('📡 Stream URL: ${_playlist[_currentIndex].streamUrl}');
 
-      // Create AudioSource with authentication headers
+      // Add auth token as query parameter
+      final token = _apiService.token;
+      final uri = Uri.parse(_playlist[_currentIndex].streamUrl);
+      final authenticatedUrl = uri.replace(
+        queryParameters: {...uri.queryParameters, 'token': token},
+      ).toString();
+
+      // Create AudioSource WITHOUT custom headers
       final source = AudioSource.uri(
-        Uri.parse(_playlist[_currentIndex].streamUrl),
-        headers: _apiService.getHeaders(authenticated: true),
+        Uri.parse(authenticatedUrl),
         tag: MediaItem(
           id: _currentTrack!.id,
           title: _currentTrack!.title,
@@ -299,10 +312,16 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('🎵 Next: ${_currentTrack!.title}');
       debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
 
-      // Create AudioSource with authentication headers
+      // Add auth token as query parameter
+      final token = _apiService.token;
+      final uri = Uri.parse(_currentTrack!.streamUrl);
+      final authenticatedUrl = uri.replace(
+        queryParameters: {...uri.queryParameters, 'token': token},
+      ).toString();
+
+      // Create AudioSource WITHOUT custom headers
       final source = AudioSource.uri(
-        Uri.parse(_currentTrack!.streamUrl),
-        headers: _apiService.getHeaders(authenticated: true),
+        Uri.parse(authenticatedUrl),
         tag: MediaItem(
           id: _currentTrack!.id,
           title: _currentTrack!.title,
@@ -357,10 +376,16 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('🎵 Previous: ${_currentTrack!.title}');
       debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
 
-      // Create AudioSource with authentication headers
+      // Add auth token as query parameter
+      final token = _apiService.token;
+      final uri = Uri.parse(_currentTrack!.streamUrl);
+      final authenticatedUrl = uri.replace(
+        queryParameters: {...uri.queryParameters, 'token': token},
+      ).toString();
+
+      // Create AudioSource WITHOUT custom headers
       final source = AudioSource.uri(
-        Uri.parse(_currentTrack!.streamUrl),
-        headers: _apiService.getHeaders(authenticated: true),
+        Uri.parse(authenticatedUrl),
         tag: MediaItem(
           id: _currentTrack!.id,
           title: _currentTrack!.title,

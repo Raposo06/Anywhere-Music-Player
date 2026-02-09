@@ -304,20 +304,32 @@ def _get_content_type(filename: str) -> str:
 
 
 @router.head("/{track_id}/stream")
-def stream_track_head(track_id: str):
+def stream_track_head(track_id: str, token: str = Query(..., description="JWT authentication token")):
     """
     HEAD request for audio stream - returns metadata without body.
 
     This is used by audio players to get file size and content type
     before starting to stream. Critical for Windows Media Foundation.
+    Requires authentication via token query parameter.
 
     Args:
         track_id: Track UUID
+        token: JWT authentication token (required)
 
     Returns:
         Response with headers only (no body)
+
+    Raises:
+        HTTPException 401: If token is invalid or missing
     """
     from fastapi.responses import Response
+    from auth import verify_token
+
+    # Verify authentication token
+    try:
+        user = verify_token(token)
+    except HTTPException:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     # Get track from database
     query = """
@@ -348,25 +360,34 @@ def stream_track_head(track_id: str):
 
 
 @router.get("/{track_id}/stream")
-def stream_track(track_id: str, request: Request):
+def stream_track(track_id: str, request: Request, token: str = Query(..., description="JWT authentication token")):
     """
     Stream audio file for a track.
 
     This endpoint proxies the audio file from MinIO storage, solving CORS issues.
     Supports HTTP Range requests for seeking.
-    Public endpoint - no authentication required since MinIO bucket is public.
+    Requires authentication via token query parameter (avoids just_audio_windows header bug).
 
     Args:
         track_id: Track UUID
         request: FastAPI Request object for Range header
+        token: JWT authentication token (required)
 
     Returns:
         Streaming audio file
 
     Raises:
+        HTTPException 401: If token is invalid or missing
         HTTPException 404: If track not found
         HTTPException 500: If streaming fails
     """
+    # Verify authentication token
+    from auth import verify_token
+    try:
+        user = verify_token(token)
+    except HTTPException:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
     # Get track from database (include file_size_bytes for Content-Length)
     query = """
         SELECT stream_url, filename, file_size_bytes
