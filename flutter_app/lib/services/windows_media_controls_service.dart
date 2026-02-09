@@ -191,25 +191,42 @@ class WindowsMediaControlsService {
     if (!isSupported) return;
 
     try {
-      // Set taskbar buttons with empty callbacks to prevent interference with keyboard events
-      // All media control events will be routed through SMTC buttonPressStream instead
+      // Set taskbar buttons with actual callbacks
+      // Note: Taskbar button clicks are separate from keyboard events (SMTC buttonPressStream)
       await WindowsTaskbar.setThumbnailToolbar([
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon('assets/icons/prev.ico'),
           'Previous',
-          () {}, // Empty callback - let SMTC handle it
+          () {
+            debugPrint('🖱️ Taskbar: Previous clicked');
+            if (onPrevious != null) {
+              onPrevious!();
+            }
+          },
         ),
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon(
             _isPlaying ? 'assets/icons/pause.ico' : 'assets/icons/play.ico'
           ),
           _isPlaying ? 'Pause' : 'Play',
-          () {}, // Empty callback - let SMTC handle it
+          () {
+            debugPrint('🖱️ Taskbar: ${_isPlaying ? "Pause" : "Play"} clicked');
+            if (_isPlaying && onPause != null) {
+              onPause!();
+            } else if (!_isPlaying && onPlay != null) {
+              onPlay!();
+            }
+          },
         ),
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon('assets/icons/next.ico'),
           'Next',
-          () {}, // Empty callback - let SMTC handle it
+          () {
+            debugPrint('🖱️ Taskbar: Next clicked');
+            if (onNext != null) {
+              onNext!();
+            }
+          },
         ),
       ]);
     } catch (e) {

@@ -6,6 +6,8 @@ import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
+import 'screens/tv_home_screen.dart';
+import 'utils/platform_detector.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -117,6 +119,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
 
+    // Initialize platform detection with screen size
+    final size = MediaQuery.of(context).size;
+    PlatformDetector.initializeWithScreenSize(size.width, size.height);
+
     // Show loading screen while checking auth state
     if (authService.isLoading) {
       return const Scaffold(
@@ -126,9 +132,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
       );
     }
 
-    // Show appropriate screen based on auth state
-    return authService.isAuthenticated
-        ? const MainScreen()
-        : const LoginScreen();
+    // Show appropriate screen based on auth state and platform
+    if (!authService.isAuthenticated) {
+      return const LoginScreen();
+    }
+
+    // Use TV UI for Android TV, regular UI for other platforms
+    return PlatformDetector.isAndroidTV
+        ? const TvHomeScreen()
+        : const MainScreen();
   }
 }

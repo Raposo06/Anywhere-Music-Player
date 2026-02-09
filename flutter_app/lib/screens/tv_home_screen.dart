@@ -6,6 +6,7 @@ import '../services/audio_player_service.dart';
 import '../services/api_service.dart';
 import '../models/folder.dart';
 import '../models/track.dart';
+import '../widgets/tv_player_controls.dart';
 
 /// Android TV optimized home screen with leanback design
 /// Features:
@@ -86,21 +87,34 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F), // TV dark background
-      body: SafeArea(
-        child: Row(
-          children: [
-            // Left sidebar - Folders list
-            SizedBox(
-              width: 400,
-              child: _buildFoldersList(),
-            ),
+      body: Stack(
+        children: [
+          // Main content
+          SafeArea(
+            child: Row(
+              children: [
+                // Left sidebar - Folders list
+                SizedBox(
+                  width: 400,
+                  child: _buildFoldersList(),
+                ),
 
-            // Right content - Tracks grid
-            Expanded(
-              child: _buildTracksGrid(),
+                // Right content - Tracks grid
+                Expanded(
+                  child: _buildTracksGrid(),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+
+          // Player controls overlay at bottom
+          const Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: TvPlayerControls(),
+          ),
+        ],
       ),
     );
   }
