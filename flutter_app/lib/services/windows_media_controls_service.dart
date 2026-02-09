@@ -145,11 +145,10 @@ class WindowsMediaControlsService {
       _isInitialized = true;
       debugPrint('✅ Windows Media Controls initialized');
 
-      // DISABLED: Taskbar thumbnail buttons initialization also causes auto-pause
-      // WindowsTaskbar.setThumbnailToolbar() appears to send pause event on initialization
-      // await _initializeTaskbarButtons();
+      // Initialize taskbar thumbnail buttons (re-enabled with stable playback)
+      await _initializeTaskbarButtons();
 
-      debugPrint('✅ SMTC ready for keyboard input (taskbar buttons disabled)');
+      debugPrint('✅ SMTC and taskbar controls ready');
     } catch (e) {
       debugPrint('⚠️ Failed to initialize Windows Media Controls: $e');
     }
@@ -264,22 +263,12 @@ class WindowsMediaControlsService {
 
     debugPrint('🎵 Player playback status: ${isPlaying ? "Playing" : "Paused"} (state changed: $playStateChanged)');
 
-    // DISABLED: setPlaybackStatus() ALSO disrupts keyboard controls AND causes immediate pause
-    // Calling _smtc!.setPlaybackStatus() creates a feedback loop:
-    // 1. Player plays -> stream fires -> setPlaybackStatus(Playing)
-    // 2. Windows/SMTC sends pause event back through buttonPressStream
-    // 3. Player immediately pauses
-    // Static playback status from initialization is acceptable for keyboard controls
-
-    // if (_isInitialized && _smtc != null) {
-    //   try {
-    //     await _smtc!.setPlaybackStatus(
-    //       isPlaying ? PlaybackStatus.Playing : PlaybackStatus.Paused,
-    //     );
-    //   } catch (e) {
-    //     debugPrint('⚠️ Failed to update SMTC playback status: $e');
-    //   }
-    // }
+    // Update taskbar buttons to show correct play/pause icon
+    // NOTE: We do NOT call _smtc!.setPlaybackStatus() because it causes feedback loop
+    // Only updating visual taskbar buttons is safe and doesn't interfere with keyboard controls
+    if (_taskbarButtonsInitialized && playStateChanged) {
+      await _updateTaskbarButtons();
+    }
   }
 
   /// Enable/disable previous button based on playlist position
