@@ -26,7 +26,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
   List<Track> _tracks = [];
   bool _isLoadingFolders = false;
   bool _isLoadingTracks = false;
-  String? _selectedFolderId;
+  String? _selectedFolderPath;
   int _selectedIndex = 0;
 
   @override
@@ -40,38 +40,32 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
 
     try {
       final apiService = context.read<ApiService>();
-      final response = await apiService.get('/folders');
+      final folders = await apiService.getFolders();
 
-      if (response.statusCode == 200) {
-        final List<dynamic> data = response.data;
-        setState(() {
-          _folders = data.map((json) => Folder.fromJson(json)).toList();
-          _isLoadingFolders = false;
-        });
-      }
+      setState(() {
+        _folders = folders;
+        _isLoadingFolders = false;
+      });
     } catch (e) {
       debugPrint('Error loading folders: $e');
       setState(() => _isLoadingFolders = false);
     }
   }
 
-  Future<void> _loadTracks(String folderId) async {
+  Future<void> _loadTracks(String folderPath) async {
     setState(() {
       _isLoadingTracks = true;
-      _selectedFolderId = folderId;
+      _selectedFolderPath = folderPath;
     });
 
     try {
       final apiService = context.read<ApiService>();
-      final response = await apiService.get('/folders/$folderId/tracks');
+      final tracks = await apiService.getTracks(folderPath: folderPath);
 
-      if (response.statusCode == 200) {
-        final List<dynamic> data = response.data;
-        setState(() {
-          _tracks = data.map((json) => Track.fromJson(json)).toList();
-          _isLoadingTracks = false;
-        });
-      }
+      setState(() {
+        _tracks = tracks;
+        _isLoadingTracks = false;
+      });
     } catch (e) {
       debugPrint('Error loading tracks: $e');
       setState(() => _isLoadingTracks = false);
@@ -163,12 +157,12 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                     itemCount: _folders.length,
                     itemBuilder: (context, index) {
                       final folder = _folders[index];
-                      final isSelected = folder.id == _selectedFolderId;
+                      final isSelected = folder.folderPath == _selectedFolderPath;
 
                       return _TvFolderCard(
                         folder: folder,
                         isSelected: isSelected,
-                        onTap: () => _loadTracks(folder.id),
+                        onTap: () => _loadTracks(folder.folderPath),
                       );
                     },
                   ),
@@ -179,7 +173,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
   }
 
   Widget _buildTracksGrid() {
-    if (_selectedFolderId == null) {
+    if (_selectedFolderPath == null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -299,7 +293,7 @@ class _TvFolderCardState extends State<_TvFolderCard> {
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
-                  widget.folder.path,
+                  widget.folder.displayName,
                   style: TextStyle(
                     fontSize: 20,
                     color: widget.isSelected ? Colors.white : Colors.grey[300],
