@@ -112,8 +112,12 @@ class AudioPlayerService with ChangeNotifier {
         config: const AudioServiceConfig(
           androidNotificationChannelId: 'com.anywhere_music_player.audio',
           androidNotificationChannelName: 'Music Playback',
-          androidNotificationOngoing: true,
-          androidStopForegroundOnPause: true,
+          androidNotificationChannelDescription: 'Controls for music playback',
+          androidNotificationOngoing: false,
+          androidStopForegroundOnPause: false,
+          androidNotificationClickStartsActivity: true,
+          androidNotificationIcon: 'mipmap/ic_launcher',
+          androidShowNotificationBadge: true,
         ),
       );
     } catch (e) {
