@@ -334,12 +334,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Previous Button
+        // Previous Button - enabled when playlist has multiple tracks
         IconButton(
           focusNode: _previousFocusNode,
           icon: const Icon(Icons.skip_previous),
           iconSize: 48,
-          onPressed: playerService.currentIndex > 0
+          onPressed: playerService.playlist.length > 1
               ? playerService.playPrevious
               : null,
         ),
@@ -361,13 +361,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         ),
         const SizedBox(width: 20),
-        // Next Button
+        // Next Button - enabled when playlist has multiple tracks
         IconButton(
           focusNode: _nextFocusNode,
           icon: const Icon(Icons.skip_next),
           iconSize: 48,
-          onPressed: playerService.currentIndex <
-                  playerService.playlist.length - 1
+          onPressed: playerService.playlist.length > 1
               ? playerService.playNext
               : null,
         ),
