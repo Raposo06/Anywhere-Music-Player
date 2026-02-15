@@ -179,12 +179,15 @@ class AudioPlayerService with ChangeNotifier {
 
   /// Play a single track
   Future<void> playTrack(Track track) async {
-    if (_isLoading) return; // Prevent multiple simultaneous loads
-
     // Clear any previous error
     _lastError = null;
 
     try {
+      // Stop current playback to cancel any ongoing load
+      if (_isLoading || _player.playing) {
+        await _player.stop();
+      }
+
       _isLoading = true;
       _currentTrack = track;
       _playlist = [track];
@@ -242,12 +245,15 @@ class AudioPlayerService with ChangeNotifier {
       return;
     }
 
-    if (_isLoading) return; // Prevent multiple simultaneous loads
-
     // Clear any previous error
     _lastError = null;
 
     try {
+      // Stop current playback to cancel any ongoing load
+      if (_isLoading || _player.playing) {
+        await _player.stop();
+      }
+
       _isLoading = true;
       _originalPlaylist = List.from(tracks);
       _playlist = List.from(tracks);
@@ -312,8 +318,6 @@ class AudioPlayerService with ChangeNotifier {
       return;
     }
 
-    if (_isLoading) return; // Prevent multiple simultaneous loads
-
     // Clear any previous error
     _lastError = null;
 
@@ -330,6 +334,11 @@ class AudioPlayerService with ChangeNotifier {
     } else {
       // Normal next track
       _currentIndex++;
+    }
+
+    // Stop current playback to cancel any ongoing load
+    if (_isLoading || _player.playing) {
+      await _player.stop();
     }
 
     _currentTrack = _playlist[_currentIndex];
@@ -390,10 +399,13 @@ class AudioPlayerService with ChangeNotifier {
       return;
     }
 
-    if (_isLoading) return; // Prevent multiple simultaneous loads
-
     // Clear any previous error
     _lastError = null;
+
+    // Stop current playback to cancel any ongoing load
+    if (_isLoading || _player.playing) {
+      await _player.stop();
+    }
 
     _currentIndex--;
     _currentTrack = _playlist[_currentIndex];
