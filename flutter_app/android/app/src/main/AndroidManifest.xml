@@ -7,16 +7,15 @@
     <!-- Android TV: Touchscreen not required -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
-    <!-- Android TV: Leanback support (required for TV apps) -->
+    <!-- Android TV: Leanback support (optional - works on both phones and TVs) -->
     <uses-feature
         android:name="android.software.leanback"
-        android:required="true" />
+        android:required="false" />
 
     <application
         android:label="Anywhere Music Player"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon"
-        android:banner="@drawable/tv_banner">
+        android:icon="@mipmap/ic_launcher">
 
         <activity
             android:name=".MainActivity"
@@ -25,8 +24,7 @@
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize"
-            android:screenOrientation="landscape">
+            android:windowSoftInputMode="adjustResize">
 
             <!-- Standard Android launcher -->
             <intent-filter>
