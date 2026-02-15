@@ -24,7 +24,7 @@ if (flutterVersionName == null) {
 
 android {
     namespace "com.anywhere.music_player"
-    compileSdkVersion 34
+    compileSdk 36
     ndkVersion flutter.ndkVersion
 
     compileOptions {
@@ -44,7 +44,7 @@ android {
         applicationId "com.anywhere.music_player"
         // Android TV requires minSdkVersion 21+
         minSdkVersion 21
-        targetSdkVersion 34
+        targetSdk 36
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }
