@@ -13,7 +13,7 @@ enum RepeatMode { off, all, one }
 class AudioPlayerService with ChangeNotifier {
   late final AudioPlayer _player;
   final ApiService _apiService;
-  MusicAudioHandler? _audioHandler;
+  final MusicAudioHandler? _audioHandler;
   final WindowsMediaControlsService _windowsMediaControls = WindowsMediaControlsService.instance;
   Track? _currentTrack;
   List<Track> _playlist = [];
@@ -46,12 +46,20 @@ class AudioPlayerService with ChangeNotifier {
   /// Check if we're running on Windows
   bool get _isWindows => !kIsWeb && Platform.isWindows;
 
-  AudioPlayerService(this._apiService) {
+  AudioPlayerService(this._apiService, {MusicAudioHandler? audioHandler})
+      : _audioHandler = audioHandler {
     // Initialize audio player
     _player = AudioPlayer();
 
-    // Initialize audio handler for system media controls
-    _initializeAudioHandler();
+    // Attach player to the pre-initialized audio handler
+    if (_audioHandler != null) {
+      _audioHandler!.attachPlayer(
+        player: _player,
+        onNextCallback: playNext,
+        onPreviousCallback: playPrevious,
+      );
+      debugPrint('Audio handler attached to player');
+    }
 
     // Initialize Windows media controls for keyboard support
     _initializeWindowsMediaControls();
@@ -98,38 +106,6 @@ class AudioPlayerService with ChangeNotifier {
         _handlePlaybackError(e);
       },
     );
-  }
-
-  /// Initialize the audio handler for system media controls
-  Future<void> _initializeAudioHandler() async {
-    try {
-      debugPrint('🎵 Initializing audio service...');
-      _audioHandler = await AudioService.init(
-        builder: () => MusicAudioHandler(
-          player: _player,
-          onNext: playNext,
-          onPrevious: playPrevious,
-        ),
-        config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.anywhere_music_player.audio',
-          androidNotificationChannelName: 'Music Playback',
-          androidNotificationChannelDescription: 'Controls for music playback',
-          androidNotificationOngoing: false,
-          androidStopForegroundOnPause: false,
-          androidNotificationClickStartsActivity: true,
-          androidNotificationIcon: 'drawable/ic_notification',
-          androidShowNotificationBadge: true,
-        ),
-      );
-      debugPrint('✅ Audio service initialized successfully');
-      debugPrint('✅ Audio handler ready: $_audioHandler');
-    } catch (e, stackTrace) {
-      debugPrint('❌ Audio service initialization failed!');
-      debugPrint('Error: $e');
-      debugPrint('Error type: ${e.runtimeType}');
-      debugPrint('Stack trace: $stackTrace');
-      // Audio service may not be available on web or in some environments
-    }
   }
 
   /// Initialize Windows media controls for keyboard support (Fn+F5/F6/F7)

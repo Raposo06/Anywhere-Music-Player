@@ -163,6 +163,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                         folder: folder,
                         isSelected: isSelected,
                         onTap: () => _loadTracks(folder.folderPath),
+                        autofocus: index == 0,
                       );
                     },
                   ),
@@ -241,11 +242,13 @@ class _TvFolderCard extends StatefulWidget {
   final Folder folder;
   final bool isSelected;
   final VoidCallback onTap;
+  final bool autofocus;
 
   const _TvFolderCard({
     required this.folder,
     required this.isSelected,
     required this.onTap,
+    this.autofocus = false,
   });
 
   @override
@@ -258,10 +261,13 @@ class _TvFolderCardState extends State<_TvFolderCard> {
   @override
   Widget build(BuildContext context) {
     return Focus(
+      autofocus: widget.autofocus,
       onFocusChange: (focused) => setState(() => _isFocused = focused),
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.select) {
+            (event.logicalKey == LogicalKeyboardKey.select ||
+             event.logicalKey == LogicalKeyboardKey.enter ||
+             event.logicalKey == LogicalKeyboardKey.space)) {
           widget.onTap();
           return KeyEventResult.handled;
         }
@@ -336,7 +342,9 @@ class _TvTrackCardState extends State<_TvTrackCard> {
       onFocusChange: (focused) => setState(() => _isFocused = focused),
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.select) {
+            (event.logicalKey == LogicalKeyboardKey.select ||
+             event.logicalKey == LogicalKeyboardKey.enter ||
+             event.logicalKey == LogicalKeyboardKey.space)) {
           widget.onTap();
           return KeyEventResult.handled;
         }

@@ -277,7 +277,9 @@ class _TvControlButtonState extends State<_TvControlButton> {
       onFocusChange: (focused) => setState(() => _isFocused = focused),
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.select) {
+            (event.logicalKey == LogicalKeyboardKey.select ||
+             event.logicalKey == LogicalKeyboardKey.enter ||
+             event.logicalKey == LogicalKeyboardKey.space)) {
           widget.onPressed();
           return KeyEventResult.handled;
         }

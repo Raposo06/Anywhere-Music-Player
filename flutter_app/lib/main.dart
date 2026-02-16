@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:audio_service/audio_service.dart';
 import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
+import 'services/audio_handler.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/tv_home_screen.dart';
@@ -16,19 +18,48 @@ void main() async {
   // Load environment variables
   await dotenv.load(fileName: ".env");
 
+  // Initialize native platform detection (Android TV detection)
+  await PlatformDetector.initialize();
+
   // Request notification permission for lock screen controls (Android 13+)
   try {
     final status = await Permission.notification.request();
-    debugPrint('📱 Notification permission: $status');
+    debugPrint('Notification permission: $status');
   } catch (e) {
-    debugPrint('⚠️ Permission request failed: $e');
+    debugPrint('Permission request failed: $e');
   }
 
-  runApp(const MyApp());
+  // Initialize audio service early for reliable background playback.
+  // The handler is created now but the AudioPlayer is attached later
+  // by AudioPlayerService via attachPlayer().
+  MusicAudioHandler? audioHandler;
+  try {
+    audioHandler = await AudioService.init(
+      builder: () => MusicAudioHandler(),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.anywhere_music_player.audio',
+        androidNotificationChannelName: 'Music Playback',
+        androidNotificationChannelDescription: 'Controls for music playback',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: false,
+        androidNotificationClickStartsActivity: true,
+        androidNotificationIcon: 'drawable/ic_notification',
+        androidShowNotificationBadge: true,
+      ),
+    );
+    debugPrint('Audio service initialized successfully');
+  } catch (e, stackTrace) {
+    debugPrint('Audio service initialization failed: $e');
+    debugPrint('Stack trace: $stackTrace');
+  }
+
+  runApp(MyApp(audioHandler: audioHandler));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final MusicAudioHandler? audioHandler;
+
+  const MyApp({super.key, this.audioHandler});
 
   @override
   Widget build(BuildContext context) {
@@ -78,9 +109,12 @@ class MyApp extends StatelessWidget {
 
         // Audio Player Service (depends on ApiService for auth headers)
         ChangeNotifierProxyProvider<ApiService, AudioPlayerService>(
-          create: (context) => AudioPlayerService(context.read<ApiService>()),
+          create: (context) => AudioPlayerService(
+            context.read<ApiService>(),
+            audioHandler: audioHandler,
+          ),
           update: (context, apiService, previous) =>
-              previous ?? AudioPlayerService(apiService),
+              previous ?? AudioPlayerService(apiService, audioHandler: audioHandler),
         ),
       ],
       child: MaterialApp(
@@ -128,7 +162,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
 
-    // Initialize platform detection with screen size
+    // Initialize platform detection with screen size (fallback heuristic)
     final size = MediaQuery.of(context).size;
     PlatformDetector.initializeWithScreenSize(size.width, size.height);
 
