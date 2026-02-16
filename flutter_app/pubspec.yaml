@@ -26,6 +26,9 @@ dependencies:
   smtc_windows: ^0.1.3
   windows_taskbar: ^1.1.2
 
+  # Permissions
+  permission_handler: any
+
   # Local Storage (JWT tokens)
   shared_preferences: any
 
