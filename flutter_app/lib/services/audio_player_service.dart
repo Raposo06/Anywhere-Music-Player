@@ -103,6 +103,7 @@ class AudioPlayerService with ChangeNotifier {
   /// Initialize the audio handler for system media controls
   Future<void> _initializeAudioHandler() async {
     try {
+      debugPrint('🎵 Initializing audio service...');
       _audioHandler = await AudioService.init(
         builder: () => MusicAudioHandler(
           player: _player,
@@ -120,8 +121,10 @@ class AudioPlayerService with ChangeNotifier {
           androidShowNotificationBadge: true,
         ),
       );
+      debugPrint('✅ Audio service initialized successfully');
     } catch (e) {
       debugPrint('⚠️ Audio service not available: $e');
+      debugPrint('Stack trace: ${StackTrace.current}');
       // Audio service may not be available on web or in some environments
     }
   }
@@ -210,6 +213,9 @@ class AudioPlayerService with ChangeNotifier {
 
       debugPrint('🔑 Authenticated URL: ${authenticatedUrl.substring(0, 50)}...');
 
+      // Update system media controls with track info BEFORE playback
+      _audioHandler?.updateTrackInfo(track);
+
       // Create AudioSource WITHOUT custom headers (just_audio_windows crashes with headers)
       final source = AudioSource.uri(
         Uri.parse(authenticatedUrl),
@@ -227,9 +233,6 @@ class AudioPlayerService with ChangeNotifier {
       // Use setAudioSource instead of setUrl for proper state management
       await _player.setAudioSource(source);
       await _player.play();
-
-      // Update system media controls with track info
-      _audioHandler?.updateTrackInfo(track);
       // DISABLED: Windows media controls still have keyboard issues
       // _updateWindowsMediaControls();
 
@@ -276,6 +279,9 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('🎵 Playing: ${_currentTrack!.title}');
       debugPrint('📡 Stream URL: ${_playlist[_currentIndex].streamUrl}');
 
+      // Update system media controls with track info BEFORE playback
+      _audioHandler?.updateTrackInfo(_currentTrack!);
+
       // Add auth token as query parameter
       final token = _apiService.token;
       final uri = Uri.parse(_playlist[_currentIndex].streamUrl);
@@ -300,9 +306,6 @@ class AudioPlayerService with ChangeNotifier {
       // Use setAudioSource for proper state management
       await _player.setAudioSource(source);
       await _player.play();
-
-      // Update system media controls with track info
-      _audioHandler?.updateTrackInfo(_currentTrack!);
       // DISABLED: Windows media controls still have keyboard issues
       // _updateWindowsMediaControls();
 
@@ -354,6 +357,9 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('🎵 Next: ${_currentTrack!.title}');
       debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
 
+      // Update system media controls with track info BEFORE playback
+      _audioHandler?.updateTrackInfo(_currentTrack!);
+
       // Add auth token as query parameter
       final token = _apiService.token;
       final uri = Uri.parse(_currentTrack!.streamUrl);
@@ -378,9 +384,6 @@ class AudioPlayerService with ChangeNotifier {
       // Use setAudioSource for proper state management
       await _player.setAudioSource(source);
       await _player.play();
-
-      // Update system media controls with track info
-      _audioHandler?.updateTrackInfo(_currentTrack!);
       // DISABLED: Windows media controls still have keyboard issues
       // _updateWindowsMediaControls();
 
@@ -421,6 +424,9 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('🎵 Previous: ${_currentTrack!.title}');
       debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
 
+      // Update system media controls with track info BEFORE playback
+      _audioHandler?.updateTrackInfo(_currentTrack!);
+
       // Add auth token as query parameter
       final token = _apiService.token;
       final uri = Uri.parse(_currentTrack!.streamUrl);
@@ -445,9 +451,6 @@ class AudioPlayerService with ChangeNotifier {
       // Use setAudioSource for proper state management
       await _player.setAudioSource(source);
       await _player.play();
-
-      // Update system media controls with track info
-      _audioHandler?.updateTrackInfo(_currentTrack!);
       // DISABLED: Windows media controls still have keyboard issues
       // _updateWindowsMediaControls();
 

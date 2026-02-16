@@ -13,6 +13,20 @@ class MusicAudioHandler extends BaseAudioHandler {
     required this.onNext,
     required this.onPrevious,
   }) : _player = player {
+    // Initialize with stopped state
+    playbackState.add(PlaybackState(
+      controls: [
+        MediaControl.skipToPrevious,
+        MediaControl.play,
+        MediaControl.skipToNext,
+      ],
+      androidCompactActionIndices: const [0, 1, 2],
+      processingState: AudioProcessingState.idle,
+      playing: false,
+      updatePosition: Duration.zero,
+      speed: 1.0,
+    ));
+
     // Broadcast player state to system media controls
     _player.playbackEventStream.listen(_broadcastState);
 
@@ -53,7 +67,7 @@ class MusicAudioHandler extends BaseAudioHandler {
 
   /// Update metadata when track changes
   void updateTrackInfo(Track track) {
-    mediaItem.add(MediaItem(
+    final item = MediaItem(
       id: track.id,
       title: track.title,
       artist: track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist',
@@ -61,7 +75,10 @@ class MusicAudioHandler extends BaseAudioHandler {
           ? Duration(seconds: track.durationSeconds!)
           : null,
       artUri: track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
-    ));
+    );
+
+    print('🎵 Updating media item: ${item.title} by ${item.artist}');
+    mediaItem.add(item);
   }
 
   @override
