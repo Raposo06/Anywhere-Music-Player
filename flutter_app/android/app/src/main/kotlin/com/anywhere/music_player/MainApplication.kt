@@ -1,12 +1,11 @@
 package com.anywhere.music_player
 
-import io.flutter.app.FlutterApplication
+import android.app.Application
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.embedding.engine.dart.DartExecutor
-import io.flutter.plugin.common.MethodChannel
 
-class MainApplication : FlutterApplication() {
+class MainApplication : Application() {
     companion object {
         const val ENGINE_ID = "main_engine"
     }
