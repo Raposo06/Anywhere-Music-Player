@@ -16,7 +16,7 @@
 
     <application
         android:label="Anywhere Music Player"
-        android:name="${applicationName}"
+        android:name=".MainApplication"
         android:icon="@mipmap/ic_launcher">
 
         <activity
