@@ -17,7 +17,12 @@ void main() async {
   await dotenv.load(fileName: ".env");
 
   // Request notification permission for lock screen controls (Android 13+)
-  await Permission.notification.request();
+  try {
+    final status = await Permission.notification.request();
+    debugPrint('📱 Notification permission: $status');
+  } catch (e) {
+    debugPrint('⚠️ Permission request failed: $e');
+  }
 
   runApp(const MyApp());
 }

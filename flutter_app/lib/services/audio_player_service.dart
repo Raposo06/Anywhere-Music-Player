@@ -117,14 +117,17 @@ class AudioPlayerService with ChangeNotifier {
           androidNotificationOngoing: false,
           androidStopForegroundOnPause: false,
           androidNotificationClickStartsActivity: true,
-          androidNotificationIcon: 'mipmap/ic_launcher',
+          androidNotificationIcon: 'drawable/ic_notification',
           androidShowNotificationBadge: true,
         ),
       );
       debugPrint('✅ Audio service initialized successfully');
-    } catch (e) {
-      debugPrint('⚠️ Audio service not available: $e');
-      debugPrint('Stack trace: ${StackTrace.current}');
+      debugPrint('✅ Audio handler ready: $_audioHandler');
+    } catch (e, stackTrace) {
+      debugPrint('❌ Audio service initialization failed!');
+      debugPrint('Error: $e');
+      debugPrint('Error type: ${e.runtimeType}');
+      debugPrint('Stack trace: $stackTrace');
       // Audio service may not be available on web or in some environments
     }
   }
@@ -214,7 +217,12 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('🔑 Authenticated URL: ${authenticatedUrl.substring(0, 50)}...');
 
       // Update system media controls with track info BEFORE playback
-      _audioHandler?.updateTrackInfo(track);
+      if (_audioHandler != null) {
+        debugPrint('📱 Updating lock screen controls for: ${track.title}');
+        _audioHandler!.updateTrackInfo(track);
+      } else {
+        debugPrint('⚠️ Audio handler is null - lock screen controls not available');
+      }
 
       // Create AudioSource WITHOUT custom headers (just_audio_windows crashes with headers)
       final source = AudioSource.uri(
@@ -280,7 +288,12 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('📡 Stream URL: ${_playlist[_currentIndex].streamUrl}');
 
       // Update system media controls with track info BEFORE playback
-      _audioHandler?.updateTrackInfo(_currentTrack!);
+      if (_audioHandler != null) {
+        debugPrint('📱 Updating lock screen controls for: ${_currentTrack!.title}');
+        _audioHandler!.updateTrackInfo(_currentTrack!);
+      } else {
+        debugPrint('⚠️ Audio handler is null - lock screen controls not available');
+      }
 
       // Add auth token as query parameter
       final token = _apiService.token;
@@ -358,7 +371,12 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
 
       // Update system media controls with track info BEFORE playback
-      _audioHandler?.updateTrackInfo(_currentTrack!);
+      if (_audioHandler != null) {
+        debugPrint('📱 Updating lock screen controls for: ${_currentTrack!.title}');
+        _audioHandler!.updateTrackInfo(_currentTrack!);
+      } else {
+        debugPrint('⚠️ Audio handler is null - lock screen controls not available');
+      }
 
       // Add auth token as query parameter
       final token = _apiService.token;
@@ -425,7 +443,12 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
 
       // Update system media controls with track info BEFORE playback
-      _audioHandler?.updateTrackInfo(_currentTrack!);
+      if (_audioHandler != null) {
+        debugPrint('📱 Updating lock screen controls for: ${_currentTrack!.title}');
+        _audioHandler!.updateTrackInfo(_currentTrack!);
+      } else {
+        debugPrint('⚠️ Audio handler is null - lock screen controls not available');
+      }
 
       // Add auth token as query parameter
       final token = _apiService.token;
