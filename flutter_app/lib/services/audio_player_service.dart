@@ -169,11 +169,6 @@ class AudioPlayerService with ChangeNotifier {
     _lastError = null;
 
     try {
-      // Stop current playback to cancel any ongoing load
-      if (_isLoading || _player.playing) {
-        await _player.stop();
-      }
-
       _isLoading = true;
       _currentTrack = track;
       _playlist = [track];
@@ -240,11 +235,6 @@ class AudioPlayerService with ChangeNotifier {
     _lastError = null;
 
     try {
-      // Stop current playback to cancel any ongoing load
-      if (_isLoading || _player.playing) {
-        await _player.stop();
-      }
-
       _isLoading = true;
       _originalPlaylist = List.from(tracks);
       _playlist = List.from(tracks);
@@ -332,11 +322,6 @@ class AudioPlayerService with ChangeNotifier {
       _currentIndex++;
     }
 
-    // Stop current playback to cancel any ongoing load
-    if (_isLoading || _player.playing) {
-      await _player.stop();
-    }
-
     _currentTrack = _playlist[_currentIndex];
     _isLoading = true;
     notifyListeners();
@@ -402,11 +387,6 @@ class AudioPlayerService with ChangeNotifier {
 
     // Clear any previous error
     _lastError = null;
-
-    // Stop current playback to cancel any ongoing load
-    if (_isLoading || _player.playing) {
-      await _player.stop();
-    }
 
     _currentIndex--;
     _currentTrack = _playlist[_currentIndex];
