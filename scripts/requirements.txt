@@ -6,7 +6,7 @@ minio>=7.2.0
 # PostgreSQL database adapter
 psycopg2-binary>=2.9.9
 
-# MP3 metadata extraction (replaces eyed3 - better maintained)
+# Audio metadata extraction (MP3, FLAC, M4A, OGG, etc.)
 mutagen>=1.47.0
 
 # Image processing for cover art
