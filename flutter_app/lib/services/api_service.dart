@@ -32,6 +32,16 @@ class ApiService {
   /// Get the current auth token (for use in audio stream URLs with query parameters)
   String? get token => _authToken;
 
+  /// Append auth token to a URL as a query parameter.
+  /// Used for proxied endpoints (stream, cover art) that require token auth.
+  String? authenticateUrl(String? url) {
+    if (url == null || _authToken == null) return url;
+    final uri = Uri.parse(url);
+    return uri.replace(
+      queryParameters: {...uri.queryParameters, 'token': _authToken!},
+    ).toString();
+  }
+
   Map<String, String> getHeaders({bool authenticated = false}) {
     final headers = {
       'Content-Type': 'application/json',
@@ -141,7 +151,10 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
-        return data.map((json) => Track.fromJson(json)).toList();
+        return data.map((json) {
+          json['cover_art_url'] = authenticateUrl(json['cover_art_url'] as String?);
+          return Track.fromJson(json);
+        }).toList();
       } else {
         debugPrint('❌ Failed to fetch tracks. Status: ${response.statusCode}');
         debugPrint('❌ Response body: ${response.body}');
@@ -180,7 +193,10 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
-        return data.map((json) => Track.fromJson(json)).toList();
+        return data.map((json) {
+          json['cover_art_url'] = authenticateUrl(json['cover_art_url'] as String?);
+          return Track.fromJson(json);
+        }).toList();
       } else {
         debugPrint('❌ Failed to fetch root tracks. Status: ${response.statusCode}');
         debugPrint('❌ Response body: ${response.body}');
@@ -291,7 +307,10 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
-        return data.map((json) => Track.fromJson(json)).toList();
+        return data.map((json) {
+          json['cover_art_url'] = authenticateUrl(json['cover_art_url'] as String?);
+          return Track.fromJson(json);
+        }).toList();
       } else {
         throw ApiException(
           'Search failed',

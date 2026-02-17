@@ -31,6 +31,21 @@ def _build_stream_url(track_id: str, original_url: str = None) -> str:
     return f"{api_base}/tracks/{track_id}/stream"
 
 
+def _build_cover_art_url(track_id: str, original_url: str = None) -> Optional[str]:
+    """Build cover art URL for a track.
+
+    Returns a proxied URL through the backend so the client can fetch
+    cover art with token-based auth (same pattern as stream_url).
+    Returns None if no cover art exists.
+    """
+    if not original_url:
+        return None
+    if _use_direct_minio() and original_url:
+        return original_url
+    api_base = os.getenv("API_BASE_URL", "http://localhost:8000")
+    return f"{api_base}/tracks/{track_id}/cover"
+
+
 @router.get("", response_model=List[TrackResponse])
 def get_tracks(
     current_user: dict = Depends(get_current_user),
@@ -94,6 +109,7 @@ def get_tracks(
     # Replace stream_url with proxy endpoint (or keep direct MinIO URL if configured)
     for track in tracks:
         track["stream_url"] = _build_stream_url(track["id"], track.get("stream_url"))
+        track["cover_art_url"] = _build_cover_art_url(track["id"], track.get("cover_art_url"))
 
     return [TrackResponse(**track) for track in tracks]
 
@@ -129,6 +145,7 @@ def search_tracks(
     # Replace stream_url with proxy endpoint (or keep direct MinIO URL if configured)
     for track in tracks:
         track["stream_url"] = _build_stream_url(track["id"], track.get("stream_url"))
+        track["cover_art_url"] = _build_cover_art_url(track["id"], track.get("cover_art_url"))
 
     return [TrackResponse(**track) for track in tracks]
 
@@ -216,6 +233,7 @@ def get_root_tracks(
 
     for track in tracks:
         track["stream_url"] = _build_stream_url(track["id"], track.get("stream_url"))
+        track["cover_art_url"] = _build_cover_art_url(track["id"], track.get("cover_art_url"))
 
     return [TrackResponse(**track) for track in tracks]
 
@@ -281,8 +299,9 @@ def get_track(
     if not track:
         raise HTTPException(status_code=404, detail="Track not found")
 
-    # Replace stream_url with proxy endpoint (or keep direct MinIO URL if configured)
+    # Replace stream_url and cover_art_url with proxy endpoints
     track["stream_url"] = _build_stream_url(track["id"], track.get("stream_url"))
+    track["cover_art_url"] = _build_cover_art_url(track["id"], track.get("cover_art_url"))
 
     return TrackResponse(**track)
 
@@ -301,6 +320,51 @@ def _get_content_type(filename: str) -> str:
         'wma': 'audio/x-ms-wma',
     }
     return content_types.get(ext, 'audio/mpeg')
+
+
+@router.get("/{track_id}/cover")
+def get_cover_art(track_id: str, token: str = Query(..., description="JWT authentication token")):
+    """
+    Proxy cover art image from object storage.
+
+    Requires authentication via token query parameter (same as stream endpoint).
+    """
+    from fastapi.responses import Response
+    from auth import verify_token
+
+    try:
+        user = verify_token(token)
+    except HTTPException:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    query = """
+        SELECT cover_art_url
+        FROM musicplayer.tracks
+        WHERE id = %s
+    """
+    track = execute_query(query, (track_id,), fetch_one=True)
+
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    cover_url = track.get("cover_art_url")
+    if not cover_url:
+        raise HTTPException(status_code=404, detail="No cover art for this track")
+
+    try:
+        resp = requests.get(cover_url, timeout=15)
+        resp.raise_for_status()
+
+        # Detect content type from response or URL
+        content_type = resp.headers.get("Content-Type", "image/jpeg")
+
+        return Response(
+            content=resp.content,
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch cover art: {str(e)}")
 
 
 @router.head("/{track_id}/stream")
