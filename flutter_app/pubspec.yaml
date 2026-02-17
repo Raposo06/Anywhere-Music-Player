@@ -23,8 +23,11 @@ dependencies:
   just_audio: ^0.9.40
   just_audio_windows: ^0.2.1
   audio_service: ^0.18.12
-  # smtc_windows: ^0.1.3  # REMOVED: Build fails with spaces in username + functionality disabled anyway
-  # windows_taskbar: ^1.1.2  # REMOVED: Causes issues + functionality disabled anyway
+  smtc_windows: ^0.1.3
+  windows_taskbar: ^1.1.2
+
+  # Permissions
+  permission_handler: any
 
   # Local Storage (JWT tokens)
   shared_preferences: any

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:smtc_windows/smtc_windows.dart';
@@ -146,11 +145,10 @@ class WindowsMediaControlsService {
       _isInitialized = true;
       debugPrint('✅ Windows Media Controls initialized');
 
-      // DISABLED: Taskbar thumbnail buttons initialization also causes auto-pause
-      // WindowsTaskbar.setThumbnailToolbar() appears to send pause event on initialization
-      // await _initializeTaskbarButtons();
+      // Initialize taskbar thumbnail buttons (re-enabled with stable playback)
+      await _initializeTaskbarButtons();
 
-      debugPrint('✅ SMTC ready for keyboard input (taskbar buttons disabled)');
+      debugPrint('✅ SMTC and taskbar controls ready');
     } catch (e) {
       debugPrint('⚠️ Failed to initialize Windows Media Controls: $e');
     }
@@ -193,25 +191,42 @@ class WindowsMediaControlsService {
     if (!isSupported) return;
 
     try {
-      // Set taskbar buttons with empty callbacks to prevent interference with keyboard events
-      // All media control events will be routed through SMTC buttonPressStream instead
+      // Set taskbar buttons with actual callbacks
+      // Note: Taskbar button clicks are separate from keyboard events (SMTC buttonPressStream)
       await WindowsTaskbar.setThumbnailToolbar([
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon('assets/icons/prev.ico'),
           'Previous',
-          () {}, // Empty callback - let SMTC handle it
+          () {
+            debugPrint('🖱️ Taskbar: Previous clicked');
+            if (onPrevious != null) {
+              onPrevious!();
+            }
+          },
         ),
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon(
             _isPlaying ? 'assets/icons/pause.ico' : 'assets/icons/play.ico'
           ),
           _isPlaying ? 'Pause' : 'Play',
-          () {}, // Empty callback - let SMTC handle it
+          () {
+            debugPrint('🖱️ Taskbar: ${_isPlaying ? "Pause" : "Play"} clicked');
+            if (_isPlaying && onPause != null) {
+              onPause!();
+            } else if (!_isPlaying && onPlay != null) {
+              onPlay!();
+            }
+          },
         ),
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon('assets/icons/next.ico'),
           'Next',
-          () {}, // Empty callback - let SMTC handle it
+          () {
+            debugPrint('🖱️ Taskbar: Next clicked');
+            if (onNext != null) {
+              onNext!();
+            }
+          },
         ),
       ]);
     } catch (e) {
@@ -265,22 +280,12 @@ class WindowsMediaControlsService {
 
     debugPrint('🎵 Player playback status: ${isPlaying ? "Playing" : "Paused"} (state changed: $playStateChanged)');
 
-    // DISABLED: setPlaybackStatus() ALSO disrupts keyboard controls AND causes immediate pause
-    // Calling _smtc!.setPlaybackStatus() creates a feedback loop:
-    // 1. Player plays -> stream fires -> setPlaybackStatus(Playing)
-    // 2. Windows/SMTC sends pause event back through buttonPressStream
-    // 3. Player immediately pauses
-    // Static playback status from initialization is acceptable for keyboard controls
-
-    // if (_isInitialized && _smtc != null) {
-    //   try {
-    //     await _smtc!.setPlaybackStatus(
-    //       isPlaying ? PlaybackStatus.Playing : PlaybackStatus.Paused,
-    //     );
-    //   } catch (e) {
-    //     debugPrint('⚠️ Failed to update SMTC playback status: $e');
-    //   }
-    // }
+    // Update taskbar buttons to show correct play/pause icon
+    // NOTE: We do NOT call _smtc!.setPlaybackStatus() because it causes feedback loop
+    // Only updating visual taskbar buttons is safe and doesn't interfere with keyboard controls
+    if (_taskbarButtonsInitialized && playStateChanged) {
+      await _updateTaskbarButtons();
+    }
   }
 
   /// Enable/disable previous button based on playlist position

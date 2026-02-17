@@ -78,8 +78,12 @@ flutter_app/windows/flutter/generated_plugin_registrant.cc
 flutter_app/windows/flutter/generated_plugin_registrant.h
 flutter_app/windows/flutter/generated_plugins.cmake
 
-# Platform-specific files (entire directories - these are auto-generated)
-flutter_app/android/
+# Platform-specific build artifacts (keep project config, ignore build output)
+flutter_app/android/.gradle/
+flutter_app/android/app/build/
+flutter_app/android/build/
+flutter_app/android/local.properties
+flutter_app/android/key.properties
 flutter_app/ios/
 flutter_app/linux/
 flutter_app/macos/

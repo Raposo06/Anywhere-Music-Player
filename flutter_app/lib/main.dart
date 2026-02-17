@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:audio_service/audio_service.dart';
 import 'services/api_service.dart';
 import 'services/auth_service.dart';
@@ -8,6 +9,8 @@ import 'services/audio_player_service.dart';
 import 'services/audio_handler.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
+import 'screens/tv_home_screen.dart';
+import 'utils/platform_detector.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,31 +18,68 @@ void main() async {
   // Load environment variables
   await dotenv.load(fileName: ".env");
 
-  runApp(const MyApp());
+  // Initialize native platform detection (Android TV detection)
+  await PlatformDetector.initialize();
+
+  // Request notification permission for lock screen controls (Android 13+)
+  try {
+    final status = await Permission.notification.request();
+    debugPrint('Notification permission: $status');
+  } catch (e) {
+    debugPrint('Permission request failed: $e');
+  }
+
+  // Initialize audio service early for reliable background playback.
+  // The handler is created now but the AudioPlayer is attached later
+  // by AudioPlayerService via attachPlayer().
+  MusicAudioHandler? audioHandler;
+  try {
+    audioHandler = await AudioService.init(
+      builder: () => MusicAudioHandler(),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.anywhere_music_player.audio',
+        androidNotificationChannelName: 'Music Playback',
+        androidNotificationChannelDescription: 'Controls for music playback',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+        androidNotificationClickStartsActivity: true,
+        androidNotificationIcon: 'drawable/ic_notification',
+        androidShowNotificationBadge: true,
+      ),
+    );
+    debugPrint('Audio service initialized successfully');
+  } catch (e, stackTrace) {
+    debugPrint('Audio service initialization failed: $e');
+    debugPrint('Stack trace: $stackTrace');
+  }
+
+  runApp(MyApp(audioHandler: audioHandler));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final MusicAudioHandler? audioHandler;
+
+  const MyApp({super.key, this.audioHandler});
 
   @override
   Widget build(BuildContext context) {
     final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
 
     if (apiBaseUrl.isEmpty) {
-      return MaterialApp(
+      return const MaterialApp(
         home: Scaffold(
           body: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error, size: 64, color: Colors.red),
-                const SizedBox(height: 16),
-                const Text(
+                Icon(Icons.error, size: 64, color: Colors.red),
+                SizedBox(height: 16),
+                Text(
                   'Configuration Error',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 8),
-                const Padding(
+                SizedBox(height: 8),
+                Padding(
                   padding: EdgeInsets.symmetric(horizontal: 32),
                   child: Text(
                     'API_BASE_URL not found in .env file.\nPlease create a .env file with your API configuration.',
@@ -69,9 +109,12 @@ class MyApp extends StatelessWidget {
 
         // Audio Player Service (depends on ApiService for auth headers)
         ChangeNotifierProxyProvider<ApiService, AudioPlayerService>(
-          create: (context) => AudioPlayerService(context.read<ApiService>()),
+          create: (context) => AudioPlayerService(
+            context.read<ApiService>(),
+            audioHandler: audioHandler,
+          ),
           update: (context, apiService, previous) =>
-              previous ?? AudioPlayerService(apiService),
+              previous ?? AudioPlayerService(apiService, audioHandler: audioHandler),
         ),
       ],
       child: MaterialApp(
@@ -119,6 +162,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
 
+    // Initialize platform detection with screen size (fallback heuristic)
+    final size = MediaQuery.of(context).size;
+    PlatformDetector.initializeWithScreenSize(size.width, size.height);
+
     // Show loading screen while checking auth state
     if (authService.isLoading) {
       return const Scaffold(
@@ -128,9 +175,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
       );
     }
 
-    // Show appropriate screen based on auth state
-    return authService.isAuthenticated
-        ? const MainScreen()
-        : const LoginScreen();
+    // Show appropriate screen based on auth state and platform
+    if (!authService.isAuthenticated) {
+      return const LoginScreen();
+    }
+
+    // Use TV UI for Android TV, regular UI for other platforms
+    return PlatformDetector.isAndroidTV
+        ? const TvHomeScreen()
+        : const MainScreen();
   }
 }

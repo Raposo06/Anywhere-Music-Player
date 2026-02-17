@@ -26,11 +26,14 @@ class AuthService with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
+    debugPrint('🔐 AuthService: Initializing...');
+
     try {
       final prefs = await SharedPreferences.getInstance();
       _token = prefs.getString(_tokenKey);
 
       if (_token != null) {
+        debugPrint('🔐 AuthService: Found stored token: ${_token!.substring(0, 20)}...');
         // Restore user from stored data
         final userId = prefs.getString(_userIdKey);
         final email = prefs.getString(_userEmailKey);
@@ -44,13 +47,17 @@ class AuthService with ChangeNotifier {
             createdAt: DateTime.now(), // We don't store this
           );
           _apiService.setAuthToken(_token!);
+          debugPrint('🔐 AuthService: Token set for user: $email');
         } else {
           // Token exists but user data is incomplete, clear everything
+          debugPrint('⚠️ AuthService: Token found but user data incomplete, clearing');
           await _clearStorage();
         }
+      } else {
+        debugPrint('⚠️ AuthService: No stored token found');
       }
     } catch (e) {
-      debugPrint('Error initializing auth: $e');
+      debugPrint('❌ Error initializing auth: $e');
       await _clearStorage();
     } finally {
       _isLoading = false;
@@ -97,6 +104,7 @@ class AuthService with ChangeNotifier {
 
   /// Save authentication data to storage
   Future<void> _saveAuthData(String token, User user) async {
+    debugPrint('🔐 AuthService: Saving auth data for user: ${user.email}');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, token);
     await prefs.setString(_userIdKey, user.id);
@@ -106,6 +114,7 @@ class AuthService with ChangeNotifier {
     _token = token;
     _currentUser = user;
     _apiService.setAuthToken(token);
+    debugPrint('🔐 AuthService: Token saved and set: ${token.substring(0, 20)}...');
   }
 
   /// Clear all stored authentication data
