@@ -21,14 +21,6 @@ void main() async {
   // Initialize native platform detection (Android TV detection)
   await PlatformDetector.initialize();
 
-  // Request notification permission for lock screen controls (Android 13+)
-  try {
-    final status = await Permission.notification.request();
-    debugPrint('Notification permission: $status');
-  } catch (e) {
-    debugPrint('Permission request failed: $e');
-  }
-
   // Initialize audio service early for reliable background playback.
   // The handler is created now but the AudioPlayer is attached later
   // by AudioPlayerService via attachPlayer().
@@ -152,10 +144,21 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   void initState() {
     super.initState();
-    // Initialize auth state from storage
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Initialize auth state from storage
       context.read<AuthService>().initialize();
+      // Request notification permission for lock screen controls (Android 13+)
+      _requestNotificationPermission();
     });
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    try {
+      final status = await Permission.notification.request();
+      debugPrint('Notification permission: $status');
+    } catch (e) {
+      debugPrint('Permission request failed: $e');
+    }
   }
 
   @override
