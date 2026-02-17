@@ -41,7 +41,7 @@ void main() async {
         androidNotificationChannelName: 'Music Playback',
         androidNotificationChannelDescription: 'Controls for music playback',
         androidNotificationOngoing: true,
-        androidStopForegroundOnPause: false,
+        androidStopForegroundOnPause: true,
         androidNotificationClickStartsActivity: true,
         androidNotificationIcon: 'drawable/ic_notification',
         androidShowNotificationBadge: true,
