@@ -29,14 +29,14 @@ dependencies:
   # Permissions
   permission_handler: any
 
-  # Local Storage (JWT tokens)
+  # Crypto (MD5 for Subsonic API auth)
+  crypto: any
+
+  # Local Storage
   shared_preferences: any
 
   # JSON Serialization
   json_annotation: any
-
-  # Environment Configuration
-  flutter_dotenv: any
 
 dev_dependencies:
   flutter_test:
@@ -50,7 +50,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    - .env
     - assets/icons/
 
 flutter_launcher_icons:

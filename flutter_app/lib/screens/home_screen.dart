@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
-import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../services/subsonic_api_service.dart';
 import '../services/audio_player_service.dart';
 import '../utils/responsive.dart';
 import 'player_screen.dart';
@@ -37,44 +37,34 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  SubsonicApiService? get _api => context.read<AuthService>().apiService;
+
   Future<void> _loadData() async {
     if (!mounted) return;
+    final api = _api;
+    if (api == null) return;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
-    final apiService = context.read<ApiService>();
-
-    // Load folders and root tracks separately to handle partial failures
     List<Folder> folders = [];
-    List<Track> rootTracks = [];
     String? error;
 
     try {
-      folders = await apiService.getFolders();
-      debugPrint('📁 Loaded ${folders.length} folders');
-      for (var folder in folders) {
-        debugPrint('  - "${folder.folderPath}" (${folder.trackCount} tracks)');
-      }
+      folders = await api.getFolders();
     } catch (e) {
       debugPrint('Failed to load folders: $e');
       error = 'Failed to load folders';
     }
 
-    try {
-      rootTracks = await apiService.getRootTracks();
-    } catch (e) {
-      debugPrint('Failed to load root tracks: $e');
-      // Don't overwrite folders error, root tracks are optional
-    }
-
     if (!mounted) return;
     setState(() {
       _folders = folders;
-      _rootTracks = rootTracks;
+      _rootTracks = [];
       _isLoading = false;
-      _errorMessage = folders.isEmpty && rootTracks.isEmpty ? error : null;
+      _errorMessage = folders.isEmpty ? error : null;
     });
   }
 
@@ -89,22 +79,24 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    final api = _api;
+    if (api == null) return;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      final apiService = context.read<ApiService>();
-      final folders = await apiService.searchFolders(query);
+      final result = await api.search3(query);
 
       if (!mounted) return;
       setState(() {
-        _folders = folders;
-        _rootTracks = []; // Clear root tracks during search
+        _folders = result.albums;
+        _rootTracks = result.songs;
         _isLoading = false;
       });
-    } on ApiException catch (e) {
+    } on SubsonicApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _errorMessage = e.message;
@@ -116,12 +108,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _handleLogout() async {
     final authService = context.read<AuthService>();
     await authService.logout();
-
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
-    }
   }
 
   void _playRootTrack(Track track) {
@@ -129,19 +115,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final trackIndex = _rootTracks.indexOf(track);
     playerService.playPlaylist(_rootTracks, trackIndex);
 
-    // Navigate to player screen
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
     );
   }
 
   Future<void> _playFolder(Folder folder) async {
-    final apiService = context.read<ApiService>();
+    final api = _api;
+    if (api == null || folder.id == null) return;
     final playerService = context.read<AudioPlayerService>();
 
-    debugPrint('🎵 _playFolder called for: ${folder.folderPath}');
-
-    // Show loading indicator
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Loading ${folder.folderPath}...'),
@@ -150,16 +133,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     try {
-      // Get all tracks in this folder and subfolders
-      debugPrint('📡 Fetching tracks with parentFolder: ${folder.folderPath}');
-      final tracks = await apiService.getTracks(parentFolder: folder.folderPath);
-      debugPrint('✅ Received ${tracks.length} tracks from API');
+      final tracks = await api.getAllTracksInDirectory(folder.id!);
 
       if (tracks.isNotEmpty) {
         playerService.playPlaylist(tracks, 0);
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
-        // Navigate to player screen
         if (mounted) {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -218,7 +197,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: 'Search folders...',
+                    hintText: 'Search...',
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
@@ -308,7 +287,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListView(
       padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
       children: [
-        // Root tracks section (songs not in any folder)
+        // Search result tracks
         if (_rootTracks.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -317,7 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const Icon(Icons.music_note, color: Colors.orange),
                 const SizedBox(width: 8),
                 Text(
-                  'Loose Tracks (${_rootTracks.length})',
+                  'Songs (${_rootTracks.length})',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -407,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> {
           color: isCurrentTrack ? Colors.blue : null,
         ),
       ),
-      subtitle: Text(track.formattedDuration),
+      subtitle: Text(track.artist ?? track.formattedDuration),
       trailing: isCurrentTrack
           ? const Icon(Icons.equalizer, color: Colors.blue)
           : null,
@@ -416,10 +395,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openFolder(Folder folder) {
+    if (folder.id == null) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => FolderDetailScreen(
-          folderPath: folder.folderPath,
+          folderId: folder.id!,
           folderName: folder.folderPath,
         ),
       ),

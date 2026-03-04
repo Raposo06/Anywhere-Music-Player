@@ -1,63 +1,53 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
-import 'api_service.dart';
+import 'subsonic_api_service.dart';
 
 class AuthService with ChangeNotifier {
-  final ApiService _apiService;
+  SubsonicApiService? _apiService;
   User? _currentUser;
-  String? _token;
   bool _isLoading = false;
 
-  static const String _tokenKey = 'jwt_token';
-  static const String _userIdKey = 'user_id';
-  static const String _userEmailKey = 'user_email';
-  static const String _userUsernameKey = 'user_username';
+  static const String _serverUrlKey = 'server_url';
+  static const String _usernameKey = 'username';
+  static const String _passwordKey = 'password';
 
-  AuthService(this._apiService);
-
+  SubsonicApiService? get apiService => _apiService;
   User? get currentUser => _currentUser;
-  String? get token => _token;
-  bool get isAuthenticated => _token != null && _currentUser != null;
+  bool get isAuthenticated => _apiService != null && _currentUser != null;
   bool get isLoading => _isLoading;
 
-  /// Initialize auth state from stored credentials
+  /// Initialize auth state from stored credentials.
   Future<void> initialize() async {
     _isLoading = true;
     notifyListeners();
 
-    debugPrint('🔐 AuthService: Initializing...');
-
     try {
       final prefs = await SharedPreferences.getInstance();
-      _token = prefs.getString(_tokenKey);
+      final serverUrl = prefs.getString(_serverUrlKey);
+      final username = prefs.getString(_usernameKey);
+      final password = prefs.getString(_passwordKey);
 
-      if (_token != null) {
-        debugPrint('🔐 AuthService: Found stored token: ${_token!.substring(0, 20)}...');
-        // Restore user from stored data
-        final userId = prefs.getString(_userIdKey);
-        final email = prefs.getString(_userEmailKey);
-        final username = prefs.getString(_userUsernameKey);
+      if (serverUrl != null && username != null && password != null) {
+        final api = SubsonicApiService(
+          serverUrl: serverUrl,
+          username: username,
+          password: password,
+        );
 
-        if (userId != null && email != null && username != null) {
-          _currentUser = User(
-            id: userId,
-            email: email,
-            username: username,
-            createdAt: DateTime.now(), // We don't store this
-          );
-          _apiService.setAuthToken(_token!);
-          debugPrint('🔐 AuthService: Token set for user: $email');
-        } else {
-          // Token exists but user data is incomplete, clear everything
-          debugPrint('⚠️ AuthService: Token found but user data incomplete, clearing');
+        // Verify credentials are still valid
+        try {
+          await api.ping();
+          _apiService = api;
+          _currentUser = User(username: username);
+          debugPrint('AuthService: Restored session for $username @ $serverUrl');
+        } catch (e) {
+          debugPrint('AuthService: Stored credentials invalid, clearing');
           await _clearStorage();
         }
-      } else {
-        debugPrint('⚠️ AuthService: No stored token found');
       }
     } catch (e) {
-      debugPrint('❌ Error initializing auth: $e');
+      debugPrint('Error initializing auth: $e');
       await _clearStorage();
     } finally {
       _isLoading = false;
@@ -65,64 +55,49 @@ class AuthService with ChangeNotifier {
     }
   }
 
-  /// Sign up a new user
-  Future<void> signup(String email, String username, String password) async {
+  /// Login to a Navidrome server using Subsonic API credentials.
+  Future<void> login(String serverUrl, String username, String password) async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      final response = await _apiService.signup(email, username, password);
-      await _saveAuthData(response.token, response.user);
+      final api = SubsonicApiService(
+        serverUrl: serverUrl,
+        username: username,
+        password: password,
+      );
+
+      // Verify credentials by pinging the server
+      await api.ping();
+
+      // Save credentials
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_serverUrlKey, serverUrl);
+      await prefs.setString(_usernameKey, username);
+      await prefs.setString(_passwordKey, password);
+
+      _apiService = api;
+      _currentUser = User(username: username);
+      debugPrint('AuthService: Logged in as $username @ $serverUrl');
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  /// Login an existing user
-  Future<void> login(String email, String password) async {
-    _isLoading = true;
-    notifyListeners();
-
-    try {
-      final response = await _apiService.login(email, password);
-      await _saveAuthData(response.token, response.user);
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  /// Logout the current user
+  /// Logout the current user.
   Future<void> logout() async {
     await _clearStorage();
+    _apiService = null;
     _currentUser = null;
-    _token = null;
-    _apiService.clearAuthToken();
     notifyListeners();
   }
 
-  /// Save authentication data to storage
-  Future<void> _saveAuthData(String token, User user) async {
-    debugPrint('🔐 AuthService: Saving auth data for user: ${user.email}');
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
-    await prefs.setString(_userIdKey, user.id);
-    await prefs.setString(_userEmailKey, user.email);
-    await prefs.setString(_userUsernameKey, user.username);
-
-    _token = token;
-    _currentUser = user;
-    _apiService.setAuthToken(token);
-    debugPrint('🔐 AuthService: Token saved and set: ${token.substring(0, 20)}...');
-  }
-
-  /// Clear all stored authentication data
+  /// Clear all stored authentication data.
   Future<void> _clearStorage() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
-    await prefs.remove(_userIdKey);
-    await prefs.remove(_userEmailKey);
-    await prefs.remove(_userUsernameKey);
+    await prefs.remove(_serverUrlKey);
+    await prefs.remove(_usernameKey);
+    await prefs.remove(_passwordKey);
   }
 }

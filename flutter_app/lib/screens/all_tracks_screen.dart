@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/track.dart';
-import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../services/subsonic_api_service.dart';
 import '../services/audio_player_service.dart';
 import '../utils/responsive.dart';
 import 'player_screen.dart';
@@ -21,12 +21,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   String _searchQuery = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadTracks();
-  }
+  bool _hasSearched = false;
 
   @override
   void dispose() {
@@ -34,36 +29,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     super.dispose();
   }
 
-  Future<void> _loadTracks() async {
-    if (!mounted) return;
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final apiService = context.read<ApiService>();
-      final tracks = await apiService.getTracks();
-
-      if (!mounted) return;
-      setState(() {
-        _tracks = tracks;
-        _isLoading = false;
-      });
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = e.message;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = 'Failed to load tracks';
-        _isLoading = false;
-      });
-    }
-  }
+  SubsonicApiService? get _api => context.read<AuthService>().apiService;
 
   Future<void> _handleSearch(String query) async {
     if (!mounted) return;
@@ -72,9 +38,16 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     });
 
     if (query.isEmpty) {
-      _loadTracks();
+      setState(() {
+        _tracks = [];
+        _hasSearched = false;
+        _isLoading = false;
+      });
       return;
     }
+
+    final api = _api;
+    if (api == null) return;
 
     setState(() {
       _isLoading = true;
@@ -82,15 +55,15 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     });
 
     try {
-      final apiService = context.read<ApiService>();
-      final tracks = await apiService.searchTracks(query);
+      final result = await api.search3(query, songCount: 100);
 
       if (!mounted) return;
       setState(() {
-        _tracks = tracks;
+        _tracks = result.songs;
+        _hasSearched = true;
         _isLoading = false;
       });
-    } on ApiException catch (e) {
+    } on SubsonicApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _errorMessage = e.message;
@@ -102,12 +75,6 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
   Future<void> _handleLogout() async {
     final authService = context.read<AuthService>();
     await authService.logout();
-
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
-    }
   }
 
   void _playTrack(Track track) {
@@ -115,7 +82,6 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     final trackIndex = _tracks.indexOf(track);
     playerService.playPlaylist(_tracks, trackIndex);
 
-    // Navigate to player screen
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
     );
@@ -127,7 +93,6 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     final playerService = context.read<AudioPlayerService>();
     playerService.playPlaylist(_tracks, 0);
 
-    // Navigate to player screen
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
     );
@@ -141,9 +106,8 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('All Tracks'),
+        title: const Text('Search Tracks'),
         actions: [
-          // Current playing indicator
           if (playerService.currentTrack != null)
             IconButton(
               icon: const Icon(Icons.music_note),
@@ -153,7 +117,6 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
                 );
               },
             ),
-          // Logout button
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _handleLogout,
@@ -251,8 +214,24 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _loadTracks,
+              onPressed: () => _handleSearch(_searchQuery),
               child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (!_hasSearched) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              'Search for tracks',
+              style: TextStyle(fontSize: 18, color: Colors.grey[500]),
             ),
           ],
         ),
@@ -298,7 +277,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
               color: isCurrentTrack ? Colors.blue : null,
             ),
           ),
-          subtitle: Text('${track.folderPath} • ${track.formattedDuration}'),
+          subtitle: Text('${track.artist ?? ''} ${track.formattedDuration}'.trim()),
           trailing: isCurrentTrack
               ? const Icon(Icons.equalizer, color: Colors.blue)
               : null,

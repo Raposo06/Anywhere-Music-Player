@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/audio_player_service.dart';
-import '../services/api_service.dart';
+import '../services/subsonic_api_service.dart';
 import '../models/folder.dart';
 import '../models/track.dart';
 import '../widgets/tv_player_controls.dart';
@@ -26,7 +26,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
   List<Track> _tracks = [];
   bool _isLoadingFolders = false;
   bool _isLoadingTracks = false;
-  String? _selectedFolderPath;
+  String? _selectedFolderId;
   int _selectedIndex = 0;
 
   @override
@@ -35,12 +35,16 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
     _loadFolders();
   }
 
+  SubsonicApiService? get _api => context.read<AuthService>().apiService;
+
   Future<void> _loadFolders() async {
+    final api = _api;
+    if (api == null) return;
+
     setState(() => _isLoadingFolders = true);
 
     try {
-      final apiService = context.read<ApiService>();
-      final folders = await apiService.getFolders();
+      final folders = await api.getFolders();
 
       setState(() {
         _folders = folders;
@@ -52,18 +56,20 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
     }
   }
 
-  Future<void> _loadTracks(String folderPath) async {
+  Future<void> _loadTracks(Folder folder) async {
+    final api = _api;
+    if (api == null || folder.id == null) return;
+
     setState(() {
       _isLoadingTracks = true;
-      _selectedFolderPath = folderPath;
+      _selectedFolderId = folder.id;
     });
 
     try {
-      final apiService = context.read<ApiService>();
-      final tracks = await apiService.getTracks(folderPath: folderPath);
+      final contents = await api.getDirectoryContents(folder.id!);
 
       setState(() {
-        _tracks = tracks;
+        _tracks = contents.tracks;
         _isLoadingTracks = false;
       });
     } catch (e) {
@@ -157,12 +163,12 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                     itemCount: _folders.length,
                     itemBuilder: (context, index) {
                       final folder = _folders[index];
-                      final isSelected = folder.folderPath == _selectedFolderPath;
+                      final isSelected = folder.id == _selectedFolderId;
 
                       return _TvFolderCard(
                         folder: folder,
                         isSelected: isSelected,
-                        onTap: () => _loadTracks(folder.folderPath),
+                        onTap: () => _loadTracks(folder),
                         autofocus: index == 0,
                       );
                     },
@@ -174,7 +180,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
   }
 
   Widget _buildTracksGrid() {
-    if (_selectedFolderPath == null) {
+    if (_selectedFolderId == null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -414,9 +420,7 @@ class _TvTrackCardState extends State<_TvTrackCard> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      widget.track.folderPath.isNotEmpty
-                          ? widget.track.folderPath
-                          : 'Unknown Artist',
+                      widget.track.artist ?? 'Unknown Artist',
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.grey[400],

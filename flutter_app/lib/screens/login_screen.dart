@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
-import '../services/api_service.dart';
-import 'signup_screen.dart';
-import 'home_screen.dart';
+import '../services/subsonic_api_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,25 +12,27 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _serverUrlController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   String? _errorMessage;
 
   // Focus nodes for D-Pad navigation
-  final _emailFocusNode = FocusNode();
+  final _serverUrlFocusNode = FocusNode();
+  final _usernameFocusNode = FocusNode();
   final _passwordFocusNode = FocusNode();
   final _loginButtonFocusNode = FocusNode();
-  final _signupButtonFocusNode = FocusNode();
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _serverUrlController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
-    _emailFocusNode.dispose();
+    _serverUrlFocusNode.dispose();
+    _usernameFocusNode.dispose();
     _passwordFocusNode.dispose();
     _loginButtonFocusNode.dispose();
-    _signupButtonFocusNode.dispose();
     super.dispose();
   }
 
@@ -48,30 +48,19 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final authService = context.read<AuthService>();
       await authService.login(
-        _emailController.text.trim(),
+        _serverUrlController.text.trim(),
+        _usernameController.text.trim(),
         _passwordController.text,
       );
-
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-        );
-      }
-    } on ApiException catch (e) {
+    } on SubsonicApiException catch (e) {
       setState(() {
         _errorMessage = e.message;
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'An unexpected error occurred';
+        _errorMessage = 'Connection failed: $e';
       });
     }
-  }
-
-  void _navigateToSignup() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const SignupScreen()),
-    );
   }
 
   @override
@@ -107,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Login to your account',
+                    'Connect to your Navidrome server',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 16,
@@ -116,23 +105,47 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 48),
 
-                  // Email field
+                  // Server URL field
                   TextFormField(
-                    controller: _emailController,
-                    focusNode: _emailFocusNode,
+                    controller: _serverUrlController,
+                    focusNode: _serverUrlFocusNode,
                     decoration: const InputDecoration(
-                      labelText: 'Email',
+                      labelText: 'Server URL',
+                      hintText: 'https://music.example.com',
                       border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.email),
+                      prefixIcon: Icon(Icons.dns),
                     ),
-                    keyboardType: TextInputType.emailAddress,
+                    keyboardType: TextInputType.url,
                     textInputAction: TextInputAction.next,
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return 'Please enter your email';
+                        return 'Please enter your server URL';
                       }
-                      if (!value.contains('@')) {
-                        return 'Please enter a valid email';
+                      final uri = Uri.tryParse(value);
+                      if (uri == null || !uri.hasScheme) {
+                        return 'Please enter a valid URL (e.g. https://...)';
+                      }
+                      return null;
+                    },
+                    onFieldSubmitted: (_) {
+                      _usernameFocusNode.requestFocus();
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Username field
+                  TextFormField(
+                    controller: _usernameController,
+                    focusNode: _usernameFocusNode,
+                    decoration: const InputDecoration(
+                      labelText: 'Username',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person),
+                    ),
+                    textInputAction: TextInputAction.next,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter your username';
                       }
                       return null;
                     },
@@ -202,23 +215,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Text(
-                            'Login',
+                            'Connect',
                             style: TextStyle(fontSize: 16),
                           ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Signup button
-                  OutlinedButton(
-                    focusNode: _signupButtonFocusNode,
-                    onPressed: authService.isLoading ? null : _navigateToSignup,
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: const Text(
-                      'Create Account',
-                      style: TextStyle(fontSize: 16),
-                    ),
                   ),
                 ],
               ),
