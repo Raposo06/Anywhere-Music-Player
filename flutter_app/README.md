@@ -1,361 +1,129 @@
 # Anywhere Music Player - Flutter App
 
-Cross-platform music streaming app for **Web** and **Android TV**, built with Flutter.
+Cross-platform music streaming app built with Flutter, connecting to a Navidrome server via the Subsonic API.
 
-## Features
+## Supported Platforms
 
-- 🎵 Stream music from your self-hosted MinIO storage
-- 🔐 JWT-based authentication
-- 📁 Folder-based music organization
-- 🎨 Album cover art display
-- 🔍 Search tracks and folders
-- 📺 Android TV support with D-Pad navigation
-- 🌐 Web browser support
-- 🎛️ Audio playback controls (play, pause, next, previous)
-- 📊 Progress tracking and seeking
+- Android (phone + TV)
+- Windows
+- Web
 
 ## Prerequisites
 
-- Flutter SDK (3.0.0 or higher)
-- Dart SDK (included with Flutter)
-- A running backend instance (PostgreSQL + PostgREST + MinIO)
+- Flutter SDK (3.8.0+)
+- A running Navidrome server
 
-## Project Structure
+## Setup
 
-```
-flutter_app/
-├── lib/
-│   ├── models/
-│   │   ├── track.dart         # Track data model
-│   │   └── user.dart          # User and auth response models
-│   ├── screens/
-│   │   ├── login_screen.dart  # Login UI
-│   │   ├── signup_screen.dart # Signup UI
-│   │   ├── home_screen.dart   # Music library with folders
-│   │   └── player_screen.dart # Audio player with cover art
-│   ├── services/
-│   │   ├── api_service.dart           # PostgREST HTTP client
-│   │   ├── auth_service.dart          # Authentication & JWT storage
-│   │   └── audio_player_service.dart  # Audio playback (just_audio)
-│   ├── widgets/
-│   │   └── tv_focus_wrapper.dart      # Android TV D-Pad support
-│   └── main.dart              # App entry point
-├── .env.example               # Environment config template
-├── pubspec.yaml               # Dependencies
-└── analysis_options.yaml      # Linting rules
-```
-
-## Setup Instructions
-
-### 1. Install Flutter
-
-Follow the official guide: https://docs.flutter.dev/get-started/install
-
-Verify installation:
-```bash
-flutter doctor
-```
-
-### 2. Install Dependencies
+### 1. Install Dependencies
 
 ```bash
 cd flutter_app
 flutter pub get
 ```
 
-### 3. Generate Code (JSON Serialization)
+### 2. Run the App
+
+The server URL is provided at build time via `--dart-define`:
 
 ```bash
-flutter pub run build_runner build --delete-conflicting-outputs
+flutter run --dart-define=SERVER_URL=https://your-navidrome-server:4533
 ```
 
-This generates the `.g.dart` files for JSON serialization.
-
-### 4. Configure Environment
-
-Create a `.env` file from the template:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your backend API URL:
-
-```bash
-API_BASE_URL=https://api.yourdomain.com
-```
-
-**Important:**
-- For **Web**: Use your public API domain (e.g., `https://api.yourdomain.com`)
-- For **Android TV**: Use your local network IP if testing locally (e.g., `http://192.168.1.100:3000`)
-
-### 5. Run the App
-
-#### Web (for testing on PC):
-```bash
-flutter run -d chrome
-```
-
-#### Android TV:
-```bash
-flutter run -d android
-```
-
-#### Build for Production:
-
-**Web:**
-```bash
-flutter build web
-# Output: build/web/
-```
+### 3. Build for Production
 
 **Android APK:**
 ```bash
-flutter build apk
-# Output: build/app/outputs/flutter-apk/app-release.apk
+flutter build apk --dart-define=SERVER_URL=https://your-server:4533
 ```
 
-**Android TV optimized:**
+**Windows:**
 ```bash
-flutter build apk --target-platform android-arm64
+flutter build windows --dart-define=SERVER_URL=https://your-server:4533
 ```
 
-## Configuration
-
-### PostgREST CORS (for Web)
-
-Your PostgREST API must allow CORS from your Flutter Web domain. In Traefik (Coolify), add a middleware:
-
-```yaml
-http:
-  middlewares:
-    cors-headers:
-      headers:
-        accessControlAllowOriginList:
-          - "https://music.yourdomain.com"
-        accessControlAllowHeaders:
-          - "*"
-        accessControlAllowMethods:
-          - "GET"
-          - "POST"
-          - "OPTIONS"
-```
-
-### Android TV Manifest
-
-The app includes Android TV support. To enable leanback launcher, add to `android/app/src/main/AndroidManifest.xml`:
-
-```xml
-<application>
-    <uses-feature android:name="android.software.leanback" android:required="false" />
-    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
-
-    <activity android:name=".MainActivity"
-              android:banner="@drawable/banner">
-        <intent-filter>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-        </intent-filter>
-    </activity>
-</application>
-```
-
-Create a banner image at `android/app/src/main/res/drawable-xhdpi/banner.png` (320x180px).
-
-## Usage Guide
-
-### 1. Create an Account
-
-- Launch the app
-- Click "Create Account"
-- Enter email, username, and password (min 8 chars)
-- Sign up
-
-### 2. Login
-
-- Enter your email and password
-- Click "Login"
-
-### 3. Browse Music
-
-- Music is organized by **folders** (matching your upload folder structure)
-- Expand a folder to see tracks
-- Click a track to play
-
-### 4. Search
-
-- Use the search bar to find tracks or folders
-- Search works across both track titles and folder names
-
-### 5. Playback Controls
-
-- **Play/Pause**: Toggle playback
-- **Next/Previous**: Navigate playlist
-- **Seek**: Drag the progress slider
-- **Mini Player**: Click the floating button to return to player
-
-### 6. Android TV Navigation
-
-- Use **D-Pad** to navigate between UI elements
-- **Center/Select button** to activate buttons and play tracks
-- **Back button** to navigate back
-
-## Architecture
-
-### State Management
-
-- **Provider** pattern for state management
-- Three main services:
-  - `AuthService`: User authentication & JWT storage
-  - `ApiService`: HTTP client for PostgREST
-  - `AudioPlayerService`: Audio playback with just_audio
-
-### Data Flow
-
-```
-1. User logs in → AuthService stores JWT in SharedPreferences
-2. AuthService provides JWT to ApiService
-3. ApiService makes authenticated requests to PostgREST
-4. Track data flows to UI via Provider
-5. User clicks track → AudioPlayerService streams from MinIO
-```
-
-### Audio Streaming
-
-- Uses **just_audio** package for cross-platform audio
-- Streams MP3 files directly from MinIO URLs
-- Supports background playback
-- Auto-advances to next track in playlist
-
-## Development
-
-### Code Generation
-
-When you modify model files (track.dart, user.dart), regenerate code:
-
+**Web:**
 ```bash
-flutter pub run build_runner build --delete-conflicting-outputs
+flutter build web --dart-define=SERVER_URL=https://your-server:4533
 ```
 
-### Hot Reload
+## Project Structure
 
-Flutter supports hot reload during development:
-
-```bash
-flutter run
-# Press 'r' to hot reload
-# Press 'R' to hot restart
+```
+lib/
+  config/
+    app_config.dart              # Compile-time SERVER_URL config
+  models/
+    track.dart                   # Track data model (Subsonic fields)
+    folder.dart                  # Folder model with Subsonic directory ID
+    user.dart                    # User model
+  screens/
+    login_screen.dart            # Login (username + password)
+    home_screen.dart             # Music library with folder browsing
+    folder_detail_screen.dart    # Folder contents
+    all_tracks_screen.dart       # All tracks list
+    player_screen.dart           # Now playing screen with cover art
+    main_screen.dart             # Navigation shell
+    tv_home_screen.dart          # Android TV interface
+  services/
+    subsonic_api_service.dart    # Subsonic API client (replaces old ApiService)
+    auth_service.dart            # Subsonic token authentication
+    audio_player_service.dart    # Audio playback via just_audio
+    audio_handler.dart           # audio_service background handler
+    windows_media_controls_service.dart  # Windows SMTC integration
+  utils/
+    platform_detector.dart       # Android TV detection
+    responsive.dart              # Responsive layout utilities
+  widgets/
+    tv_focus_wrapper.dart        # D-Pad focus management
+    tv_player_controls.dart      # TV player overlay controls
+  main.dart                      # Entry point, provider setup
 ```
 
-### Debugging
+## Key Dependencies
 
-Enable debug mode in main.dart:
+| Package              | Purpose                                |
+|----------------------|----------------------------------------|
+| `just_audio`         | Cross-platform audio streaming         |
+| `audio_service`      | Background playback + media controls   |
+| `provider`           | State management                       |
+| `crypto`             | MD5 hashing for Subsonic auth tokens   |
+| `shared_preferences` | Local credential storage               |
+| `http`               | HTTP client for Subsonic API calls     |
+| `permission_handler` | Android notification permission        |
+| `smtc_windows`       | Windows system media transport controls|
 
-```dart
-MaterialApp(
-  debugShowCheckedModeBanner: true, // Shows debug banner
-  ...
-)
-```
+## Authentication
 
-Check logs:
-```bash
-flutter logs
-```
+The app uses Subsonic token auth:
+- Each request includes `u=<username>&t=<md5(password+salt)>&s=<salt>&v=1.16.1&c=AnywherePlayer&f=json`
+- Login verifies credentials by calling the Subsonic `ping` endpoint
+- Username and password are stored in SharedPreferences
+- No signup flow -- users are created via the Navidrome web UI
+
+## Android TV
+
+The app automatically detects Android TV and shows a TV-optimized UI with:
+- D-Pad navigation with focus management
+- Large UI elements for 10-foot viewing
+- Remote control media button support
+- Dark theme optimized for TV displays
+
+The Android manifest includes `LEANBACK_LAUNCHER` for TV launcher integration.
 
 ## Troubleshooting
 
-### Issue: "API_BASE_URL not found"
+### App won't connect
+- Verify the `SERVER_URL` was passed via `--dart-define` at build time
+- Check that the Navidrome server is reachable from the device
 
-**Solution:** Create a `.env` file with your API URL:
-```bash
-echo "API_BASE_URL=https://api.yourdomain.com" > .env
-```
+### Audio not playing
+- Check device logs (`adb logcat` on Android, `flutter logs` for others)
+- Verify the Navidrome user has streaming permissions
 
-### Issue: "Network error" on login/signup
-
-**Solutions:**
-1. Check that your backend is running
-2. Verify API_BASE_URL is correct
-3. For Web: Ensure CORS is configured in PostgREST/Traefik
-4. For Android TV: Use local network IP if testing locally
-
-### Issue: Tracks not loading
-
-**Solutions:**
-1. Verify you're logged in
-2. Check that tracks exist in database
-3. Ensure JWT token is valid (7-day expiration)
-4. Check API logs for errors
-
-### Issue: Audio not playing
-
-**Solutions:**
-1. Verify MinIO URLs are publicly accessible
-2. Check browser console (Web) or logcat (Android) for errors
-3. Ensure MinIO bucket policy allows public read access for tracks
-
-### Issue: Cover art not showing
-
-**Solution:** MinIO bucket must allow public read for the `covers/` subfolder.
-
-## Deployment
-
-### Web Deployment
-
-1. Build the app:
-   ```bash
-   flutter build web --release
-   ```
-
-2. Deploy `build/web/` to your web server (Nginx, Apache, Coolify, etc.)
-
-3. Example Nginx config:
-   ```nginx
-   server {
-       listen 80;
-       server_name music.yourdomain.com;
-       root /var/www/flutter_app/build/web;
-
-       location / {
-           try_files $uri $uri/ /index.html;
-       }
-   }
-   ```
-
-### Android TV Deployment
-
-1. Build APK:
-   ```bash
-   flutter build apk --release
-   ```
-
-2. Transfer `build/app/outputs/flutter-apk/app-release.apk` to Android TV
-
-3. Install via ADB:
-   ```bash
-   adb install app-release.apk
-   ```
-
-   Or sideload using apps like "Apps2Fire" or "Send Files to TV".
-
-## Next Steps
-
-- [ ] Add playlist functionality
-- [ ] Add favorites/liked tracks
-- [ ] Implement shuffle mode
-- [ ] Add repeat modes (one, all)
-- [ ] Implement queue management
-- [ ] Add offline caching
-- [ ] Add lyrics display
-- [ ] Implement equalizer
-
-## Learn More
-
-- [Flutter Documentation](https://docs.flutter.dev/)
-- [just_audio Package](https://pub.dev/packages/just_audio)
-- [Provider State Management](https://pub.dev/packages/provider)
-- [Android TV Development](https://developer.android.com/training/tv)
+### Android TV: app not in launcher
+- Ensure `tv_banner.png` exists at `android/app/src/main/res/drawable-xhdpi/`
+- Verify AndroidManifest.xml has the `LEANBACK_LAUNCHER` intent filter
 
 ## License
 

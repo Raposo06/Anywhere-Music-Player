@@ -8,8 +8,9 @@ try:
     from minio.error import S3Error
     import psycopg2
     from psycopg2 import sql
-    from mutagen.mp3 import MP3
-    from mutagen.id3 import ID3, APIC
+    from mutagen import File as MutagenFile
+    from mutagen.id3 import APIC
+    from mutagen.flac import FLAC
     from tqdm import tqdm
     from dotenv import load_dotenv
     from PIL import Image
@@ -38,6 +39,21 @@ DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_SCHEMA = os.getenv("DB_SCHEMA")
+
+# Supported audio file extensions
+AUDIO_EXTENSIONS = {'.mp3', '.flac', '.m4a', '.ogg', '.opus', '.wav', '.aac', '.wma'}
+
+# Map file extension to MIME content type
+CONTENT_TYPE_MAP = {
+    '.mp3': 'audio/mpeg',
+    '.flac': 'audio/flac',
+    '.m4a': 'audio/mp4',
+    '.aac': 'audio/aac',
+    '.ogg': 'audio/ogg',
+    '.opus': 'audio/opus',
+    '.wav': 'audio/wav',
+    '.wma': 'audio/x-ms-wma',
+}
 
 
 # ============================================================================
@@ -167,36 +183,78 @@ def get_relative_path_key(file_path, base_folder):
 
 
 def extract_metadata(file_path):
+    """Extract title and duration from any supported audio format."""
+    fallback = {
+        "title": Path(file_path).stem,
+        "duration_seconds": 0,
+        "file_size_bytes": os.path.getsize(file_path)
+    }
     try:
-        audio = MP3(file_path, ID3=ID3)
-        title = str(audio.get("TIT2", Path(file_path).stem))
+        audio = MutagenFile(file_path)
+        if audio is None:
+            return fallback
+
+        title = None
+        if audio.tags:
+            # ID3 (MP3, some WAV)
+            if hasattr(audio.tags, 'getall'):
+                tit2 = audio.tags.getall('TIT2')
+                if tit2:
+                    title = str(tit2[0])
+            # Vorbis comments (FLAC, OGG, Opus)
+            if not title and 'title' in audio.tags:
+                val = audio.tags['title']
+                title = val[0] if isinstance(val, list) else str(val)
+            # MP4/M4A
+            if not title and '\xa9nam' in audio.tags:
+                title = audio.tags['\xa9nam'][0]
+
         duration = int(audio.info.length) if audio.info else 0
         return {
-            "title": title,
+            "title": title or Path(file_path).stem,
             "duration_seconds": duration,
             "file_size_bytes": os.path.getsize(file_path)
         }
     except Exception:
-        return {
-            "title": Path(file_path).stem,
-            "duration_seconds": 0,
-            "file_size_bytes": os.path.getsize(file_path)
-        }
+        return fallback
 
 
 def extract_cover_art(file_path):
+    """Extract embedded cover art from any supported audio format."""
     try:
-        audio = ID3(file_path)
-        for tag in audio.values():
-            if isinstance(tag, APIC):
-                image = Image.open(BytesIO(tag.data))
-                if image.width > 800 or image.height > 800:
-                    image.thumbnail((800, 800))
-                output = BytesIO()
-                image.convert("RGB").save(output, format="JPEG", quality=85)
-                output.seek(0)
-                return output
-        return None
+        audio = MutagenFile(file_path)
+        if audio is None:
+            return None
+
+        image_data = None
+
+        # ID3 tags (MP3, some WAV)
+        if hasattr(audio, 'tags') and audio.tags:
+            for tag in audio.tags.values():
+                if isinstance(tag, APIC):
+                    image_data = tag.data
+                    break
+
+        # FLAC embedded pictures
+        if image_data is None and isinstance(audio, FLAC) and audio.pictures:
+            image_data = audio.pictures[0].data
+
+        # MP4/M4A cover art
+        if image_data is None and hasattr(audio, 'tags') and audio.tags:
+            covr = audio.tags.get('covr')
+            if covr:
+                image_data = bytes(covr[0])
+
+        if image_data is None:
+            return None
+
+        image = Image.open(BytesIO(image_data))
+        if image.width > 800 or image.height > 800:
+            image.thumbnail((800, 800))
+        output = BytesIO()
+        image.convert("RGB").save(output, format="JPEG", quality=85)
+        output.seek(0)
+        return output
     except:
         return None
 
@@ -206,7 +264,7 @@ def extract_cover_art(file_path):
 # ============================================================================
 
 def main():
-    print("🎵 Anywhere Music Player - MP3 Uploader")
+    print("🎵 Anywhere Music Player - Audio Uploader")
     print("=" * 50)
 
     if not MUSIC_FOLDER or not os.path.exists(MUSIC_FOLDER):
@@ -220,13 +278,13 @@ def main():
     create_table_if_not_exists(db_conn)
     print("✅ Database connected")
 
-    mp3_files = []
+    audio_files = []
     for root, _, files in os.walk(MUSIC_FOLDER):
         for file in files:
-            if file.lower().endswith(".mp3"):
-                mp3_files.append(os.path.join(root, file))
+            if Path(file).suffix.lower() in AUDIO_EXTENSIONS:
+                audio_files.append(os.path.join(root, file))
 
-    print(f"🚀 Processing {len(mp3_files)} files...")
+    print(f"🚀 Processing {len(audio_files)} files...")
 
     uploaded = 0
     skipped = 0
@@ -241,7 +299,7 @@ def main():
         print(f"✅ Loaded {len(existing_files)} existing tracks into memory.")
         # --- OPTIMIZATION END ---
 
-        for file_path in tqdm(mp3_files, desc="Uploading", unit="song"):
+        for file_path in tqdm(audio_files, desc="Uploading", unit="song"):
             try:
                 # 1. Generate Safe Key
                 object_key = get_relative_path_key(file_path, MUSIC_FOLDER)
@@ -253,8 +311,10 @@ def main():
 
                 # 3. Upload Audio
                 try:
+                    ext = Path(file_path).suffix.lower()
+                    content_type = CONTENT_TYPE_MAP.get(ext, 'application/octet-stream')
                     minio_client.fput_object(
-                        MINIO_BUCKET, object_key, file_path, content_type='audio/mpeg'
+                        MINIO_BUCKET, object_key, file_path, content_type=content_type
                     )
                     stream_url = f"https://{MINIO_ENDPOINT}/{MINIO_BUCKET}/{object_key}"
                 except S3Error as e:

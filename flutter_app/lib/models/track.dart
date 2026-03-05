@@ -1,3 +1,5 @@
+import '../services/subsonic_api_service.dart';
+
 class Track {
   final String id;
   final String title;
@@ -8,6 +10,8 @@ class Track {
   final int? durationSeconds;
   final int? fileSizeBytes;
   final DateTime createdAt;
+  final String? artist;
+  final String? album;
 
   Track({
     required this.id,
@@ -19,19 +23,29 @@ class Track {
     this.durationSeconds,
     this.fileSizeBytes,
     required this.createdAt,
+    this.artist,
+    this.album,
   });
 
-  factory Track.fromJson(Map<String, dynamic> json) {
+  /// Create a Track from a Subsonic API song response.
+  factory Track.fromSubsonic(Map<String, dynamic> json, SubsonicApiService api) {
+    final songId = json['id'].toString();
+    final coverArtId = json['coverArt']?.toString();
+
     return Track(
-      id: json['id'] as String,
-      title: json['title'] as String,
-      filename: json['filename'] as String,
-      streamUrl: json['stream_url'] as String,
-      coverArtUrl: json['cover_art_url'] as String?,
-      folderPath: json['folder_path'] as String? ?? '',
-      durationSeconds: json['duration_seconds'] as int?,
-      fileSizeBytes: json['file_size_bytes'] as int?,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      id: songId,
+      title: json['title'] as String? ?? 'Unknown',
+      filename: json['path'] as String? ?? '${json['title'] ?? 'unknown'}.${json['suffix'] ?? 'mp3'}',
+      streamUrl: api.buildStreamUrl(songId),
+      coverArtUrl: coverArtId != null ? api.buildCoverArtUrl(coverArtId) : null,
+      folderPath: json['parent']?.toString() ?? '',
+      durationSeconds: json['duration'] as int?,
+      fileSizeBytes: json['size'] as int?,
+      createdAt: json['created'] != null
+          ? DateTime.tryParse(json['created'] as String) ?? DateTime.now()
+          : DateTime.now(),
+      artist: json['artist'] as String?,
+      album: json['album'] as String?,
     );
   }
 
@@ -45,6 +59,8 @@ class Track {
     'duration_seconds': durationSeconds,
     'file_size_bytes': fileSizeBytes,
     'created_at': createdAt.toIso8601String(),
+    'artist': artist,
+    'album': album,
   };
 
   /// Format duration as MM:SS or H:MM:SS for 1 hour+ tracks

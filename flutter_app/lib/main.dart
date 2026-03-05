@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:audio_service/audio_service.dart';
-import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/audio_handler.dart';
@@ -14,9 +12,6 @@ import 'utils/platform_detector.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Load environment variables
-  await dotenv.load(fileName: ".env");
 
   // Initialize native platform detection (Android TV detection)
   await PlatformDetector.initialize();
@@ -55,58 +50,16 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
-
-    if (apiBaseUrl.isEmpty) {
-      return const MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error, size: 64, color: Colors.red),
-                SizedBox(height: 16),
-                Text(
-                  'Configuration Error',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 8),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(
-                    'API_BASE_URL not found in .env file.\nPlease create a .env file with your API configuration.',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
     return MultiProvider(
       providers: [
-        // API Service
-        Provider<ApiService>(
-          create: (_) => ApiService(baseUrl: apiBaseUrl),
-        ),
-
-        // Auth Service
+        // Auth Service (owns the SubsonicApiService after login)
         ChangeNotifierProvider<AuthService>(
-          create: (context) => AuthService(
-            context.read<ApiService>(),
-          ),
+          create: (_) => AuthService(),
         ),
 
-        // Audio Player Service (depends on ApiService for auth headers)
-        ChangeNotifierProxyProvider<ApiService, AudioPlayerService>(
-          create: (context) => AudioPlayerService(
-            context.read<ApiService>(),
-            audioHandler: audioHandler,
-          ),
-          update: (context, apiService, previous) =>
-              previous ?? AudioPlayerService(apiService, audioHandler: audioHandler),
+        // Audio Player Service
+        ChangeNotifierProvider<AudioPlayerService>(
+          create: (_) => AudioPlayerService(audioHandler: audioHandler),
         ),
       ],
       child: MaterialApp(

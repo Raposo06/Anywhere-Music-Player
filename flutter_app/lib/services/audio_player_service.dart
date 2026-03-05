@@ -6,13 +6,11 @@ import 'package:audio_service/audio_service.dart';
 import '../models/track.dart';
 import 'audio_handler.dart';
 import 'windows_media_controls_service.dart';
-import 'api_service.dart';
 
 enum RepeatMode { off, all, one }
 
 class AudioPlayerService with ChangeNotifier {
   late final AudioPlayer _player;
-  final ApiService _apiService;
   final MusicAudioHandler? _audioHandler;
   final WindowsMediaControlsService _windowsMediaControls = WindowsMediaControlsService.instance;
   Track? _currentTrack;
@@ -46,7 +44,7 @@ class AudioPlayerService with ChangeNotifier {
   /// Check if we're running on Windows
   bool get _isWindows => !kIsWeb && Platform.isWindows;
 
-  AudioPlayerService(this._apiService, {MusicAudioHandler? audioHandler})
+  AudioPlayerService({MusicAudioHandler? audioHandler})
       : _audioHandler = audioHandler {
     // Initialize audio player
     _player = AudioPlayer();
@@ -175,33 +173,21 @@ class AudioPlayerService with ChangeNotifier {
       _currentIndex = 0;
       notifyListeners();
 
-      debugPrint('🎵 Playing: ${track.title}');
-      debugPrint('📡 Stream URL: ${track.streamUrl}');
-
-      // Add auth token as query parameter (avoids just_audio_windows threading bug with headers)
-      final token = _apiService.token;
-      final uri = Uri.parse(track.streamUrl);
-      final authenticatedUrl = uri.replace(
-        queryParameters: {...uri.queryParameters, 'token': token},
-      ).toString();
-
-      debugPrint('🔑 Authenticated URL: ${authenticatedUrl.substring(0, 50)}...');
+      debugPrint('Playing: ${track.title}');
+      debugPrint('Stream URL: ${track.streamUrl}');
 
       // Update system media controls with track info BEFORE playback
       if (_audioHandler != null) {
-        debugPrint('📱 Updating lock screen controls for: ${track.title}');
         _audioHandler!.updateTrackInfo(track);
-      } else {
-        debugPrint('⚠️ Audio handler is null - lock screen controls not available');
       }
 
-      // Create AudioSource WITHOUT custom headers (just_audio_windows crashes with headers)
+      // Stream URL already contains Subsonic auth params
       final source = AudioSource.uri(
-        Uri.parse(authenticatedUrl),
+        Uri.parse(track.streamUrl),
         tag: MediaItem(
           id: track.id,
           title: track.title,
-          artist: track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist',
+          artist: track.artist ?? 'Unknown Artist',
           duration: track.durationSeconds != null
               ? Duration(seconds: track.durationSeconds!)
               : null,
@@ -249,44 +235,7 @@ class AudioPlayerService with ChangeNotifier {
       _currentTrack = _playlist[_currentIndex];
       notifyListeners();
 
-      // Debug: Print the stream URL being attempted
-      debugPrint('🎵 Playing: ${_currentTrack!.title}');
-      debugPrint('📡 Stream URL: ${_playlist[_currentIndex].streamUrl}');
-
-      // Update system media controls with track info BEFORE playback
-      if (_audioHandler != null) {
-        debugPrint('📱 Updating lock screen controls for: ${_currentTrack!.title}');
-        _audioHandler!.updateTrackInfo(_currentTrack!);
-      } else {
-        debugPrint('⚠️ Audio handler is null - lock screen controls not available');
-      }
-
-      // Add auth token as query parameter
-      final token = _apiService.token;
-      final uri = Uri.parse(_playlist[_currentIndex].streamUrl);
-      final authenticatedUrl = uri.replace(
-        queryParameters: {...uri.queryParameters, 'token': token},
-      ).toString();
-
-      // Create AudioSource WITHOUT custom headers
-      final source = AudioSource.uri(
-        Uri.parse(authenticatedUrl),
-        tag: MediaItem(
-          id: _currentTrack!.id,
-          title: _currentTrack!.title,
-          artist: _currentTrack!.folderPath.isNotEmpty ? _currentTrack!.folderPath : 'Unknown Artist',
-          duration: _currentTrack!.durationSeconds != null
-              ? Duration(seconds: _currentTrack!.durationSeconds!)
-              : null,
-          artUri: _currentTrack!.coverArtUrl != null ? Uri.parse(_currentTrack!.coverArtUrl!) : null,
-        ),
-      );
-
-      // Use setAudioSource for proper state management
-      await _player.setAudioSource(source);
-      await _player.play();
-      // DISABLED: Windows media controls still have keyboard issues
-      // _updateWindowsMediaControls();
+      await _playCurrentTrack();
 
       _isLoading = false;
       notifyListeners();
@@ -327,44 +276,7 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
 
     try {
-      // Debug: Print the stream URL being attempted
-      debugPrint('🎵 Next: ${_currentTrack!.title}');
-      debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
-
-      // Update system media controls with track info BEFORE playback
-      if (_audioHandler != null) {
-        debugPrint('📱 Updating lock screen controls for: ${_currentTrack!.title}');
-        _audioHandler!.updateTrackInfo(_currentTrack!);
-      } else {
-        debugPrint('⚠️ Audio handler is null - lock screen controls not available');
-      }
-
-      // Add auth token as query parameter
-      final token = _apiService.token;
-      final uri = Uri.parse(_currentTrack!.streamUrl);
-      final authenticatedUrl = uri.replace(
-        queryParameters: {...uri.queryParameters, 'token': token},
-      ).toString();
-
-      // Create AudioSource WITHOUT custom headers
-      final source = AudioSource.uri(
-        Uri.parse(authenticatedUrl),
-        tag: MediaItem(
-          id: _currentTrack!.id,
-          title: _currentTrack!.title,
-          artist: _currentTrack!.folderPath.isNotEmpty ? _currentTrack!.folderPath : 'Unknown Artist',
-          duration: _currentTrack!.durationSeconds != null
-              ? Duration(seconds: _currentTrack!.durationSeconds!)
-              : null,
-          artUri: _currentTrack!.coverArtUrl != null ? Uri.parse(_currentTrack!.coverArtUrl!) : null,
-        ),
-      );
-
-      // Use setAudioSource for proper state management
-      await _player.setAudioSource(source);
-      await _player.play();
-      // DISABLED: Windows media controls still have keyboard issues
-      // _updateWindowsMediaControls();
+      await _playCurrentTrack();
 
       _isLoading = false;
       notifyListeners();
@@ -394,44 +306,7 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
 
     try {
-      // Debug: Print the stream URL being attempted
-      debugPrint('🎵 Previous: ${_currentTrack!.title}');
-      debugPrint('📡 Stream URL: ${_currentTrack!.streamUrl}');
-
-      // Update system media controls with track info BEFORE playback
-      if (_audioHandler != null) {
-        debugPrint('📱 Updating lock screen controls for: ${_currentTrack!.title}');
-        _audioHandler!.updateTrackInfo(_currentTrack!);
-      } else {
-        debugPrint('⚠️ Audio handler is null - lock screen controls not available');
-      }
-
-      // Add auth token as query parameter
-      final token = _apiService.token;
-      final uri = Uri.parse(_currentTrack!.streamUrl);
-      final authenticatedUrl = uri.replace(
-        queryParameters: {...uri.queryParameters, 'token': token},
-      ).toString();
-
-      // Create AudioSource WITHOUT custom headers
-      final source = AudioSource.uri(
-        Uri.parse(authenticatedUrl),
-        tag: MediaItem(
-          id: _currentTrack!.id,
-          title: _currentTrack!.title,
-          artist: _currentTrack!.folderPath.isNotEmpty ? _currentTrack!.folderPath : 'Unknown Artist',
-          duration: _currentTrack!.durationSeconds != null
-              ? Duration(seconds: _currentTrack!.durationSeconds!)
-              : null,
-          artUri: _currentTrack!.coverArtUrl != null ? Uri.parse(_currentTrack!.coverArtUrl!) : null,
-        ),
-      );
-
-      // Use setAudioSource for proper state management
-      await _player.setAudioSource(source);
-      await _player.play();
-      // DISABLED: Windows media controls still have keyboard issues
-      // _updateWindowsMediaControls();
+      await _playCurrentTrack();
 
       _isLoading = false;
       notifyListeners();
@@ -444,6 +319,32 @@ class AudioPlayerService with ChangeNotifier {
       }
       notifyListeners();
     }
+  }
+
+  /// Helper: play the current track (_currentTrack must be set).
+  Future<void> _playCurrentTrack() async {
+    final track = _currentTrack!;
+
+    if (_audioHandler != null) {
+      _audioHandler!.updateTrackInfo(track);
+    }
+
+    // Stream URL already contains Subsonic auth params
+    final source = AudioSource.uri(
+      Uri.parse(track.streamUrl),
+      tag: MediaItem(
+        id: track.id,
+        title: track.title,
+        artist: track.artist ?? 'Unknown Artist',
+        duration: track.durationSeconds != null
+            ? Duration(seconds: track.durationSeconds!)
+            : null,
+        artUri: track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
+      ),
+    );
+
+    await _player.setAudioSource(source);
+    await _player.play();
   }
 
   /// Toggle play/pause

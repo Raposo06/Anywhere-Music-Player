@@ -1,16 +1,30 @@
 class Folder {
+  final String? id;
   final String folderPath;
   final int trackCount;
 
   Folder({
+    this.id,
     required this.folderPath,
     required this.trackCount,
   });
 
-  factory Folder.fromJson(Map<String, dynamic> json) {
+  /// Create a Folder from a Subsonic API directory/artist response.
+  factory Folder.fromSubsonic(Map<String, dynamic> json) {
+    // Count child songs (non-directory items) if available
+    int childCount = 0;
+    final childList = json['child'];
+    if (childList != null) {
+      final children = childList is List ? childList : [childList];
+      childCount = children.where((c) => c['isDir'] != true).length;
+    }
+    // Fall back to albumCount for artist entries
+    childCount = childCount > 0 ? childCount : (json['albumCount'] as int? ?? 0);
+
     return Folder(
-      folderPath: json['folder_path'] as String,
-      trackCount: json['track_count'] as int,
+      id: json['id']?.toString(),
+      folderPath: json['name'] as String? ?? json['title'] as String? ?? 'Unknown',
+      trackCount: childCount,
     );
   }
 
