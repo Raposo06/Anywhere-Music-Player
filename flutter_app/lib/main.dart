@@ -94,12 +94,15 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
+  bool _initialized = false;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Initialize auth state from storage
-      context.read<AuthService>().initialize();
+      await context.read<AuthService>().initialize();
+      if (mounted) setState(() => _initialized = true);
       // Request notification permission for lock screen controls (Android 13+)
       _requestNotificationPermission();
     });
@@ -122,8 +125,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final size = MediaQuery.of(context).size;
     PlatformDetector.initializeWithScreenSize(size.width, size.height);
 
-    // Show loading screen while checking auth state
-    if (authService.isLoading) {
+    // Show loading screen only during initial auth check (not during login)
+    if (!_initialized) {
       return const Scaffold(
         body: Center(
           child: CircularProgressIndicator(),

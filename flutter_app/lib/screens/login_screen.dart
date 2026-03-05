@@ -49,10 +49,12 @@ class _LoginScreenState extends State<LoginScreen> {
         _passwordController.text,
       );
     } on SubsonicApiException catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = e.message;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Connection failed: $e';
       });
