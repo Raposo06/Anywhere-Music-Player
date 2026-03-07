@@ -52,6 +52,49 @@ services:
 
 The first user created via the Navidrome web UI becomes admin.
 
+### 1b. (Optional) Sync music from MinIO
+
+If your music library lives in a **MinIO bucket**, you can run a sidecar container using the official MinIO Client (`mc`) with `mc mirror --watch` to continuously sync files into Navidrome's music volume. The moment an MP3 is uploaded to MinIO, it is mirrored to the local folder and Navidrome picks it up on its next scan.
+
+```yaml
+# docker-compose.yml (add alongside navidrome service)
+services:
+  navidrome:
+    image: deluan/navidrome:latest
+    ports:
+      - "4533:4533"
+    environment:
+      ND_SCANSCHEDULE: 5m          # Lower scan interval so new files appear faster
+      ND_LOGLEVEL: info
+    volumes:
+      - ./data:/data
+      - music:/music:ro            # Read-only for Navidrome
+
+  minio-sync:
+    image: minio/mc
+    entrypoint: /bin/sh
+    command: >
+      -c "mc alias set myminio http://minio:9000 $${MINIO_ACCESS_KEY} $${MINIO_SECRET_KEY} &&
+          mc mirror --watch --overwrite myminio/music-bucket /music"
+    environment:
+      MINIO_ACCESS_KEY: your-access-key
+      MINIO_SECRET_KEY: your-secret-key
+    volumes:
+      - music:/music               # Shared with Navidrome
+    restart: always
+
+volumes:
+  music:
+```
+
+**How it works:**
+- `mc mirror --watch` subscribes to MinIO bucket events natively — no polling
+- On `ObjectCreated`, the file is downloaded to `/music` in under a second
+- On `ObjectRemoved`, the file is deleted from the mirror
+- `restart: always` ensures the sync resumes automatically after a crash (it does a full diff on restart before resuming watch, so no files are missed)
+
+> **Note:** Music is stored in both MinIO and the local volume, so plan for doubled disk usage.
+
 ### 2. Build the Flutter App
 
 ```bash
