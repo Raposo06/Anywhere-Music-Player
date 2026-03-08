@@ -217,12 +217,24 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
             children: [
               // Subfolders
               ..._subfolders.map((folder) => ListTile(
-                leading: const Icon(Icons.folder, size: 48, color: Colors.blue),
+                leading: folder.coverArtUrl != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: Image.network(
+                          folder.coverArtUrl!,
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const Icon(Icons.folder, size: 48, color: Colors.blue),
+                        ),
+                      )
+                    : const Icon(Icons.folder, size: 48, color: Colors.blue),
                 title: Text(
                   folder.displayName,
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                subtitle: Text('${folder.trackCount} item(s)'),
+                subtitle: folder.subtitle.isNotEmpty ? Text(folder.subtitle) : null,
                 onTap: () => _openSubfolder(folder),
               )),
               if (_subfolders.isNotEmpty && _tracks.isNotEmpty)

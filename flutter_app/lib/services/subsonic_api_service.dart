@@ -167,9 +167,7 @@ class SubsonicApiService {
       if (musicFolderId != null) params['musicFolderId'] = musicFolderId;
 
       final uri = _buildUri('getIndexes', params);
-      debugPrint('Subsonic getIndexes: $uri');
       final response = await http.get(uri);
-      debugPrint('Subsonic getIndexes response: ${response.body.substring(0, response.body.length.clamp(0, 500))}');
       return _parseResponse(response);
     } catch (e) {
       if (e is SubsonicApiException) rethrow;
@@ -195,14 +193,9 @@ class SubsonicApiService {
   /// Uses getIndexes to get the artist/folder listing, then returns them as Folders.
   Future<List<Folder>> getFolders({String? musicFolderId}) async {
     final data = await getIndexes(musicFolderId: musicFolderId);
-    debugPrint('Subsonic getFolders parsed data keys: ${data.keys.toList()}');
 
     final indexes = data['indexes'] as Map<String, dynamic>?;
-    if (indexes == null) {
-      debugPrint('Subsonic getFolders: "indexes" key not found in response');
-      return [];
-    }
-    debugPrint('Subsonic getFolders indexes keys: ${indexes.keys.toList()}');
+    if (indexes == null) return [];
 
     final folders = <Folder>[];
 
@@ -217,7 +210,7 @@ class SubsonicApiService {
 
       final artists = artistList is List ? artistList : [artistList];
       for (final artist in artists) {
-        folders.add(Folder.fromSubsonic(artist as Map<String, dynamic>));
+        folders.add(Folder.fromSubsonic(artist as Map<String, dynamic>, api: this));
       }
     }
 
@@ -246,7 +239,7 @@ class SubsonicApiService {
     for (final child in children) {
       final item = child as Map<String, dynamic>;
       if (item['isDir'] == true) {
-        folders.add(Folder.fromSubsonic(item));
+        folders.add(Folder.fromSubsonic(item, api: this));
       } else {
         tracks.add(Track.fromSubsonic(item, this));
       }
@@ -310,7 +303,7 @@ class SubsonicApiService {
       if (albumList != null) {
         final items = albumList is List ? albumList : [albumList];
         for (final item in items) {
-          albums.add(Folder.fromSubsonic(item as Map<String, dynamic>));
+          albums.add(Folder.fromSubsonic(item as Map<String, dynamic>, api: this));
         }
       }
 

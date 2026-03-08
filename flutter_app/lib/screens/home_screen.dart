@@ -346,7 +346,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisCount: gridColumns,
                 crossAxisSpacing: 16,
                 mainAxisSpacing: 16,
-                childAspectRatio: 1.2,
+                childAspectRatio: 0.85,
               ),
               itemCount: _folders.length,
               itemBuilder: (context, index) => _buildFolderCard(_folders[index]),
@@ -408,7 +408,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildFolderTile(Folder folder) {
     return ListTile(
-      leading: const Icon(Icons.folder, size: 48, color: Colors.blue),
+      leading: folder.coverArtUrl != null
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Image.network(
+                folder.coverArtUrl!,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    const Icon(Icons.folder, size: 48, color: Colors.blue),
+              ),
+            )
+          : const Icon(Icons.folder, size: 48, color: Colors.blue),
       title: Text(
         folder.folderPath,
         style: const TextStyle(
@@ -416,7 +428,7 @@ class _HomeScreenState extends State<HomeScreen> {
           fontSize: 16,
         ),
       ),
-      subtitle: Text('${folder.trackCount} track(s)'),
+      subtitle: folder.subtitle.isNotEmpty ? Text(folder.subtitle) : null,
       trailing: IconButton(
         icon: const Icon(Icons.play_circle_fill, size: 36, color: Colors.green),
         onPressed: () => _playFolder(folder),
@@ -433,45 +445,62 @@ class _HomeScreenState extends State<HomeScreen> {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _openFolder(folder),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.folder, size: 64, color: Colors.blue),
-              const SizedBox(height: 12),
-              Text(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: folder.coverArtUrl != null
+                  ? Image.network(
+                      folder.coverArtUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Center(
+                        child: Icon(Icons.folder, size: 64, color: Colors.blue),
+                      ),
+                    )
+                  : const Center(
+                      child: Icon(Icons.folder, size: 64, color: Colors.blue),
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+              child: Text(
                 folder.folderPath,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
-                  fontSize: 14,
+                  fontSize: 13,
                 ),
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 4),
-              Text(
-                '${folder.trackCount} track(s)',
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 12,
+            ),
+            if (folder.subtitle.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  folder.subtitle,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 11,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
-              const Spacer(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.play_circle_fill, color: Colors.green),
-                    iconSize: 32,
-                    onPressed: () => _playFolder(folder),
-                    tooltip: 'Play all',
-                  ),
-                ],
-              ),
-            ],
-          ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.play_circle_fill, color: Colors.green),
+                  iconSize: 28,
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _playFolder(folder),
+                  tooltip: 'Play all',
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+          ],
         ),
       ),
     );
