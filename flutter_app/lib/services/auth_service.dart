@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config/app_config.dart';
 import '../models/user.dart';
 import 'subsonic_api_service.dart';
 
@@ -9,6 +8,7 @@ class AuthService with ChangeNotifier {
   User? _currentUser;
   bool _isLoading = false;
 
+  static const String _serverUrlKey = 'server_url';
   static const String _usernameKey = 'username';
   static const String _passwordKey = 'password';
 
@@ -17,7 +17,11 @@ class AuthService with ChangeNotifier {
   bool get isAuthenticated => _apiService != null && _currentUser != null;
   bool get isLoading => _isLoading;
 
-  String get _serverUrl => AppConfig.serverUrl;
+  /// Return the saved server URL (for pre-filling the login form).
+  Future<String?> getSavedServerUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_serverUrlKey);
+  }
 
   /// Initialize auth state from stored credentials.
   Future<void> initialize() async {
@@ -26,12 +30,13 @@ class AuthService with ChangeNotifier {
 
     try {
       final prefs = await SharedPreferences.getInstance();
+      final serverUrl = prefs.getString(_serverUrlKey);
       final username = prefs.getString(_usernameKey);
       final password = prefs.getString(_passwordKey);
 
-      if (username != null && password != null) {
+      if (serverUrl != null && username != null && password != null) {
         final api = SubsonicApiService(
-          serverUrl: _serverUrl,
+          serverUrl: serverUrl,
           username: username,
           password: password,
         );
@@ -41,7 +46,7 @@ class AuthService with ChangeNotifier {
           await api.ping();
           _apiService = api;
           _currentUser = User(username: username);
-          debugPrint('AuthService: Restored session for $username @ $_serverUrl');
+          debugPrint('AuthService: Restored session for $username @ $serverUrl');
         } catch (e) {
           debugPrint('AuthService: Stored credentials invalid, clearing');
           await _clearStorage();
@@ -57,13 +62,13 @@ class AuthService with ChangeNotifier {
   }
 
   /// Login to a Navidrome server using Subsonic API credentials.
-  Future<void> login(String username, String password) async {
+  Future<void> login(String serverUrl, String username, String password) async {
     _isLoading = true;
     notifyListeners();
 
     try {
       final api = SubsonicApiService(
-        serverUrl: _serverUrl,
+        serverUrl: serverUrl,
         username: username,
         password: password,
       );
@@ -73,12 +78,13 @@ class AuthService with ChangeNotifier {
 
       // Save credentials
       final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_serverUrlKey, serverUrl);
       await prefs.setString(_usernameKey, username);
       await prefs.setString(_passwordKey, password);
 
       _apiService = api;
       _currentUser = User(username: username);
-      debugPrint('AuthService: Logged in as $username @ $_serverUrl');
+      debugPrint('AuthService: Logged in as $username @ $serverUrl');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -96,6 +102,7 @@ class AuthService with ChangeNotifier {
   /// Clear all stored authentication data.
   Future<void> _clearStorage() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_serverUrlKey);
     await prefs.remove(_usernameKey);
     await prefs.remove(_passwordKey);
   }

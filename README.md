@@ -100,26 +100,26 @@ volumes:
 ```bash
 cd flutter_app
 flutter pub get
-
-# Run with your Navidrome server URL baked in:
-flutter run --dart-define=SERVER_URL=https://your-navidrome-server:4533
+flutter run
 ```
+
+The server URL is entered on the login screen at runtime — no build-time configuration needed.
 
 ### 3. Build for Production
 
 **Android (phone + TV):**
 ```bash
-flutter build apk --dart-define=SERVER_URL=https://your-server:4533
+flutter build apk
 ```
 
 **Windows:**
 ```bash
-flutter build windows --dart-define=SERVER_URL=https://your-server:4533
+flutter build windows
 ```
 
 **Web:**
 ```bash
-flutter build web --dart-define=SERVER_URL=https://your-server:4533
+flutter build web
 ```
 
 ## Features
@@ -137,14 +137,12 @@ flutter build web --dart-define=SERVER_URL=https://your-server:4533
 
 ```
 flutter_app/lib/
-  config/
-    app_config.dart              # Compile-time server URL
   models/
     track.dart                   # Track model (Subsonic fields)
     folder.dart                  # Folder model with Subsonic ID
     user.dart                    # User model
   screens/
-    login_screen.dart            # Username + password login
+    login_screen.dart            # Server URL + credentials login
     home_screen.dart             # Folder browsing
     folder_detail_screen.dart    # Folder contents
     all_tracks_screen.dart       # All tracks view
@@ -183,9 +181,7 @@ scripts/
 
 ## Authentication
 
-The app uses Subsonic token authentication: for every request, it generates a random salt and computes `token = MD5(password + salt)`. Credentials (username + password) are stored locally in SharedPreferences.
-
-The server URL is set at build time via `--dart-define=SERVER_URL=...` and is not user-configurable at runtime.
+The app uses Subsonic token authentication: for every request, it generates a random salt and computes `token = MD5(password + salt)`. The server URL and credentials are stored locally in SharedPreferences.
 
 ## License
 
