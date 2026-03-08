@@ -167,7 +167,9 @@ class SubsonicApiService {
       if (musicFolderId != null) params['musicFolderId'] = musicFolderId;
 
       final uri = _buildUri('getIndexes', params);
+      debugPrint('Subsonic getIndexes: $uri');
       final response = await http.get(uri);
+      debugPrint('Subsonic getIndexes response: ${response.body.substring(0, response.body.length.clamp(0, 500))}');
       return _parseResponse(response);
     } catch (e) {
       if (e is SubsonicApiException) rethrow;
@@ -193,9 +195,14 @@ class SubsonicApiService {
   /// Uses getIndexes to get the artist/folder listing, then returns them as Folders.
   Future<List<Folder>> getFolders({String? musicFolderId}) async {
     final data = await getIndexes(musicFolderId: musicFolderId);
+    debugPrint('Subsonic getFolders parsed data keys: ${data.keys.toList()}');
 
     final indexes = data['indexes'] as Map<String, dynamic>?;
-    if (indexes == null) return [];
+    if (indexes == null) {
+      debugPrint('Subsonic getFolders: "indexes" key not found in response');
+      return [];
+    }
+    debugPrint('Subsonic getFolders indexes keys: ${indexes.keys.toList()}');
 
     final folders = <Folder>[];
 
