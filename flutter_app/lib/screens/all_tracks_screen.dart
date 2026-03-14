@@ -22,8 +22,13 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   String _searchQuery = '';
-  bool _hasSearched = false;
   Timer? _debounceTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialTracks();
+  }
 
   @override
   void dispose() {
@@ -34,6 +39,34 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
 
   SubsonicApiService? get _api => context.read<AuthService>().apiService;
 
+  /// Load songs immediately on screen open using getRandomSongs.
+  Future<void> _loadInitialTracks() async {
+    if (!mounted) return;
+    final api = _api;
+    if (api == null) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final tracks = await api.getRandomSongs(size: 200);
+
+      if (!mounted) return;
+      setState(() {
+        _tracks = tracks;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Failed to load tracks: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
   void _onSearchChanged(String query) {
     _debounceTimer?.cancel();
     setState(() {
@@ -41,11 +74,8 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     });
 
     if (query.isEmpty) {
-      setState(() {
-        _tracks = [];
-        _hasSearched = false;
-        _isLoading = false;
-      });
+      // Return to initial random tracks
+      _loadInitialTracks();
       return;
     }
 
@@ -69,12 +99,10 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
       final result = await api.search3(query, songCount: 100);
 
       if (!mounted) return;
-      // Verify query hasn't changed while we were waiting
       if (_searchQuery != query) return;
 
       setState(() {
         _tracks = result.songs;
-        _hasSearched = true;
         _isLoading = false;
       });
     } on SubsonicApiException catch (e) {
@@ -119,7 +147,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Search Tracks'),
+        title: const Text('All Tracks'),
         actions: [
           Selector<AudioPlayerService, bool>(
             selector: (_, ps) => ps.currentTrack != null,
@@ -171,21 +199,34 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
                 ),
               ),
 
-              // User info and play all button
+              // Header with track count and play all
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Welcome, ${authService.currentUser?.username ?? "User"}',
+                      _searchQuery.isEmpty
+                          ? 'Discover (${_tracks.length} tracks)'
+                          : 'Results (${_tracks.length} tracks)',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     if (_tracks.isNotEmpty)
-                      ElevatedButton.icon(
-                        onPressed: _playAll,
-                        icon: const Icon(Icons.play_arrow),
-                        label: Text('Play All (${_tracks.length})'),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_searchQuery.isEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.refresh),
+                              onPressed: _loadInitialTracks,
+                              tooltip: 'Shuffle new tracks',
+                            ),
+                          ElevatedButton.icon(
+                            onPressed: _playAll,
+                            icon: const Icon(Icons.play_arrow),
+                            label: const Text('Play All'),
+                          ),
+                        ],
                       ),
                   ],
                 ),
@@ -234,7 +275,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: () => _performSearch(_searchQuery),
+              onPressed: _searchQuery.isEmpty ? _loadInitialTracks : () => _performSearch(_searchQuery),
               child: const Text('Retry'),
             ),
           ],
@@ -242,25 +283,19 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
       );
     }
 
-    if (!_hasSearched) {
+    if (_tracks.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search, size: 64, color: Colors.grey[400]),
+            Icon(Icons.library_music, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
-              'Search for tracks',
+              _searchQuery.isEmpty ? 'No tracks found' : 'No results for "$_searchQuery"',
               style: TextStyle(fontSize: 18, color: Colors.grey[500]),
             ),
           ],
         ),
-      );
-    }
-
-    if (_tracks.isEmpty) {
-      return const Center(
-        child: Text('No tracks found'),
       );
     }
 
@@ -270,6 +305,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
         final track = _tracks[index];
         return _AllTracksTile(
           track: track,
+          index: index,
           onTap: () => _playTrack(track),
         );
       },
@@ -280,9 +316,10 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
 /// Extracted track tile that uses Selector to avoid rebuilding on position updates.
 class _AllTracksTile extends StatelessWidget {
   final Track track;
+  final int index;
   final VoidCallback onTap;
 
-  const _AllTracksTile({required this.track, required this.onTap});
+  const _AllTracksTile({required this.track, required this.index, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -292,8 +329,21 @@ class _AllTracksTile extends StatelessWidget {
         final isCurrentTrack = currentTrackId == track.id;
 
         return ListTile(
-          leading: track.coverArtUrl != null
-              ? ClipRRect(
+          leading: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 30,
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    color: isCurrentTrack ? Colors.blue : Colors.grey,
+                    fontWeight: isCurrentTrack ? FontWeight.bold : null,
+                  ),
+                ),
+              ),
+              if (track.coverArtUrl != null)
+                ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: CachedNetworkImage(
                     imageUrl: track.coverArtUrl!,
@@ -306,7 +356,10 @@ class _AllTracksTile extends StatelessWidget {
                     ),
                   ),
                 )
-              : const Icon(Icons.music_note, size: 48),
+              else
+                const Icon(Icons.music_note, size: 48),
+            ],
+          ),
           title: Text(
             track.title,
             style: TextStyle(
@@ -314,7 +367,11 @@ class _AllTracksTile extends StatelessWidget {
               color: isCurrentTrack ? Colors.blue : null,
             ),
           ),
-          subtitle: Text('${track.artist ?? ''} ${track.formattedDuration}'.trim()),
+          subtitle: Text(
+            '${track.artist ?? ''} ${track.formattedDuration}'.trim(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           trailing: isCurrentTrack
               ? const Icon(Icons.equalizer, color: Colors.blue)
               : null,

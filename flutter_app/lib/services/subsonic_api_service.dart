@@ -326,6 +326,73 @@ class SubsonicApiService {
     return tracks;
   }
 
+  /// Get random songs from the library.
+  /// Useful for showing tracks immediately without requiring a search query.
+  Future<List<Track>> getRandomSongs({int size = 100}) async {
+    try {
+      final uri = _buildUri('getRandomSongs', {
+        'size': size.toString(),
+      });
+
+      final response = await _get(uri);
+      final data = _parseResponse(response);
+
+      final randomSongs = data['randomSongs'] as Map<String, dynamic>?;
+      if (randomSongs == null) return [];
+
+      final songList = randomSongs['song'];
+      if (songList == null) return [];
+
+      final items = songList is List ? songList : [songList];
+      return items
+          .map((item) => Track.fromSubsonic(item as Map<String, dynamic>, this))
+          .toList();
+    } catch (e) {
+      if (e is SubsonicApiException) rethrow;
+      throw SubsonicApiException('Failed to get random songs: $e');
+    }
+  }
+
+  /// Get a list of albums using getAlbumList2 (tag-based).
+  /// [type] can be: 'newest', 'recent', 'frequent', 'random', 'alphabeticalByName', etc.
+  Future<List<Folder>> getAlbumList2({
+    required String type,
+    int size = 20,
+    int offset = 0,
+  }) async {
+    final cacheKey = 'albumList2_${type}_${size}_$offset';
+    final cached = _getFromCache<List<Folder>>(cacheKey);
+    if (cached != null) return cached;
+
+    try {
+      final uri = _buildUri('getAlbumList2', {
+        'type': type,
+        'size': size.toString(),
+        'offset': offset.toString(),
+      });
+
+      final response = await _get(uri);
+      final data = _parseResponse(response);
+
+      final albumList = data['albumList2'] as Map<String, dynamic>?;
+      if (albumList == null) return [];
+
+      final albums = albumList['album'];
+      if (albums == null) return [];
+
+      final items = albums is List ? albums : [albums];
+      final result = items
+          .map((item) => Folder.fromSubsonic(item as Map<String, dynamic>, api: this))
+          .toList();
+
+      _putInCache(cacheKey, result);
+      return result;
+    } catch (e) {
+      if (e is SubsonicApiException) rethrow;
+      throw SubsonicApiException('Failed to get album list: $e');
+    }
+  }
+
   /// Search for songs, albums, and artists using search3.
   Future<({List<Track> songs, List<Folder> albums})> search3(
     String query, {

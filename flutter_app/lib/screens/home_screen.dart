@@ -21,6 +21,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
   List<Folder> _folders = [];
+  List<Folder> _recentAlbums = [];
   List<Track> _rootTracks = [];
   bool _isLoading = false;
   String? _errorMessage;
@@ -53,21 +54,33 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     List<Folder> folders = [];
+    List<Folder> recentAlbums = [];
     String? error;
 
     try {
-      folders = await api.getFolders();
+      // Load folders and recently added albums in parallel
+      final results = await Future.wait([
+        api.getFolders(),
+        api.getAlbumList2(type: 'newest', size: 10),
+      ]);
+      folders = results[0] as List<Folder>;
+      recentAlbums = results[1] as List<Folder>;
     } catch (e) {
-      debugPrint('Failed to load folders: $e');
+      debugPrint('Failed to load data: $e');
       error = 'Failed to load folders';
+      // Try loading just folders if album list fails
+      try {
+        folders = await api.getFolders();
+      } catch (_) {}
     }
 
     if (!mounted) return;
     setState(() {
       _folders = folders;
+      _recentAlbums = recentAlbums;
       _rootTracks = [];
       _isLoading = false;
-      _errorMessage = folders.isEmpty ? error : null;
+      _errorMessage = folders.isEmpty && recentAlbums.isEmpty ? error : null;
     });
   }
 
@@ -298,7 +311,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    if (_folders.isEmpty && _rootTracks.isEmpty) {
+    if (_folders.isEmpty && _rootTracks.isEmpty && _recentAlbums.isEmpty) {
       return const Center(
         child: Text('No content found'),
       );
@@ -307,6 +320,34 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListView(
       padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
       children: [
+        // Recently Added section (only in default view, not search)
+        if (_recentAlbums.isNotEmpty && _searchQuery.isEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              children: [
+                const Icon(Icons.new_releases, color: Colors.deepPurple),
+                const SizedBox(width: 8),
+                Text(
+                  'Recently Added',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 180,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _recentAlbums.length,
+              itemBuilder: (context, index) => _buildRecentAlbumCard(_recentAlbums[index]),
+            ),
+          ),
+          const Divider(height: 24),
+        ],
+
         // Search result tracks
         if (_rootTracks.isNotEmpty) ...[
           Padding(
@@ -423,6 +464,53 @@ class _HomeScreenState extends State<HomeScreen> {
         tooltip: 'Play all tracks in this folder',
       ),
       onTap: () => _openFolder(folder),
+    );
+  }
+
+  /// Horizontal scrolling card for recently added albums
+  Widget _buildRecentAlbumCard(Folder album) {
+    return SizedBox(
+      width: 140,
+      child: Card(
+        elevation: 2,
+        clipBehavior: Clip.antiAlias,
+        margin: const EdgeInsets.only(right: 12),
+        child: InkWell(
+          onTap: () => _openFolder(album),
+          onLongPress: () => _playFolder(album),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: album.coverArtUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: album.coverArtUrl!,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => const Center(
+                          child: Icon(Icons.album, size: 48, color: Colors.deepPurple),
+                        ),
+                      )
+                    : const Center(
+                        child: Icon(Icons.album, size: 48, color: Colors.deepPurple),
+                      ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
+                child: Text(
+                  album.folderPath,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(height: 2),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
