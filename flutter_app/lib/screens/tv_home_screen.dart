@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../services/auth_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/subsonic_api_service.dart';
@@ -382,10 +383,10 @@ class _TvTrackCardState extends State<_TvTrackCard> {
                 child: widget.track.coverArtUrl != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(4),
-                        child: Image.network(
-                          widget.track.coverArtUrl!,
+                        child: CachedNetworkImage(
+                          imageUrl: widget.track.coverArtUrl!,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
+                          errorWidget: (_, __, ___) {
                             return const Icon(
                               Icons.music_note,
                               color: Colors.white54,

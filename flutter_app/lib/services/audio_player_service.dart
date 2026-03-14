@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
@@ -24,6 +25,13 @@ class AudioPlayerService with ChangeNotifier {
   double _volume = 1.0; // 0.0 to 1.0
   String? _lastError;
   final _random = Random();
+
+  /// Streams exposed for UI widgets that need high-frequency updates (e.g., progress bar).
+  /// Using streams instead of notifyListeners() avoids rebuilding the entire widget tree.
+  Stream<Duration> get positionStream => _player.positionStream;
+  Stream<Duration?> get durationStream => _player.durationStream;
+  Stream<Duration> get bufferedPositionStream => _player.bufferedPositionStream;
+  Stream<bool> get playingStream => _player.playingStream;
 
   AudioPlayer get player => _player;
   Track? get currentTrack => _currentTrack;
@@ -62,24 +70,11 @@ class AudioPlayerService with ChangeNotifier {
     // Initialize Windows media controls for keyboard support
     _initializeWindowsMediaControls();
 
-    // Listen to player state changes
+    // Only notify on discrete state changes (play/pause), not high-frequency streams.
     _player.playingStream.listen((playing) {
-      debugPrint('🎵 Player state changed: ${playing ? "Playing" : "Paused/Stopped"}');
       if (_isWindows) {
         _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
       }
-      notifyListeners();
-    });
-
-    _player.positionStream.listen((_) {
-      notifyListeners();
-    });
-
-    _player.durationStream.listen((_) {
-      notifyListeners();
-    });
-
-    _player.bufferedPositionStream.listen((_) {
       notifyListeners();
     });
 
@@ -87,11 +82,9 @@ class AudioPlayerService with ChangeNotifier {
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
         if (_repeatMode == RepeatMode.one) {
-          // Replay current track
           _player.seek(Duration.zero);
           _player.play();
         } else {
-          // Advance to next track
           playNext();
         }
       }
@@ -113,29 +106,23 @@ class AudioPlayerService with ChangeNotifier {
     try {
       await _windowsMediaControls.initialize(
         onPlay: () {
-          debugPrint('🎹 Windows keyboard: Play');
           _player.play();
         },
         onPause: () {
-          debugPrint('🎹 Windows keyboard: Pause');
           _player.pause();
         },
         onNext: () {
-          debugPrint('🎹 Windows keyboard: Next');
           playNext();
         },
         onPrevious: () {
-          debugPrint('🎹 Windows keyboard: Previous');
           playPrevious();
         },
         onStop: () {
-          debugPrint('🎹 Windows keyboard: Stop');
           stop();
         },
       );
-      debugPrint('✅ Windows keyboard media controls enabled');
     } catch (e) {
-      debugPrint('⚠️ Failed to initialize Windows media controls: $e');
+      debugPrint('Failed to initialize Windows media controls: $e');
     }
   }
 
@@ -145,13 +132,10 @@ class AudioPlayerService with ChangeNotifier {
 
     if (_isWindows && errorStr.contains('Media error')) {
       _lastError = 'Windows playback error. The audio format may not be supported.';
-      debugPrint('🔴 Windows Media Error: $errorStr');
-      debugPrint('💡 Tip: Ensure the audio file is a valid MP3 and the server returns proper Content-Length headers.');
     } else {
       _lastError = 'Playback error: $errorStr';
-      debugPrint('🔴 Playback error: $errorStr');
     }
-
+    debugPrint('Playback error: $errorStr');
     notifyListeners();
   }
 
@@ -161,28 +145,11 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Play a single track
-  Future<void> playTrack(Track track) async {
-    // Clear any previous error
-    _lastError = null;
-
-    try {
-      _isLoading = true;
-      _currentTrack = track;
-      _playlist = [track];
-      _currentIndex = 0;
-      notifyListeners();
-
-      debugPrint('Playing: ${track.title}');
-      debugPrint('Stream URL: ${track.streamUrl}');
-
-      // Update system media controls with track info BEFORE playback
-      if (_audioHandler != null) {
-        _audioHandler!.updateTrackInfo(track);
-      }
-
-      // Stream URL already contains Subsonic auth params
-      final source = AudioSource.uri(
+  /// Build a ConcatenatingAudioSource from a list of tracks for gapless playback.
+  ConcatenatingAudioSource _buildPlaylistSource(List<Track> tracks) {
+    return ConcatenatingAudioSource(
+      useLazyPreparation: true,
+      children: tracks.map((track) => AudioSource.uri(
         Uri.parse(track.streamUrl),
         tag: MediaItem(
           id: track.id,
@@ -193,31 +160,45 @@ class AudioPlayerService with ChangeNotifier {
               : null,
           artUri: track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
         ),
-      );
+      )).toList(),
+    );
+  }
 
-      // Use setAudioSource instead of setUrl for proper state management
+  /// Play a single track
+  Future<void> playTrack(Track track) async {
+    _lastError = null;
+
+    try {
+      _isLoading = true;
+      _currentTrack = track;
+      _playlist = [track];
+      _currentIndex = 0;
+      notifyListeners();
+
+      if (_audioHandler != null) {
+        _audioHandler!.updateTrackInfo(track);
+      }
+
+      final source = _buildPlaylistSource([track]);
       await _player.setAudioSource(source);
       await _player.play();
-      // DISABLED: Windows media controls still have keyboard issues
-      // _updateWindowsMediaControls();
 
       _isLoading = false;
       notifyListeners();
     } catch (e) {
       _isLoading = false;
       _handlePlaybackError(e);
-      debugPrint('Error playing track: $e');
       rethrow;
     }
   }
 
-  /// Set a playlist and play from a specific index
+  /// Set a playlist and play from a specific index using ConcatenatingAudioSource
+  /// for gapless playback.
   Future<void> playPlaylist(List<Track> tracks, int startIndex) async {
     if (tracks.isEmpty || startIndex < 0 || startIndex >= tracks.length) {
       return;
     }
 
-    // Clear any previous error
     _lastError = null;
 
     try {
@@ -225,7 +206,6 @@ class AudioPlayerService with ChangeNotifier {
       _originalPlaylist = List.from(tracks);
       _playlist = List.from(tracks);
 
-      // Apply shuffle if enabled
       if (_isShuffleEnabled) {
         _shufflePlaylist(startIndex);
       } else {
@@ -235,39 +215,49 @@ class AudioPlayerService with ChangeNotifier {
       _currentTrack = _playlist[_currentIndex];
       notifyListeners();
 
-      await _playCurrentTrack();
+      if (_audioHandler != null) {
+        _audioHandler!.updateTrackInfo(_currentTrack!);
+      }
+
+      final source = _buildPlaylistSource(_playlist);
+      await _player.setAudioSource(source, initialIndex: _currentIndex);
+      await _player.play();
+
+      // Listen for track changes within the concatenating source
+      _player.currentIndexStream.listen((index) {
+        if (index != null && index != _currentIndex && index < _playlist.length) {
+          _currentIndex = index;
+          _currentTrack = _playlist[_currentIndex];
+          if (_audioHandler != null) {
+            _audioHandler!.updateTrackInfo(_currentTrack!);
+          }
+          notifyListeners();
+        }
+      });
 
       _isLoading = false;
       notifyListeners();
     } catch (e) {
       _isLoading = false;
       _handlePlaybackError(e);
-      debugPrint('Error playing playlist: $e');
       rethrow;
     }
   }
 
   /// Play next track in playlist
   Future<void> playNext() async {
-    if (_playlist.isEmpty) {
-      return;
-    }
+    if (_playlist.isEmpty) return;
 
-    // Clear any previous error
     _lastError = null;
 
-    // Handle end of playlist
     if (_currentIndex >= _playlist.length - 1) {
       if (_repeatMode == RepeatMode.all) {
-        // Loop back to first track
         _currentIndex = 0;
       } else {
-        // Stop playback
         stop();
         return;
       }
     } else {
-      // Normal next track
       _currentIndex++;
     }
 
@@ -276,16 +266,19 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
 
     try {
-      await _playCurrentTrack();
-
+      if (_audioHandler != null) {
+        _audioHandler!.updateTrackInfo(_currentTrack!);
+      }
+      await _player.seek(Duration.zero, index: _currentIndex);
+      if (!_player.playing) {
+        await _player.play();
+      }
       _isLoading = false;
       notifyListeners();
     } catch (e) {
       _isLoading = false;
-      // Don't print "Loading interrupted" - it's expected when switching tracks quickly
       if (!e.toString().contains('Loading interrupted')) {
         _handlePlaybackError(e);
-        debugPrint('Error playing next track: $e');
       }
       notifyListeners();
     }
@@ -293,58 +286,31 @@ class AudioPlayerService with ChangeNotifier {
 
   /// Play previous track in playlist
   Future<void> playPrevious() async {
-    if (_playlist.isEmpty || _currentIndex <= 0) {
-      return;
-    }
+    if (_playlist.isEmpty || _currentIndex <= 0) return;
 
-    // Clear any previous error
     _lastError = null;
-
     _currentIndex--;
     _currentTrack = _playlist[_currentIndex];
     _isLoading = true;
     notifyListeners();
 
     try {
-      await _playCurrentTrack();
-
+      if (_audioHandler != null) {
+        _audioHandler!.updateTrackInfo(_currentTrack!);
+      }
+      await _player.seek(Duration.zero, index: _currentIndex);
+      if (!_player.playing) {
+        await _player.play();
+      }
       _isLoading = false;
       notifyListeners();
     } catch (e) {
       _isLoading = false;
-      // Don't print "Loading interrupted" - it's expected when switching tracks quickly
       if (!e.toString().contains('Loading interrupted')) {
         _handlePlaybackError(e);
-        debugPrint('Error playing previous track: $e');
       }
       notifyListeners();
     }
-  }
-
-  /// Helper: play the current track (_currentTrack must be set).
-  Future<void> _playCurrentTrack() async {
-    final track = _currentTrack!;
-
-    if (_audioHandler != null) {
-      _audioHandler!.updateTrackInfo(track);
-    }
-
-    // Stream URL already contains Subsonic auth params
-    final source = AudioSource.uri(
-      Uri.parse(track.streamUrl),
-      tag: MediaItem(
-        id: track.id,
-        title: track.title,
-        artist: track.artist ?? 'Unknown Artist',
-        duration: track.durationSeconds != null
-            ? Duration(seconds: track.durationSeconds!)
-            : null,
-        artUri: track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
-      ),
-    );
-
-    await _player.setAudioSource(source);
-    await _player.play();
   }
 
   /// Toggle play/pause
@@ -354,16 +320,13 @@ class AudioPlayerService with ChangeNotifier {
     } else {
       await _player.play();
     }
-    notifyListeners();
   }
 
   /// Seek to a specific position
-  /// Shows loading state for large seeks to give user feedback
   Future<void> seek(Duration position) async {
     final currentPos = _player.position;
     final seekDistance = (position - currentPos).abs();
 
-    // For seeks > 30 seconds, show loading indicator
     if (seekDistance.inSeconds > 30) {
       _isSeeking = true;
       notifyListeners();
@@ -395,7 +358,6 @@ class AudioPlayerService with ChangeNotifier {
 
     if (_playlist.isNotEmpty) {
       if (_isShuffleEnabled) {
-        // Shuffle the playlist, keeping current track at index 0
         final currentTrack = _currentTrack;
         if (currentTrack != null) {
           final currentTrackIndex = _playlist.indexOf(currentTrack);
@@ -404,12 +366,9 @@ class AudioPlayerService with ChangeNotifier {
           }
         }
       } else {
-        // Restore original order
         if (_originalPlaylist.isNotEmpty) {
           final currentTrack = _currentTrack;
           _playlist = List.from(_originalPlaylist);
-
-          // Find current track in original playlist
           if (currentTrack != null) {
             final index = _playlist.indexWhere((t) => t.id == currentTrack.id);
             if (index >= 0) {
@@ -450,19 +409,10 @@ class AudioPlayerService with ChangeNotifier {
   void _shufflePlaylist(int startIndex) {
     if (_playlist.isEmpty) return;
 
-    // Get the track that should be first
     final firstTrack = _playlist[startIndex];
-
-    // Remove it from the list
     _playlist.removeAt(startIndex);
-
-    // Shuffle the remaining tracks
     _playlist.shuffle(_random);
-
-    // Insert the first track at the beginning
     _playlist.insert(0, firstTrack);
-
-    // Set current index to 0
     _currentIndex = 0;
   }
 

@@ -25,8 +25,16 @@ class SubsonicApiService {
   static const String _clientName = 'AnywherePlayer';
   static const _saltChars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   static const int _saltLength = 12;
+  static const Duration _httpTimeout = Duration(seconds: 15);
 
   final _random = Random.secure();
+  final http.Client _httpClient = http.Client();
+
+  /// In-memory LRU cache for directory contents and folder listings.
+  /// Key: cache key string, Value: cached response with timestamp.
+  static final Map<String, _CacheEntry> _cache = {};
+  static const int _maxCacheSize = 100;
+  static const Duration _cacheTtl = Duration(minutes: 5);
 
   SubsonicApiService({
     required this.serverUrl,
@@ -91,6 +99,15 @@ class SubsonicApiService {
     return '$baseUrl/rest/getCoverArt?id=$coverArtId$sizeParam&${_authQueryString()}';
   }
 
+  /// Perform an HTTP GET with timeout.
+  Future<http.Response> _get(Uri uri) async {
+    try {
+      return await _httpClient.get(uri).timeout(_httpTimeout);
+    } on Exception catch (e) {
+      throw SubsonicApiException('Network request failed: $e');
+    }
+  }
+
   /// Parse a Subsonic JSON response and return the inner response object.
   /// Throws [SubsonicApiException] on errors.
   Map<String, dynamic> _parseResponse(http.Response response) {
@@ -119,13 +136,41 @@ class SubsonicApiService {
     return subsonicResponse;
   }
 
+  /// Get a cached value or null if expired/missing.
+  T? _getFromCache<T>(String key) {
+    final entry = _cache[key];
+    if (entry == null) return null;
+    if (DateTime.now().difference(entry.timestamp) > _cacheTtl) {
+      _cache.remove(key);
+      return null;
+    }
+    return entry.data as T?;
+  }
+
+  /// Store a value in the cache with LRU eviction.
+  void _putInCache(String key, dynamic data) {
+    if (_cache.length >= _maxCacheSize) {
+      // Remove oldest entry
+      final oldestKey = _cache.entries
+          .reduce((a, b) => a.value.timestamp.isBefore(b.value.timestamp) ? a : b)
+          .key;
+      _cache.remove(oldestKey);
+    }
+    _cache[key] = _CacheEntry(data: data, timestamp: DateTime.now());
+  }
+
+  /// Invalidate all cached data.
+  void clearCache() {
+    _cache.clear();
+  }
+
   /// Ping the server to verify credentials.
   /// Returns true if auth succeeds, throws on failure.
   Future<bool> ping() async {
     try {
       final uri = _buildUri('ping');
-      debugPrint('Subsonic ping: $uri');
-      final response = await http.get(uri);
+      debugPrint('Subsonic ping: ${uri.host}${uri.path}');
+      final response = await _get(uri);
       _parseResponse(response);
       return true;
     } catch (e) {
@@ -139,7 +184,7 @@ class SubsonicApiService {
   Future<List<Map<String, dynamic>>> getMusicFolders() async {
     try {
       final uri = _buildUri('getMusicFolders');
-      final response = await http.get(uri);
+      final response = await _get(uri);
       final data = _parseResponse(response);
 
       final musicFolders = data['musicFolders'] as Map<String, dynamic>?;
@@ -162,13 +207,19 @@ class SubsonicApiService {
   /// Get the index of artists/folders for a music folder.
   /// Returns the full indexes response (artists grouped by letter).
   Future<Map<String, dynamic>> getIndexes({String? musicFolderId}) async {
+    final cacheKey = 'indexes_${musicFolderId ?? 'all'}';
+    final cached = _getFromCache<Map<String, dynamic>>(cacheKey);
+    if (cached != null) return cached;
+
     try {
       final params = <String, String>{};
       if (musicFolderId != null) params['musicFolderId'] = musicFolderId;
 
       final uri = _buildUri('getIndexes', params);
-      final response = await http.get(uri);
-      return _parseResponse(response);
+      final response = await _get(uri);
+      final result = _parseResponse(response);
+      _putInCache(cacheKey, result);
+      return result;
     } catch (e) {
       if (e is SubsonicApiException) rethrow;
       throw SubsonicApiException('Failed to get indexes: $e');
@@ -179,10 +230,16 @@ class SubsonicApiService {
   /// Returns {directory: {id, name, child: [...]}} where child items can be
   /// subdirectories (isDir=true) or songs (isDir=false).
   Future<Map<String, dynamic>> getMusicDirectory(String id) async {
+    final cacheKey = 'dir_$id';
+    final cached = _getFromCache<Map<String, dynamic>>(cacheKey);
+    if (cached != null) return cached;
+
     try {
       final uri = _buildUri('getMusicDirectory', {'id': id});
-      final response = await http.get(uri);
-      return _parseResponse(response);
+      final response = await _get(uri);
+      final result = _parseResponse(response);
+      _putInCache(cacheKey, result);
+      return result;
     } catch (e) {
       if (e is SubsonicApiException) rethrow;
       throw SubsonicApiException('Failed to get music directory: $e');
@@ -248,15 +305,20 @@ class SubsonicApiService {
     return (folders: folders, tracks: tracks);
   }
 
-  /// Get all tracks (songs) within a directory, recursively fetching subdirectories.
+  /// Get all tracks (songs) within a directory, recursively fetching subdirectories
+  /// in parallel for efficiency.
   Future<List<Track>> getAllTracksInDirectory(String directoryId) async {
     final contents = await getDirectoryContents(directoryId);
     final tracks = <Track>[...contents.tracks];
 
-    // Recursively fetch tracks from subdirectories
-    for (final folder in contents.folders) {
-      if (folder.id != null) {
-        final subTracks = await getAllTracksInDirectory(folder.id!);
+    // Fetch subdirectories in parallel instead of sequentially
+    if (contents.folders.isNotEmpty) {
+      final subResults = await Future.wait(
+        contents.folders
+            .where((f) => f.id != null)
+            .map((f) => getAllTracksInDirectory(f.id!)),
+      );
+      for (final subTracks in subResults) {
         tracks.addAll(subTracks);
       }
     }
@@ -279,7 +341,7 @@ class SubsonicApiService {
         'artistCount': artistCount.toString(),
       });
 
-      final response = await http.get(uri);
+      final response = await _get(uri);
       final data = _parseResponse(response);
 
       final searchResult = data['searchResult3'] as Map<String, dynamic>?;
@@ -313,4 +375,17 @@ class SubsonicApiService {
       throw SubsonicApiException('Search failed: $e');
     }
   }
+
+  /// Dispose the HTTP client.
+  void dispose() {
+    _httpClient.close();
+  }
+}
+
+/// Internal cache entry with timestamp for TTL-based expiration.
+class _CacheEntry {
+  final dynamic data;
+  final DateTime timestamp;
+
+  _CacheEntry({required this.data, required this.timestamp});
 }

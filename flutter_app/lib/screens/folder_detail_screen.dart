@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
 import '../services/auth_service.dart';
@@ -111,21 +112,23 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final playerService = context.watch<AudioPlayerService>();
-
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.folderName),
         actions: [
-          if (playerService.currentTrack != null)
-            IconButton(
-              icon: const Icon(Icons.music_note),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                );
-              },
-            ),
+          Selector<AudioPlayerService, bool>(
+            selector: (_, ps) => ps.currentTrack != null,
+            builder: (context, hasTrack, _) => hasTrack
+                ? IconButton(
+                    icon: const Icon(Icons.music_note),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                      );
+                    },
+                  )
+                : const SizedBox.shrink(),
+          ),
         ],
       ),
       body: Center(
@@ -136,18 +139,21 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
           child: _buildBody(),
         ),
       ),
-      floatingActionButton: playerService.currentTrack != null
-          ? FloatingActionButton(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                );
-              },
-              child: Icon(
-                playerService.isPlaying ? Icons.pause : Icons.play_arrow,
-              ),
-            )
-          : null,
+      floatingActionButton: Selector<AudioPlayerService, ({bool hasTrack, bool isPlaying})>(
+        selector: (_, ps) => (hasTrack: ps.currentTrack != null, isPlaying: ps.isPlaying),
+        builder: (context, state, _) => state.hasTrack
+            ? FloatingActionButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                  );
+                },
+                child: Icon(
+                  state.isPlaying ? Icons.pause : Icons.play_arrow,
+                ),
+              )
+            : const SizedBox.shrink(),
+      ),
     );
   }
 
@@ -220,12 +226,12 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                 leading: folder.coverArtUrl != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(4),
-                        child: Image.network(
-                          folder.coverArtUrl!,
+                        child: CachedNetworkImage(
+                          imageUrl: folder.coverArtUrl!,
                           width: 48,
                           height: 48,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
+                          errorWidget: (_, __, ___) =>
                               const Icon(Icons.folder, size: 48, color: Colors.blue),
                         ),
                       )
@@ -242,7 +248,11 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
               // Tracks
               ...List.generate(_tracks.length, (index) {
                 final track = _tracks[index];
-                return _buildTrackTile(track, index);
+                return _FolderTrackTile(
+                  track: track,
+                  index: index,
+                  onTap: () => _playTrack(track),
+                );
               }),
             ],
           ),
@@ -250,58 +260,76 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
       ],
     );
   }
+}
 
-  Widget _buildTrackTile(Track track, int index) {
-    final playerService = context.watch<AudioPlayerService>();
-    final isCurrentTrack = playerService.currentTrack?.id == track.id;
+/// Extracted track tile that uses Selector to avoid rebuilding on position updates.
+class _FolderTrackTile extends StatelessWidget {
+  final Track track;
+  final int index;
+  final VoidCallback onTap;
 
-    return ListTile(
-      leading: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 30,
-            child: Text(
-              '${index + 1}',
-              style: TextStyle(
-                color: isCurrentTrack ? Colors.blue : Colors.grey,
-                fontWeight: isCurrentTrack ? FontWeight.bold : null,
+  const _FolderTrackTile({
+    required this.track,
+    required this.index,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Selector<AudioPlayerService, String?>(
+      selector: (_, ps) => ps.currentTrack?.id,
+      builder: (context, currentTrackId, _) {
+        final isCurrentTrack = currentTrackId == track.id;
+
+        return ListTile(
+          leading: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 30,
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    color: isCurrentTrack ? Colors.blue : Colors.grey,
+                    fontWeight: isCurrentTrack ? FontWeight.bold : null,
+                  ),
+                ),
               ),
-            ),
+              if (track.coverArtUrl != null)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: CachedNetworkImage(
+                    imageUrl: track.coverArtUrl!,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => const Icon(Icons.music_note, size: 48),
+                  ),
+                )
+              else
+                const Icon(Icons.music_note, size: 48),
+            ],
           ),
-          if (track.coverArtUrl != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Image.network(
-                track.coverArtUrl!,
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 48),
-              ),
-            )
-          else
-            const Icon(Icons.music_note, size: 48),
-        ],
-      ),
-      title: Text(
-        track.title,
-        style: TextStyle(
-          fontWeight: isCurrentTrack ? FontWeight.bold : null,
-          color: isCurrentTrack ? Colors.blue : null,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        '${track.artist ?? ''} ${track.formattedDuration}'.trim(),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: isCurrentTrack
-          ? const Icon(Icons.equalizer, color: Colors.blue)
-          : null,
-      onTap: () => _playTrack(track),
+          title: Text(
+            track.title,
+            style: TextStyle(
+              fontWeight: isCurrentTrack ? FontWeight.bold : null,
+              color: isCurrentTrack ? Colors.blue : null,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            '${track.artist ?? ''} ${track.formattedDuration}'.trim(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: isCurrentTrack
+              ? const Icon(Icons.equalizer, color: Colors.blue)
+              : null,
+          onTap: onTap,
+        );
+      },
     );
   }
 }

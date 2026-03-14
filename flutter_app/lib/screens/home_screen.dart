@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
 import '../services/auth_service.dart';
@@ -7,7 +9,6 @@ import '../services/subsonic_api_service.dart';
 import '../services/audio_player_service.dart';
 import '../utils/responsive.dart';
 import 'player_screen.dart';
-import 'login_screen.dart';
 import 'folder_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -24,6 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   String _searchQuery = '';
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -34,6 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
@@ -68,8 +71,8 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _handleSearch(String query) async {
-    if (!mounted) return;
+  void _onSearchChanged(String query) {
+    _debounceTimer?.cancel();
     setState(() {
       _searchQuery = query;
     });
@@ -79,6 +82,13 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      _performSearch(query);
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (!mounted) return;
     final api = _api;
     if (api == null) return;
 
@@ -91,6 +101,9 @@ class _HomeScreenState extends State<HomeScreen> {
       final result = await api.search3(query);
 
       if (!mounted) return;
+      // Verify query hasn't changed while we were waiting
+      if (_searchQuery != query) return;
+
       setState(() {
         _folders = result.albums;
         _rootTracks = result.songs;
@@ -124,8 +137,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final api = _api;
     if (api == null || folder.id == null) return;
     final playerService = context.read<AudioPlayerService>();
+    final messenger = ScaffoldMessenger.of(context);
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       SnackBar(
         content: Text('Loading ${folder.folderPath}...'),
         duration: const Duration(seconds: 1),
@@ -135,24 +149,23 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final tracks = await api.getAllTracksInDirectory(folder.id!);
 
+      messenger.hideCurrentSnackBar();
+
       if (tracks.isNotEmpty) {
         playerService.playPlaylist(tracks, 0);
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
         if (mounted) {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const PlayerScreen()),
           );
         }
       } else {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           const SnackBar(content: Text('No tracks found in this folder')),
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
     }
@@ -161,22 +174,26 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
-    final playerService = context.watch<AudioPlayerService>();
     final horizontalPadding = Responsive.getHorizontalPadding(context);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Folders'),
         actions: [
-          if (playerService.currentTrack != null)
-            IconButton(
-              icon: const Icon(Icons.music_note),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                );
-              },
-            ),
+          // Use Selector to only rebuild when currentTrack presence changes
+          Selector<AudioPlayerService, bool>(
+            selector: (_, ps) => ps.currentTrack != null,
+            builder: (context, hasTrack, _) => hasTrack
+                ? IconButton(
+                    icon: const Icon(Icons.music_note),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                      );
+                    },
+                  )
+                : const SizedBox.shrink(),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _handleLogout,
@@ -204,13 +221,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             icon: const Icon(Icons.clear),
                             onPressed: () {
                               _searchController.clear();
-                              _handleSearch('');
+                              _onSearchChanged('');
                             },
                           )
                         : null,
                     border: const OutlineInputBorder(),
                   ),
-                  onChanged: _handleSearch,
+                  onChanged: _onSearchChanged,
                 ),
               ),
 
@@ -235,18 +252,21 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-      floatingActionButton: playerService.currentTrack != null
-          ? FloatingActionButton(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                );
-              },
-              child: Icon(
-                playerService.isPlaying ? Icons.pause : Icons.play_arrow,
-              ),
-            )
-          : null,
+      floatingActionButton: Selector<AudioPlayerService, ({bool hasTrack, bool isPlaying})>(
+        selector: (_, ps) => (hasTrack: ps.currentTrack != null, isPlaying: ps.isPlaying),
+        builder: (context, state, _) => state.hasTrack
+            ? FloatingActionButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                  );
+                },
+                child: Icon(
+                  state.isPlaying ? Icons.pause : Icons.play_arrow,
+                ),
+              )
+            : const SizedBox.shrink(),
+      ),
     );
   }
 
@@ -316,7 +336,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          ..._rootTracks.map((track) => _buildTrackTile(track)),
+          ..._rootTracks.map((track) => _TrackTile(
+            track: track,
+            onTap: () => _playRootTrack(track),
+          )),
           const Divider(height: 32),
         ],
 
@@ -359,41 +382,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTrackTile(Track track) {
-    final playerService = context.watch<AudioPlayerService>();
-    final isCurrentTrack = playerService.currentTrack?.id == track.id;
-
-    return ListTile(
-      leading: track.coverArtUrl != null
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Image.network(
-                track.coverArtUrl!,
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Icon(
-                  Icons.music_note,
-                  size: 48,
-                ),
-              ),
-            )
-          : const Icon(Icons.music_note, size: 48),
-      title: Text(
-        track.title,
-        style: TextStyle(
-          fontWeight: isCurrentTrack ? FontWeight.bold : null,
-          color: isCurrentTrack ? Colors.blue : null,
-        ),
-      ),
-      subtitle: Text(track.artist ?? track.formattedDuration),
-      trailing: isCurrentTrack
-          ? const Icon(Icons.equalizer, color: Colors.blue)
-          : null,
-      onTap: () => _playRootTrack(track),
-    );
-  }
-
   void _openFolder(Folder folder) {
     if (folder.id == null) return;
     Navigator.of(context).push(
@@ -411,12 +399,12 @@ class _HomeScreenState extends State<HomeScreen> {
       leading: folder.coverArtUrl != null
           ? ClipRRect(
               borderRadius: BorderRadius.circular(4),
-              child: Image.network(
-                folder.coverArtUrl!,
+              child: CachedNetworkImage(
+                imageUrl: folder.coverArtUrl!,
                 width: 48,
                 height: 48,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
+                errorWidget: (_, __, ___) =>
                     const Icon(Icons.folder, size: 48, color: Colors.blue),
               ),
             )
@@ -450,10 +438,10 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Expanded(
               child: folder.coverArtUrl != null
-                  ? Image.network(
-                      folder.coverArtUrl!,
+                  ? CachedNetworkImage(
+                      imageUrl: folder.coverArtUrl!,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Center(
+                      errorWidget: (_, __, ___) => const Center(
                         child: Icon(Icons.folder, size: 64, color: Colors.blue),
                       ),
                     )
@@ -503,6 +491,55 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Extracted track tile widget that uses Selector to only rebuild when
+/// the current track ID changes, not on every position update.
+class _TrackTile extends StatelessWidget {
+  final Track track;
+  final VoidCallback onTap;
+
+  const _TrackTile({required this.track, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Selector<AudioPlayerService, String?>(
+      selector: (_, ps) => ps.currentTrack?.id,
+      builder: (context, currentTrackId, _) {
+        final isCurrentTrack = currentTrackId == track.id;
+
+        return ListTile(
+          leading: track.coverArtUrl != null
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: CachedNetworkImage(
+                    imageUrl: track.coverArtUrl!,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => const Icon(
+                      Icons.music_note,
+                      size: 48,
+                    ),
+                  ),
+                )
+              : const Icon(Icons.music_note, size: 48),
+          title: Text(
+            track.title,
+            style: TextStyle(
+              fontWeight: isCurrentTrack ? FontWeight.bold : null,
+              color: isCurrentTrack ? Colors.blue : null,
+            ),
+          ),
+          subtitle: Text(track.artist ?? track.formattedDuration),
+          trailing: isCurrentTrack
+              ? const Icon(Icons.equalizer, color: Colors.blue)
+              : null,
+          onTap: onTap,
+        );
+      },
     );
   }
 }
