@@ -153,7 +153,7 @@ class LibraryScanner with ChangeNotifier {
     final nonEmpty = _rootNodes.entries.where((e) => e.key.isNotEmpty).toList();
     if (nonEmpty.length == 1) {
       final singleNode = nonEmpty.first.value;
-      if (singleNode.tracks.isEmpty && singleNode.children.isNotEmpty) {
+      if (singleNode.children.isNotEmpty) {
         return singleNode.children;
       }
     }
@@ -170,9 +170,14 @@ class LibraryScanner with ChangeNotifier {
   }
 
   /// Get tracks that are at the root level (not in any folder).
+  /// If the root was flattened, includes loose tracks from the skipped folder.
   List<Track> getRootTracks() {
-    final root = _effectiveRoot;
-    return root['']?.tracks ?? [];
+    final nonEmpty = _rootNodes.entries.where((e) => e.key.isNotEmpty).toList();
+    if (nonEmpty.length == 1 && nonEmpty.first.value.children.isNotEmpty) {
+      // Root was flattened — return the skipped folder's direct tracks
+      return nonEmpty.first.value.tracks;
+    }
+    return _rootNodes['']?.tracks ?? [];
   }
 
   /// Get the contents of a virtual folder by path.
