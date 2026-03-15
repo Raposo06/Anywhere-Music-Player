@@ -35,6 +35,33 @@ class LibraryScanner with ChangeNotifier {
     notifyListeners();
 
     try {
+      // === DEBUG: Try folder-based API to see real filesystem structure ===
+      debugPrint('LibraryScanner: === Trying getMusicFolders (folder-based API) ===');
+      final musicFolders = await _api.getMusicFolders();
+      debugPrint('LibraryScanner: getMusicFolders returned ${musicFolders.length} folders');
+      for (final mf in musicFolders) {
+        debugPrint('LibraryScanner: MusicFolder: $mf');
+        final rootId = mf['id']?.toString();
+        if (rootId != null) {
+          final dirData = await _api.getMusicDirectory(rootId);
+          final dir = dirData['directory'] as Map<String, dynamic>?;
+          if (dir != null) {
+            final children = dir['child'];
+            if (children is List) {
+              debugPrint('LibraryScanner: Root dir has ${children.length} children');
+              for (final child in children.take(5)) {
+                debugPrint('LibraryScanner: ROOT CHILD: $child');
+              }
+            } else {
+              debugPrint('LibraryScanner: Root dir child field: $children');
+            }
+          } else {
+            debugPrint('LibraryScanner: Root dir returned null directory');
+          }
+        }
+      }
+      debugPrint('LibraryScanner: === End getMusicFolders debug ===');
+
       final tracks = <Track>[];
 
       // Step 1: Get all artists from getIndexes
@@ -70,6 +97,20 @@ class LibraryScanner with ChangeNotifier {
       }
 
       debugPrint('LibraryScanner: Found ${artistIds.length} artists, scanning...');
+
+      // === DEBUG: Log raw JSON of first artist's first few tracks ===
+      if (artistIds.isNotEmpty) {
+        final debugData = await _api.getMusicDirectory(artistIds.first);
+        final debugDir = debugData['directory'] as Map<String, dynamic>?;
+        if (debugDir != null) {
+          final debugChildren = debugDir['child'];
+          if (debugChildren is List) {
+            for (final child in debugChildren.take(3)) {
+              debugPrint('LibraryScanner: RAW TRACK JSON: $child');
+            }
+          }
+        }
+      }
 
       // Step 2: Fetch all artist directories in parallel (batched)
       const batchSize = 20;
