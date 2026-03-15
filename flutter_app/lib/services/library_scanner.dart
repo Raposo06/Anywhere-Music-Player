@@ -183,45 +183,39 @@ class LibraryScanner with ChangeNotifier {
   /// Get the contents of a virtual folder by path.
   /// Returns subfolders and tracks at that path.
   ({List<Folder> folders, List<Track> tracks}) getFolderContents(String folderPath) {
-    final segments = folderPath.split('/');
-    var currentLevel = _rootNodes;
-
-    for (final segment in segments) {
-      final node = currentLevel[segment];
-      if (node == null) {
-        return (folders: <Folder>[], tracks: <Track>[]);
-      }
-      if (segment == segments.last) {
-        // Found the target folder
-        final subfolders = node.children.entries
-            .where((e) => e.key.isNotEmpty)
-            .map((e) => e.value.toFolder())
-            .toList()
-          ..sort((a, b) => a.folderPath.toLowerCase().compareTo(b.folderPath.toLowerCase()));
-
-        return (folders: subfolders, tracks: node.tracks);
-      }
-      currentLevel = node.children;
+    final node = _findNode(folderPath);
+    if (node == null) {
+      return (folders: <Folder>[], tracks: <Track>[]);
     }
 
-    return (folders: <Folder>[], tracks: <Track>[]);
+    final subfolders = node.children.entries
+        .where((e) => e.key.isNotEmpty)
+        .map((e) => e.value.toFolder())
+        .toList()
+      ..sort((a, b) => a.folderPath.toLowerCase().compareTo(b.folderPath.toLowerCase()));
+
+    return (folders: subfolders, tracks: node.tracks);
   }
 
   /// Get all tracks recursively under a folder path.
   List<Track> getAllTracksInFolder(String folderPath) {
+    final node = _findNode(folderPath);
+    return node?.allTracksRecursive() ?? [];
+  }
+
+  /// Navigate to a node by its full path, walking from _rootNodes.
+  _FolderNode? _findNode(String folderPath) {
     final segments = folderPath.split('/');
     var currentLevel = _rootNodes;
 
-    for (final segment in segments) {
-      final node = currentLevel[segment];
-      if (node == null) return [];
-      if (segment == segments.last) {
-        return node.allTracksRecursive();
-      }
+    for (var i = 0; i < segments.length; i++) {
+      final node = currentLevel[segments[i]];
+      if (node == null) return null;
+      if (i == segments.length - 1) return node;
       currentLevel = node.children;
     }
 
-    return [];
+    return null;
   }
 }
 

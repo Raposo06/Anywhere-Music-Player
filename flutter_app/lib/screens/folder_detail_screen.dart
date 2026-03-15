@@ -34,7 +34,12 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
 
   void _loadContents() {
     final scanner = context.read<LibraryScanner>();
+    debugPrint('FolderDetail: loading folderId="${widget.folderId}"');
     final contents = scanner.getFolderContents(widget.folderId);
+    debugPrint('FolderDetail: got ${contents.folders.length} subfolders, ${contents.tracks.length} tracks');
+    for (final f in contents.folders.take(5)) {
+      debugPrint('FolderDetail: subfolder path="${f.folderPath}" name="${f.displayName}"');
+    }
     setState(() {
       _subfolders = contents.folders;
       _tracks = contents.tracks;

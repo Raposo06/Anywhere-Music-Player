@@ -413,7 +413,7 @@ class _ShuffleRepeatControls extends StatelessWidget {
                     : Colors.grey,
               ),
               iconSize: 32,
-              onPressed: playerService.toggleShuffle,
+              onPressed: () => playerService.toggleShuffle(),
               tooltip: state.shuffle ? 'Shuffle: ON' : 'Shuffle: OFF',
             ),
             const SizedBox(width: 8),

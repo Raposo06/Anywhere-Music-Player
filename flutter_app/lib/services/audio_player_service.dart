@@ -26,6 +26,9 @@ class AudioPlayerService with ChangeNotifier {
   String? _lastError;
   final _random = Random();
   StreamSubscription<int?>? _indexStreamSubscription;
+  StreamSubscription<PlayerState>? _playerStateSubscription;
+  StreamSubscription<bool>? _playingSubscription;
+  StreamSubscription<PlaybackEvent>? _playbackEventSubscription;
 
   /// Streams exposed for UI widgets that need high-frequency updates (e.g., progress bar).
   /// Using streams instead of notifyListeners() avoids rebuilding the entire widget tree.
@@ -72,27 +75,43 @@ class AudioPlayerService with ChangeNotifier {
     _initializeWindowsMediaControls();
 
     // Only notify on discrete state changes (play/pause), not high-frequency streams.
-    _player.playingStream.listen((playing) {
+    _playingSubscription = _player.playingStream.listen((playing) {
       if (_isWindows) {
         _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
       }
       notifyListeners();
     });
 
-    // Auto-play next track when current finishes
-    _player.playerStateStream.listen((state) {
+    // Auto-play next track when entire playlist finishes.
+    // Individual track transitions are handled by currentIndexStream.
+    _playerStateSubscription = _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
         if (_repeatMode == RepeatMode.one) {
           _player.seek(Duration.zero);
           _player.play();
+        } else if (_repeatMode == RepeatMode.all && _playlist.isNotEmpty) {
+          // Restart from the beginning of the playlist
+          _currentIndex = 0;
+          _currentTrack = _playlist[0];
+          if (_audioHandler != null) {
+            _audioHandler!.updateTrackInfo(_currentTrack!);
+          }
+          notifyListeners();
+          _player.seek(Duration.zero, index: 0);
+          _player.play();
         } else {
-          playNext();
+          // Playlist finished, stop playback
+          _currentTrack = null;
+          if (_isWindows) {
+            _windowsMediaControls.clear();
+          }
+          notifyListeners();
         }
       }
     });
 
     // Listen for playback errors
-    _player.playbackEventStream.listen(
+    _playbackEventSubscription = _player.playbackEventStream.listen(
       (event) {},
       onError: (Object e, StackTrace st) {
         _handlePlaybackError(e);
@@ -431,6 +450,9 @@ class AudioPlayerService with ChangeNotifier {
   @override
   void dispose() {
     _indexStreamSubscription?.cancel();
+    _playerStateSubscription?.cancel();
+    _playingSubscription?.cancel();
+    _playbackEventSubscription?.cancel();
     _player.dispose();
     if (_isWindows) {
       _windowsMediaControls.dispose();

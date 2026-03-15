@@ -185,7 +185,7 @@ class TvPlayerControls extends StatelessWidget {
         _TvControlButton(
           icon: Icons.shuffle,
           isActive: audioPlayer.isShuffleEnabled,
-          onPressed: audioPlayer.toggleShuffle,
+          onPressed: () => audioPlayer.toggleShuffle(),
           size: 48,
         ),
 
