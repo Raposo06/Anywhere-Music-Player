@@ -465,6 +465,51 @@ class SubsonicApiService {
     }
   }
 
+  /// Fetch all songs from Navidrome's native REST API with real filesystem paths.
+  /// Returns raw JSON list of song objects. Uses pagination to get all songs.
+  /// The native API returns the actual `path` field from the database,
+  /// which is the real filesystem path (unlike the Subsonic API which returns
+  /// tag-based virtual paths).
+  Future<List<Map<String, dynamic>>> getAllSongsNativeApi() async {
+    final baseUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
+    final allSongs = <Map<String, dynamic>>[];
+    const pageSize = 500;
+    var offset = 0;
+
+    // Navidrome native API uses basic auth or the same credentials
+    final basicAuth = base64Encode(utf8.encode('$username:$password'));
+
+    while (true) {
+      final uri = Uri.parse('$baseUrl/api/song?_start=$offset&_end=${offset + pageSize}&_order=ASC&_sort=path');
+      try {
+        final response = await _httpClient.get(uri, headers: {
+          'Authorization': 'Basic $basicAuth',
+        }).timeout(const Duration(seconds: 30));
+
+        if (response.statusCode != 200) {
+          throw SubsonicApiException('Native API error: HTTP ${response.statusCode}');
+        }
+
+        final List<dynamic> songs = jsonDecode(response.body);
+        if (songs.isEmpty) break;
+
+        for (final song in songs) {
+          allSongs.add(song as Map<String, dynamic>);
+        }
+
+        debugPrint('SubsonicApi: Fetched ${songs.length} songs (offset=$offset, total so far=${allSongs.length})');
+
+        if (songs.length < pageSize) break;
+        offset += pageSize;
+      } catch (e) {
+        if (e is SubsonicApiException) rethrow;
+        throw SubsonicApiException('Native API request failed: $e');
+      }
+    }
+
+    return allSongs;
+  }
+
   /// Dispose the HTTP client.
   void dispose() {
     _httpClient.close();

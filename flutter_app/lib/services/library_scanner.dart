@@ -24,8 +24,9 @@ class LibraryScanner with ChangeNotifier {
   String? get error => _error;
   List<Track> get allTracks => _allTracks;
 
-  /// Scan the entire library by walking the artist/album tree.
-  /// Collects all tracks and builds the folder hierarchy from file paths.
+  /// Scan the entire library using Navidrome's native REST API.
+  /// This fetches all songs with their real filesystem paths, then builds
+  /// the folder tree from those paths.
   Future<void> scan() async {
     if (_isScanning) return;
     if (_hasScanned) return; // Already scanned this session
@@ -35,102 +36,40 @@ class LibraryScanner with ChangeNotifier {
     notifyListeners();
 
     try {
-      // === DEBUG: Try folder-based API to see real filesystem structure ===
-      debugPrint('LibraryScanner: === Trying getMusicFolders (folder-based API) ===');
-      final musicFolders = await _api.getMusicFolders();
-      debugPrint('LibraryScanner: getMusicFolders returned ${musicFolders.length} folders');
-      for (final mf in musicFolders) {
-        debugPrint('LibraryScanner: MusicFolder: $mf');
-        final rootId = mf['id']?.toString();
-        if (rootId != null) {
-          final dirData = await _api.getMusicDirectory(rootId);
-          final dir = dirData['directory'] as Map<String, dynamic>?;
-          if (dir != null) {
-            final children = dir['child'];
-            if (children is List) {
-              debugPrint('LibraryScanner: Root dir has ${children.length} children');
-              for (final child in children.take(5)) {
-                debugPrint('LibraryScanner: ROOT CHILD: $child');
-              }
-            } else {
-              debugPrint('LibraryScanner: Root dir child field: $children');
-            }
-          } else {
-            debugPrint('LibraryScanner: Root dir returned null directory');
-          }
-        }
-      }
-      debugPrint('LibraryScanner: === End getMusicFolders debug ===');
+      debugPrint('LibraryScanner: Fetching all songs via Navidrome native API...');
+      final rawSongs = await _api.getAllSongsNativeApi();
+      debugPrint('LibraryScanner: Got ${rawSongs.length} songs from native API');
 
+      // Debug: log a few paths to verify they're real filesystem paths
+      for (final song in rawSongs.take(10)) {
+        debugPrint('LibraryScanner: native path="${song['path']}" title="${song['title']}"');
+      }
+
+      // Convert native API songs to Track objects
       final tracks = <Track>[];
+      for (final song in rawSongs) {
+        final songId = song['id']?.toString() ?? '';
+        final coverArtId = song['coverArtId']?.toString() ?? song['id']?.toString();
+        final path = song['path'] as String? ?? '';
 
-      // Step 1: Get all artists from getIndexes
-      final indexData = await _api.getIndexes();
-      final indexes = indexData['indexes'] as Map<String, dynamic>?;
-
-      if (indexes == null) {
-        _isScanning = false;
-        _hasScanned = true;
-        notifyListeners();
-        return;
+        tracks.add(Track(
+          id: songId,
+          title: song['title'] as String? ?? 'Unknown',
+          filename: path,
+          streamUrl: _api.buildStreamUrl(songId),
+          coverArtUrl: coverArtId != null ? _api.buildCoverArtUrl(coverArtId) : null,
+          folderPath: path.contains('/') ? path.substring(0, path.lastIndexOf('/')) : '',
+          durationSeconds: (song['duration'] is num) ? (song['duration'] as num).round() : null,
+          fileSizeBytes: (song['size'] is num) ? (song['size'] as num).round() : null,
+          createdAt: song['createdAt'] != null
+              ? DateTime.tryParse(song['createdAt'] as String) ?? DateTime.now()
+              : DateTime.now(),
+          artist: song['artist'] as String?,
+          album: song['album'] as String?,
+        ));
       }
 
-      final indexList = indexes['index'];
-      if (indexList == null) {
-        _isScanning = false;
-        _hasScanned = true;
-        notifyListeners();
-        return;
-      }
-
-      // Collect all artist IDs
-      final artistIds = <String>[];
-      final items = indexList is List ? indexList : [indexList];
-      for (final index in items) {
-        final artistList = index['artist'];
-        if (artistList == null) continue;
-        final artists = artistList is List ? artistList : [artistList];
-        for (final artist in artists) {
-          final id = (artist as Map<String, dynamic>)['id']?.toString();
-          if (id != null) artistIds.add(id);
-        }
-      }
-
-      debugPrint('LibraryScanner: Found ${artistIds.length} artists, scanning...');
-
-      // === DEBUG: Log raw JSON of first artist's first few tracks ===
-      if (artistIds.isNotEmpty) {
-        final debugData = await _api.getMusicDirectory(artistIds.first);
-        final debugDir = debugData['directory'] as Map<String, dynamic>?;
-        if (debugDir != null) {
-          final debugChildren = debugDir['child'];
-          if (debugChildren is List) {
-            for (final child in debugChildren.take(3)) {
-              debugPrint('LibraryScanner: RAW TRACK JSON: $child');
-            }
-          }
-        }
-      }
-
-      // Step 2: Fetch all artist directories in parallel (batched)
-      const batchSize = 20;
-      for (var i = 0; i < artistIds.length; i += batchSize) {
-        final batch = artistIds.skip(i).take(batchSize);
-        final results = await Future.wait(
-          batch.map((id) => _fetchTracksRecursive(id)),
-        );
-        for (final trackList in results) {
-          tracks.addAll(trackList);
-        }
-      }
-
-      debugPrint('LibraryScanner: Scanned ${tracks.length} total tracks');
-      for (final t in tracks.take(20)) {
-        debugPrint('LibraryScanner: path="${t.filename}" title="${t.title}"');
-      }
-      if (tracks.length > 20) {
-        debugPrint('LibraryScanner: ... and ${tracks.length - 20} more');
-      }
+      debugPrint('LibraryScanner: Converted ${tracks.length} tracks');
 
       _allTracks = tracks;
       _buildFolderTree();
@@ -153,30 +92,6 @@ class LibraryScanner with ChangeNotifier {
     _rootNodes = {};
     _api.clearCache();
     await scan();
-  }
-
-  /// Recursively fetch all tracks under a directory ID.
-  Future<List<Track>> _fetchTracksRecursive(String directoryId) async {
-    try {
-      final contents = await _api.getDirectoryContents(directoryId);
-      final tracks = <Track>[...contents.tracks];
-
-      if (contents.folders.isNotEmpty) {
-        final subResults = await Future.wait(
-          contents.folders
-              .where((f) => f.id != null)
-              .map((f) => _fetchTracksRecursive(f.id!)),
-        );
-        for (final subTracks in subResults) {
-          tracks.addAll(subTracks);
-        }
-      }
-
-      return tracks;
-    } catch (e) {
-      debugPrint('LibraryScanner: Error fetching directory $directoryId: $e');
-      return [];
-    }
   }
 
   /// Build the virtual folder tree from track file paths.
