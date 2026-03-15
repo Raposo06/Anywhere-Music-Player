@@ -146,10 +146,24 @@ class LibraryScanner with ChangeNotifier {
     }
   }
 
+  /// Get the effective root level of the folder tree.
+  /// If there's only one top-level folder with no direct tracks,
+  /// auto-flatten it and show its children instead.
+  Map<String, _FolderNode> get _effectiveRoot {
+    final nonEmpty = _rootNodes.entries.where((e) => e.key.isNotEmpty).toList();
+    if (nonEmpty.length == 1) {
+      final singleNode = nonEmpty.first.value;
+      if (singleNode.tracks.isEmpty && singleNode.children.isNotEmpty) {
+        return singleNode.children;
+      }
+    }
+    return _rootNodes;
+  }
+
   /// Get the top-level folders from the virtual folder tree.
   List<Folder> getTopLevelFolders() {
-    return _rootNodes.entries
-        .where((e) => e.key.isNotEmpty) // Exclude root-level tracks node
+    return _effectiveRoot.entries
+        .where((e) => e.key.isNotEmpty)
         .map((e) => e.value.toFolder())
         .toList()
       ..sort((a, b) => a.folderPath.toLowerCase().compareTo(b.folderPath.toLowerCase()));
@@ -157,7 +171,8 @@ class LibraryScanner with ChangeNotifier {
 
   /// Get tracks that are at the root level (not in any folder).
   List<Track> getRootTracks() {
-    return _rootNodes['']?.tracks ?? [];
+    final root = _effectiveRoot;
+    return root['']?.tracks ?? [];
   }
 
   /// Get the contents of a virtual folder by path.
