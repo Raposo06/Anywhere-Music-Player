@@ -57,20 +57,25 @@ class _HomeScreenState extends State<HomeScreen> {
     List<Folder> recentAlbums = [];
     String? error;
 
+    List<Track> rootTracks = [];
+
     try {
-      // Load folders and recently added albums in parallel
+      // Load folders, root tracks, and recently added albums in parallel
       final results = await Future.wait([
         api.getFolders(),
+        api.getRootTracks(),
         api.getAlbumList2(type: 'newest', size: 10),
       ]);
       folders = results[0] as List<Folder>;
-      recentAlbums = results[1] as List<Folder>;
+      rootTracks = results[1] as List<Track>;
+      recentAlbums = results[2] as List<Folder>;
     } catch (e) {
       debugPrint('Failed to load data: $e');
       error = 'Failed to load folders';
-      // Try loading just folders if album list fails
+      // Try loading just folders if the rest fails
       try {
         folders = await api.getFolders();
+        rootTracks = await api.getRootTracks();
       } catch (_) {}
     }
 
@@ -78,9 +83,9 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _folders = folders;
       _recentAlbums = recentAlbums;
-      _rootTracks = [];
+      _rootTracks = rootTracks;
       _isLoading = false;
-      _errorMessage = folders.isEmpty && recentAlbums.isEmpty ? error : null;
+      _errorMessage = folders.isEmpty && recentAlbums.isEmpty && rootTracks.isEmpty ? error : null;
     });
   }
 

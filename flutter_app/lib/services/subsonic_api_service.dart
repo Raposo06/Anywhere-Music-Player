@@ -247,31 +247,53 @@ class SubsonicApiService {
   }
 
   /// Get top-level folders as [Folder] objects.
-  /// Uses getIndexes to get the artist/folder listing, then returns them as Folders.
+  /// Uses getMusicFolders to get the root library, then getMusicDirectory
+  /// to list the actual filesystem directories (not tag-based artists).
   Future<List<Folder>> getFolders({String? musicFolderId}) async {
-    final data = await getIndexes(musicFolderId: musicFolderId);
+    // Step 1: Get the root music library folder(s) from Navidrome
+    final musicFolders = await getMusicFolders();
+    if (musicFolders.isEmpty) return [];
 
-    final indexes = data['indexes'] as Map<String, dynamic>?;
-    if (indexes == null) return [];
+    // Step 2: For each root library, get its directory contents.
+    // Most Navidrome setups have a single music folder.
+    final allFolders = <Folder>[];
 
-    final folders = <Folder>[];
+    for (final mf in musicFolders) {
+      final rootId = mf['id']?.toString();
+      if (rootId == null) continue;
 
-    // Each index entry has a 'name' (letter) and 'artist' list
-    final indexList = indexes['index'];
-    if (indexList == null) return [];
-
-    final items = indexList is List ? indexList : [indexList];
-    for (final index in items) {
-      final artistList = index['artist'];
-      if (artistList == null) continue;
-
-      final artists = artistList is List ? artistList : [artistList];
-      for (final artist in artists) {
-        folders.add(Folder.fromSubsonic(artist as Map<String, dynamic>, api: this));
+      try {
+        final contents = await getDirectoryContents(rootId);
+        allFolders.addAll(contents.folders);
+        // If there are tracks at the root level, they'll be shown in the home screen
+      } catch (e) {
+        debugPrint('Failed to load music folder $rootId: $e');
       }
     }
 
-    return folders;
+    return allFolders;
+  }
+
+  /// Get top-level root tracks (songs sitting directly in the music folder root).
+  Future<List<Track>> getRootTracks() async {
+    final musicFolders = await getMusicFolders();
+    if (musicFolders.isEmpty) return [];
+
+    final allTracks = <Track>[];
+
+    for (final mf in musicFolders) {
+      final rootId = mf['id']?.toString();
+      if (rootId == null) continue;
+
+      try {
+        final contents = await getDirectoryContents(rootId);
+        allTracks.addAll(contents.tracks);
+      } catch (e) {
+        debugPrint('Failed to load root tracks from $rootId: $e');
+      }
+    }
+
+    return allTracks;
   }
 
   /// Get the children of a directory as folders and tracks.
