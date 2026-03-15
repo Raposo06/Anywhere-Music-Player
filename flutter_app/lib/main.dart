@@ -62,6 +62,21 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider<AudioPlayerService>(
           create: (_) => AudioPlayerService(audioHandler: audioHandler),
         ),
+
+        // Library Scanner - depends on AuthService for the API connection.
+        // Provided at the top level so it's accessible to all routes
+        // (including Navigator.push routes like FolderDetailScreen).
+        ChangeNotifierProxyProvider<AuthService, LibraryScanner>(
+          create: (_) => LibraryScanner(null),
+          update: (_, auth, previous) {
+            if (auth.isAuthenticated && auth.apiService != null) {
+              if (previous == null || !previous.hasApi) {
+                return LibraryScanner(auth.apiService!);
+              }
+            }
+            return previous ?? LibraryScanner(null);
+          },
+        ),
       ],
       child: MaterialApp(
         title: 'Anywhere Music Player',
@@ -140,13 +155,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return const LoginScreen();
     }
 
-    // When authenticated, provide the LibraryScanner which depends on the API service.
-    // It will scan the library on first use and cache the folder tree.
-    return ChangeNotifierProvider<LibraryScanner>(
-      create: (_) => LibraryScanner(authService.apiService!),
-      child: PlatformDetector.isAndroidTV
-          ? const TvHomeScreen()
-          : const MainScreen(),
-    );
+    return PlatformDetector.isAndroidTV
+        ? const TvHomeScreen()
+        : const MainScreen();
   }
 }

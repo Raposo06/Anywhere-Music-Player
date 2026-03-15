@@ -9,7 +9,7 @@ import 'subsonic_api_service.dart';
 /// This recreates the filesystem-based browsing experience since Navidrome
 /// only exposes tag-based (artist/album) browsing through its API.
 class LibraryScanner with ChangeNotifier {
-  final SubsonicApiService _api;
+  final SubsonicApiService? _api;
 
   List<Track> _allTracks = [];
   Map<String, _FolderNode> _rootNodes = {};
@@ -18,6 +18,9 @@ class LibraryScanner with ChangeNotifier {
   String? _error;
 
   LibraryScanner(this._api);
+
+  /// Whether this scanner has a valid API connection.
+  bool get hasApi => _api != null;
 
   bool get isScanning => _isScanning;
   bool get hasScanned => _hasScanned;
@@ -36,8 +39,13 @@ class LibraryScanner with ChangeNotifier {
     notifyListeners();
 
     try {
+      if (_api == null) {
+        _error = 'Not connected to server';
+        return;
+      }
+
       debugPrint('LibraryScanner: Fetching all songs via Navidrome native API...');
-      final rawSongs = await _api.getAllSongsNativeApi();
+      final rawSongs = await _api!.getAllSongsNativeApi();
       debugPrint('LibraryScanner: Got ${rawSongs.length} songs from native API');
 
       // Debug: log a few paths to verify they're real filesystem paths
@@ -56,8 +64,8 @@ class LibraryScanner with ChangeNotifier {
           id: songId,
           title: song['title'] as String? ?? 'Unknown',
           filename: path,
-          streamUrl: _api.buildStreamUrl(songId),
-          coverArtUrl: coverArtId != null ? _api.buildCoverArtUrl(coverArtId) : null,
+          streamUrl: _api!.buildStreamUrl(songId),
+          coverArtUrl: coverArtId != null ? _api!.buildCoverArtUrl(coverArtId) : null,
           folderPath: path.contains('/') ? path.substring(0, path.lastIndexOf('/')) : '',
           durationSeconds: (song['duration'] is num) ? (song['duration'] as num).round() : null,
           fileSizeBytes: (song['size'] is num) ? (song['size'] as num).round() : null,
@@ -90,7 +98,7 @@ class LibraryScanner with ChangeNotifier {
     _hasScanned = false;
     _allTracks = [];
     _rootNodes = {};
-    _api.clearCache();
+    _api?.clearCache();
     await scan();
   }
 
