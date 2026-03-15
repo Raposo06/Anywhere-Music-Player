@@ -20,6 +20,7 @@ class AudioPlayerService with ChangeNotifier {
   int _currentIndex = -1;
   bool _isLoading = false;
   bool _isSeeking = false;
+  bool _isSkipping = false;
   bool _isShuffleEnabled = false;
   RepeatMode _repeatMode = RepeatMode.off;
   double _volume = 1.0; // 0.0 to 1.0
@@ -82,15 +83,17 @@ class AudioPlayerService with ChangeNotifier {
       notifyListeners();
     });
 
-    // Auto-play next track when entire playlist finishes.
-    // Individual track transitions are handled by currentIndexStream.
+    // Handle playlist completion and repeat modes.
+    // Only act on genuine end-of-playlist, not transient completed states
+    // that occur during seek/skip operations.
     _playerStateSubscription = _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
+      if (state.processingState == ProcessingState.completed && !_isSkipping) {
+        final isLastTrack = _currentIndex >= _playlist.length - 1;
+
         if (_repeatMode == RepeatMode.one) {
           _player.seek(Duration.zero);
           _player.play();
-        } else if (_repeatMode == RepeatMode.all && _playlist.isNotEmpty) {
-          // Restart from the beginning of the playlist
+        } else if (_repeatMode == RepeatMode.all && _playlist.isNotEmpty && isLastTrack) {
           _currentIndex = 0;
           _currentTrack = _playlist[0];
           if (_audioHandler != null) {
@@ -99,14 +102,9 @@ class AudioPlayerService with ChangeNotifier {
           notifyListeners();
           _player.seek(Duration.zero, index: 0);
           _player.play();
-        } else {
-          // Playlist finished, stop playback
-          _currentTrack = null;
-          if (_isWindows) {
-            _windowsMediaControls.clear();
-          }
-          notifyListeners();
         }
+        // For repeat-off: do nothing — the player naturally stops,
+        // and the UI keeps showing the last track (not "no track").
       }
     });
 
@@ -283,27 +281,7 @@ class AudioPlayerService with ChangeNotifier {
       _currentIndex++;
     }
 
-    _currentTrack = _playlist[_currentIndex];
-    _isLoading = true;
-    notifyListeners();
-
-    try {
-      if (_audioHandler != null) {
-        _audioHandler!.updateTrackInfo(_currentTrack!);
-      }
-      await _player.seek(Duration.zero, index: _currentIndex);
-      if (!_player.playing) {
-        await _player.play();
-      }
-      _isLoading = false;
-      notifyListeners();
-    } catch (e) {
-      _isLoading = false;
-      if (!e.toString().contains('Loading interrupted')) {
-        _handlePlaybackError(e);
-      }
-      notifyListeners();
-    }
+    await _skipToIndex(_currentIndex);
   }
 
   /// Play previous track in playlist
@@ -312,22 +290,31 @@ class AudioPlayerService with ChangeNotifier {
 
     _lastError = null;
     _currentIndex--;
-    _currentTrack = _playlist[_currentIndex];
+    await _skipToIndex(_currentIndex);
+  }
+
+  /// Internal: skip to a specific index in the playlist, guarding against
+  /// transient completed states that fire during seek.
+  Future<void> _skipToIndex(int index) async {
+    _currentTrack = _playlist[index];
     _isLoading = true;
+    _isSkipping = true;
     notifyListeners();
 
     try {
       if (_audioHandler != null) {
         _audioHandler!.updateTrackInfo(_currentTrack!);
       }
-      await _player.seek(Duration.zero, index: _currentIndex);
+      await _player.seek(Duration.zero, index: index);
       if (!_player.playing) {
         await _player.play();
       }
       _isLoading = false;
+      _isSkipping = false;
       notifyListeners();
     } catch (e) {
       _isLoading = false;
+      _isSkipping = false;
       if (!e.toString().contains('Loading interrupted')) {
         _handlePlaybackError(e);
       }
