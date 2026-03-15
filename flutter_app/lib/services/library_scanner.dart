@@ -84,9 +84,17 @@ class LibraryScanner with ChangeNotifier {
       }
 
       debugPrint('LibraryScanner: Scanned ${tracks.length} total tracks');
+      for (final t in tracks.take(20)) {
+        debugPrint('LibraryScanner: path="${t.filename}" title="${t.title}"');
+      }
+      if (tracks.length > 20) {
+        debugPrint('LibraryScanner: ... and ${tracks.length - 20} more');
+      }
 
       _allTracks = tracks;
       _buildFolderTree();
+      final topFolders = getTopLevelFolders();
+      debugPrint('LibraryScanner: Built ${topFolders.length} top-level folders: ${topFolders.map((f) => f.folderPath).join(', ')}');
       _hasScanned = true;
     } catch (e) {
       debugPrint('LibraryScanner: Error scanning library: $e');
