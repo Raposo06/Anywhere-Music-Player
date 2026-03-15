@@ -71,8 +71,9 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     if (allTracks.isEmpty) return;
 
     final playerService = context.read<AudioPlayerService>();
+    // Enable shuffle before starting playlist — playPlaylist will shuffle internally
     if (!playerService.isShuffleEnabled) {
-      playerService.toggleShuffle();
+      playerService.toggleShuffle(); // No active playlist, so this just sets the flag
     }
     playerService.playPlaylist(allTracks, 0);
 

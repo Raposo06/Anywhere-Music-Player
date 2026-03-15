@@ -25,6 +25,7 @@ class AudioPlayerService with ChangeNotifier {
   double _volume = 1.0; // 0.0 to 1.0
   String? _lastError;
   final _random = Random();
+  StreamSubscription<int?>? _indexStreamSubscription;
 
   /// Streams exposed for UI widgets that need high-frequency updates (e.g., progress bar).
   /// Using streams instead of notifyListeners() avoids rebuilding the entire widget tree.
@@ -223,8 +224,10 @@ class AudioPlayerService with ChangeNotifier {
       await _player.setAudioSource(source, initialIndex: _currentIndex);
       await _player.play();
 
+      // Cancel previous listener to prevent leaks
+      _indexStreamSubscription?.cancel();
       // Listen for track changes within the concatenating source
-      _player.currentIndexStream.listen((index) {
+      _indexStreamSubscription = _player.currentIndexStream.listen((index) {
         if (index != null && index != _currentIndex && index < _playlist.length) {
           _currentIndex = index;
           _currentTrack = _playlist[_currentIndex];
@@ -352,30 +355,39 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Toggle shuffle mode
-  void toggleShuffle() {
+  /// Toggle shuffle mode and rebuild the audio source to match the new order.
+  Future<void> toggleShuffle() async {
     _isShuffleEnabled = !_isShuffleEnabled;
 
-    if (_playlist.isNotEmpty) {
+    if (_playlist.isNotEmpty && _currentTrack != null) {
+      final wasPlaying = _player.playing;
+      final currentPosition = _player.position;
+
       if (_isShuffleEnabled) {
-        final currentTrack = _currentTrack;
-        if (currentTrack != null) {
-          final currentTrackIndex = _playlist.indexOf(currentTrack);
-          if (currentTrackIndex >= 0) {
-            _shufflePlaylist(currentTrackIndex);
-          }
+        final currentTrackIndex = _playlist.indexOf(_currentTrack!);
+        if (currentTrackIndex >= 0) {
+          _shufflePlaylist(currentTrackIndex);
         }
       } else {
         if (_originalPlaylist.isNotEmpty) {
-          final currentTrack = _currentTrack;
           _playlist = List.from(_originalPlaylist);
-          if (currentTrack != null) {
-            final index = _playlist.indexWhere((t) => t.id == currentTrack.id);
-            if (index >= 0) {
-              _currentIndex = index;
-            }
+          final index = _playlist.indexWhere((t) => t.id == _currentTrack!.id);
+          if (index >= 0) {
+            _currentIndex = index;
           }
         }
+      }
+
+      // Rebuild the audio source to match the new playlist order
+      try {
+        final source = _buildPlaylistSource(_playlist);
+        await _player.setAudioSource(source, initialIndex: _currentIndex);
+        await _player.seek(currentPosition);
+        if (wasPlaying) {
+          await _player.play();
+        }
+      } catch (e) {
+        debugPrint('Error rebuilding playlist after shuffle toggle: $e');
       }
     }
 
@@ -418,6 +430,7 @@ class AudioPlayerService with ChangeNotifier {
 
   @override
   void dispose() {
+    _indexStreamSubscription?.cancel();
     _player.dispose();
     if (_isWindows) {
       _windowsMediaControls.dispose();
