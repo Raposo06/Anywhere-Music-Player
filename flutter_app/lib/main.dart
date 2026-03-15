@@ -5,6 +5,7 @@ import 'package:audio_service/audio_service.dart';
 import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/audio_handler.dart';
+import 'services/library_scanner.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/tv_home_screen.dart';
@@ -139,9 +140,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return const LoginScreen();
     }
 
-    // Use TV UI for Android TV, regular UI for other platforms
-    return PlatformDetector.isAndroidTV
-        ? const TvHomeScreen()
-        : const MainScreen();
+    // When authenticated, provide the LibraryScanner which depends on the API service.
+    // It will scan the library on first use and cache the folder tree.
+    return ChangeNotifierProvider<LibraryScanner>(
+      create: (_) => LibraryScanner(authService.apiService!),
+      child: PlatformDetector.isAndroidTV
+          ? const TvHomeScreen()
+          : const MainScreen(),
+    );
   }
 }

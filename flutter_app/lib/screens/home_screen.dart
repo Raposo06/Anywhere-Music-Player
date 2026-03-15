@@ -7,6 +7,7 @@ import '../models/folder.dart';
 import '../services/auth_service.dart';
 import '../services/subsonic_api_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/library_scanner.dart';
 import '../utils/responsive.dart';
 import 'player_screen.dart';
 import 'folder_detail_screen.dart';
@@ -20,18 +21,22 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
-  List<Folder> _folders = [];
-  List<Folder> _recentAlbums = [];
-  List<Track> _rootTracks = [];
-  bool _isLoading = false;
-  String? _errorMessage;
   String _searchQuery = '';
   Timer? _debounceTimer;
+
+  // Search results (only used when searching)
+  List<Folder> _searchFolders = [];
+  List<Track> _searchTracks = [];
+  bool _isSearching = false;
+  String? _searchError;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    // Trigger library scan on first load
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<LibraryScanner>().scan();
+    });
   }
 
   @override
@@ -43,52 +48,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   SubsonicApiService? get _api => context.read<AuthService>().apiService;
 
-  Future<void> _loadData() async {
-    if (!mounted) return;
-    final api = _api;
-    if (api == null) return;
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    List<Folder> folders = [];
-    List<Folder> recentAlbums = [];
-    String? error;
-
-    List<Track> rootTracks = [];
-
-    try {
-      // Load folders, root tracks, and recently added albums in parallel
-      final results = await Future.wait([
-        api.getFolders(),
-        api.getRootTracks(),
-        api.getAlbumList2(type: 'newest', size: 10),
-      ]);
-      folders = results[0] as List<Folder>;
-      rootTracks = results[1] as List<Track>;
-      recentAlbums = results[2] as List<Folder>;
-    } catch (e) {
-      debugPrint('Failed to load data: $e');
-      error = 'Failed to load folders';
-      // Try loading just folders if the rest fails
-      try {
-        folders = await api.getFolders();
-        rootTracks = await api.getRootTracks();
-      } catch (_) {}
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _folders = folders;
-      _recentAlbums = recentAlbums;
-      _rootTracks = rootTracks;
-      _isLoading = false;
-      _errorMessage = folders.isEmpty && recentAlbums.isEmpty && rootTracks.isEmpty ? error : null;
-    });
-  }
-
   void _onSearchChanged(String query) {
     _debounceTimer?.cancel();
     setState(() {
@@ -96,7 +55,12 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     if (query.isEmpty) {
-      _loadData();
+      setState(() {
+        _searchFolders = [];
+        _searchTracks = [];
+        _isSearching = false;
+        _searchError = null;
+      });
       return;
     }
 
@@ -111,27 +75,26 @@ class _HomeScreenState extends State<HomeScreen> {
     if (api == null) return;
 
     setState(() {
-      _isLoading = true;
-      _errorMessage = null;
+      _isSearching = true;
+      _searchError = null;
     });
 
     try {
       final result = await api.search3(query);
 
       if (!mounted) return;
-      // Verify query hasn't changed while we were waiting
       if (_searchQuery != query) return;
 
       setState(() {
-        _folders = result.albums;
-        _rootTracks = result.songs;
-        _isLoading = false;
+        _searchFolders = result.albums;
+        _searchTracks = result.songs;
+        _isSearching = false;
       });
     } on SubsonicApiException catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.message;
-        _isLoading = false;
+        _searchError = e.message;
+        _isSearching = false;
       });
     }
   }
@@ -141,10 +104,10 @@ class _HomeScreenState extends State<HomeScreen> {
     await authService.logout();
   }
 
-  void _playRootTrack(Track track) {
+  void _playTrack(Track track, List<Track> playlist) {
     final playerService = context.read<AudioPlayerService>();
-    final trackIndex = _rootTracks.indexOf(track);
-    playerService.playPlaylist(_rootTracks, trackIndex);
+    final trackIndex = playlist.indexOf(track);
+    playerService.playPlaylist(playlist, trackIndex);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -152,53 +115,50 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _playFolder(Folder folder) async {
-    final api = _api;
-    if (api == null || folder.id == null) return;
+    final scanner = context.read<LibraryScanner>();
     final playerService = context.read<AudioPlayerService>();
     final messenger = ScaffoldMessenger.of(context);
 
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Loading ${folder.folderPath}...'),
-        duration: const Duration(seconds: 1),
-      ),
-    );
+    if (folder.id == null) return;
 
-    try {
-      final tracks = await api.getAllTracksInDirectory(folder.id!);
+    final tracks = scanner.getAllTracksInFolder(folder.id!);
 
-      messenger.hideCurrentSnackBar();
-
-      if (tracks.isNotEmpty) {
-        playerService.playPlaylist(tracks, 0);
-        if (mounted) {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const PlayerScreen()),
-          );
-        }
-      } else {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('No tracks found in this folder')),
+    if (tracks.isNotEmpty) {
+      playerService.playPlaylist(tracks, 0);
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const PlayerScreen()),
         );
       }
-    } catch (e) {
-      messenger.hideCurrentSnackBar();
+    } else {
       messenger.showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+        const SnackBar(content: Text('No tracks found in this folder')),
       );
     }
+  }
+
+  void _openFolder(Folder folder) {
+    if (folder.id == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FolderDetailScreen(
+          folderId: folder.id!,
+          folderName: folder.displayName,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
+    final scanner = context.watch<LibraryScanner>();
     final horizontalPadding = Responsive.getHorizontalPadding(context);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Folders'),
         actions: [
-          // Use Selector to only rebuild when currentTrack presence changes
           Selector<AudioPlayerService, bool>(
             selector: (_, ps) => ps.currentTrack != null,
             builder: (context, hasTrack, _) => hasTrack
@@ -252,19 +212,35 @@ class _HomeScreenState extends State<HomeScreen> {
               // User info
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Welcome, ${authService.currentUser?.username ?? "User"}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Welcome, ${authService.currentUser?.username ?? "User"}',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    if (scanner.isScanning)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    if (scanner.hasScanned && !scanner.isScanning)
+                      Text(
+                        '${scanner.allTracks.length} tracks',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
 
               // Content
               Expanded(
-                child: _buildContent(),
+                child: _searchQuery.isNotEmpty
+                    ? _buildSearchResults()
+                    : _buildFolderBrowser(scanner),
               ),
             ],
           ),
@@ -288,27 +264,34 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildContent() {
+  /// Build the folder browser from the scanned library.
+  Widget _buildFolderBrowser(LibraryScanner scanner) {
     final horizontalPadding = Responsive.getHorizontalPadding(context);
     final isDesktop = Responsive.isDesktopOrLarger(context);
     final gridColumns = Responsive.getGridColumns(context);
 
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+    if (scanner.isScanning && !scanner.hasScanned) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Scanning library...'),
+          ],
+        ),
+      );
     }
 
-    if (_errorMessage != null) {
+    if (scanner.error != null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              _errorMessage!,
-              style: const TextStyle(color: Colors.red),
-            ),
+            Text(scanner.error!, style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _loadData,
+              onPressed: () => scanner.rescan(),
               child: const Text('Retry'),
             ),
           ],
@@ -316,45 +299,18 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    if (_folders.isEmpty && _rootTracks.isEmpty && _recentAlbums.isEmpty) {
-      return const Center(
-        child: Text('No content found'),
-      );
+    final folders = scanner.getTopLevelFolders();
+    final rootTracks = scanner.getRootTracks();
+
+    if (folders.isEmpty && rootTracks.isEmpty) {
+      return const Center(child: Text('No content found'));
     }
 
     return ListView(
       padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
       children: [
-        // Recently Added section (only in default view, not search)
-        if (_recentAlbums.isNotEmpty && _searchQuery.isEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Row(
-              children: [
-                const Icon(Icons.new_releases, color: Colors.deepPurple),
-                const SizedBox(width: 8),
-                Text(
-                  'Recently Added',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(
-            height: 180,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _recentAlbums.length,
-              itemBuilder: (context, index) => _buildRecentAlbumCard(_recentAlbums[index]),
-            ),
-          ),
-          const Divider(height: 24),
-        ],
-
-        // Search result tracks
-        if (_rootTracks.isNotEmpty) ...[
+        // Root-level tracks (songs not in any folder)
+        if (rootTracks.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
@@ -362,7 +318,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const Icon(Icons.music_note, color: Colors.orange),
                 const SizedBox(width: 8),
                 Text(
-                  'Songs (${_rootTracks.length})',
+                  'Songs (${rootTracks.length})',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -371,7 +327,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 TextButton.icon(
                   onPressed: () {
                     final playerService = context.read<AudioPlayerService>();
-                    playerService.playPlaylist(_rootTracks, 0);
+                    playerService.playPlaylist(rootTracks, 0);
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const PlayerScreen()),
                     );
@@ -382,15 +338,15 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          ..._rootTracks.map((track) => _TrackTile(
+          ...rootTracks.map((track) => _TrackTile(
             track: track,
-            onTap: () => _playRootTrack(track),
+            onTap: () => _playTrack(track, rootTracks),
           )),
           const Divider(height: 32),
         ],
 
         // Folders section
-        if (_folders.isNotEmpty) ...[
+        if (folders.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
@@ -398,7 +354,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const Icon(Icons.folder, color: Colors.blue),
                 const SizedBox(width: 8),
                 Text(
-                  'Folders (${_folders.length})',
+                  'Folders (${folders.length})',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -406,7 +362,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          // Use grid on desktop, list on mobile
           if (isDesktop)
             GridView.builder(
               shrinkWrap: true,
@@ -417,26 +372,102 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisSpacing: 16,
                 childAspectRatio: 0.85,
               ),
-              itemCount: _folders.length,
-              itemBuilder: (context, index) => _buildFolderCard(_folders[index]),
+              itemCount: folders.length,
+              itemBuilder: (context, index) => _buildFolderCard(folders[index]),
             )
           else
-            ..._folders.map((folder) => _buildFolderTile(folder)),
+            ...folders.map((folder) => _buildFolderTile(folder)),
         ],
         const SizedBox(height: 16),
       ],
     );
   }
 
-  void _openFolder(Folder folder) {
-    if (folder.id == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => FolderDetailScreen(
-          folderId: folder.id!,
-          folderName: folder.folderPath,
+  /// Build search results view.
+  Widget _buildSearchResults() {
+    final horizontalPadding = Responsive.getHorizontalPadding(context);
+
+    if (_isSearching) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_searchError != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(_searchError!, style: const TextStyle(color: Colors.red)),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => _performSearch(_searchQuery),
+              child: const Text('Retry'),
+            ),
+          ],
         ),
-      ),
+      );
+    }
+
+    if (_searchFolders.isEmpty && _searchTracks.isEmpty) {
+      return const Center(child: Text('No results found'));
+    }
+
+    return ListView(
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+      children: [
+        if (_searchTracks.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              children: [
+                const Icon(Icons.music_note, color: Colors.orange),
+                const SizedBox(width: 8),
+                Text(
+                  'Songs (${_searchTracks.length})',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () {
+                    final playerService = context.read<AudioPlayerService>();
+                    playerService.playPlaylist(_searchTracks, 0);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                    );
+                  },
+                  icon: const Icon(Icons.play_arrow, size: 20),
+                  label: const Text('Play All'),
+                ),
+              ],
+            ),
+          ),
+          ..._searchTracks.map((track) => _TrackTile(
+            track: track,
+            onTap: () => _playTrack(track, _searchTracks),
+          )),
+          const Divider(height: 32),
+        ],
+        if (_searchFolders.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              children: [
+                const Icon(Icons.folder, color: Colors.blue),
+                const SizedBox(width: 8),
+                Text(
+                  'Albums (${_searchFolders.length})',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ..._searchFolders.map((folder) => _buildFolderTile(folder)),
+        ],
+        const SizedBox(height: 16),
+      ],
     );
   }
 
@@ -456,7 +487,7 @@ class _HomeScreenState extends State<HomeScreen> {
             )
           : const Icon(Icons.folder, size: 48, color: Colors.blue),
       title: Text(
-        folder.folderPath,
+        folder.displayName,
         style: const TextStyle(
           fontWeight: FontWeight.bold,
           fontSize: 16,
@@ -472,54 +503,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Horizontal scrolling card for recently added albums
-  Widget _buildRecentAlbumCard(Folder album) {
-    return SizedBox(
-      width: 140,
-      child: Card(
-        elevation: 2,
-        clipBehavior: Clip.antiAlias,
-        margin: const EdgeInsets.only(right: 12),
-        child: InkWell(
-          onTap: () => _openFolder(album),
-          onLongPress: () => _playFolder(album),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: album.coverArtUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: album.coverArtUrl!,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => const Center(
-                          child: Icon(Icons.album, size: 48, color: Colors.deepPurple),
-                        ),
-                      )
-                    : const Center(
-                        child: Icon(Icons.album, size: 48, color: Colors.deepPurple),
-                      ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
-                child: Text(
-                  album.folderPath,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(height: 2),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Card-style folder widget for grid layout on desktop
   Widget _buildFolderCard(Folder folder) {
     return Card(
       elevation: 2,
@@ -545,7 +528,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
               child: Text(
-                folder.folderPath,
+                folder.displayName,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 13,

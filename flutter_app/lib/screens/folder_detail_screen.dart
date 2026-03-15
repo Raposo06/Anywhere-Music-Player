@@ -3,8 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
-import '../services/auth_service.dart';
-import '../services/subsonic_api_service.dart';
+import '../services/library_scanner.dart';
 import '../services/audio_player_service.dart';
 import '../utils/responsive.dart';
 import 'player_screen.dart';
@@ -26,8 +25,6 @@ class FolderDetailScreen extends StatefulWidget {
 class _FolderDetailScreenState extends State<FolderDetailScreen> {
   List<Track> _tracks = [];
   List<Folder> _subfolders = [];
-  bool _isLoading = true;
-  String? _errorMessage;
 
   @override
   void initState() {
@@ -35,34 +32,13 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     _loadContents();
   }
 
-  SubsonicApiService? get _api => context.read<AuthService>().apiService;
-
-  Future<void> _loadContents() async {
-    if (!mounted) return;
-    final api = _api;
-    if (api == null) return;
-
+  void _loadContents() {
+    final scanner = context.read<LibraryScanner>();
+    final contents = scanner.getFolderContents(widget.folderId);
     setState(() {
-      _isLoading = true;
-      _errorMessage = null;
+      _subfolders = contents.folders;
+      _tracks = contents.tracks;
     });
-
-    try {
-      final contents = await api.getDirectoryContents(widget.folderId);
-
-      if (!mounted) return;
-      setState(() {
-        _tracks = contents.tracks;
-        _subfolders = contents.folders;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = 'Failed to load contents: $e';
-        _isLoading = false;
-      });
-    }
   }
 
   void _playTrack(Track track) {
@@ -76,9 +52,13 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   }
 
   void _playAll() {
-    if (_tracks.isEmpty) return;
+    // Play all tracks recursively (this folder + subfolders)
+    final scanner = context.read<LibraryScanner>();
+    final allTracks = scanner.getAllTracksInFolder(widget.folderId);
+    if (allTracks.isEmpty) return;
+
     final playerService = context.read<AudioPlayerService>();
-    playerService.playPlaylist(_tracks, 0);
+    playerService.playPlaylist(allTracks, 0);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -86,12 +66,15 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   }
 
   void _shufflePlay() {
-    if (_tracks.isEmpty) return;
+    final scanner = context.read<LibraryScanner>();
+    final allTracks = scanner.getAllTracksInFolder(widget.folderId);
+    if (allTracks.isEmpty) return;
+
     final playerService = context.read<AudioPlayerService>();
     if (!playerService.isShuffleEnabled) {
       playerService.toggleShuffle();
     }
-    playerService.playPlaylist(_tracks, 0);
+    playerService.playPlaylist(allTracks, 0);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -99,12 +82,11 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   }
 
   void _openSubfolder(Folder folder) {
-    if (folder.id == null) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => FolderDetailScreen(
-          folderId: folder.id!,
-          folderName: folder.folderPath,
+          folderId: folder.folderPath,
+          folderName: folder.displayName,
         ),
       ),
     );
@@ -159,26 +141,6 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
 
   Widget _buildBody() {
     final horizontalPadding = Responsive.getHorizontalPadding(context);
-
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_errorMessage != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadContents,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      );
-    }
 
     if (_tracks.isEmpty && _subfolders.isEmpty) {
       return const Center(child: Text('No content found'));
