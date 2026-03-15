@@ -465,25 +465,50 @@ class SubsonicApiService {
     }
   }
 
+  /// Authenticate with Navidrome's native REST API and get a JWT token.
+  Future<String> _getNativeApiToken() async {
+    final baseUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
+    final uri = Uri.parse('$baseUrl/auth/login');
+
+    try {
+      final response = await _httpClient.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'username': username, 'password': password}),
+      ).timeout(_httpTimeout);
+
+      if (response.statusCode != 200) {
+        throw SubsonicApiException('Native API login failed: HTTP ${response.statusCode}');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final token = data['token'] as String?;
+      if (token == null) {
+        throw SubsonicApiException('Native API login: no token in response');
+      }
+      return token;
+    } on Exception catch (e) {
+      if (e is SubsonicApiException) rethrow;
+      throw SubsonicApiException('Native API login failed: $e');
+    }
+  }
+
   /// Fetch all songs from Navidrome's native REST API with real filesystem paths.
-  /// Returns raw JSON list of song objects. Uses pagination to get all songs.
   /// The native API returns the actual `path` field from the database,
   /// which is the real filesystem path (unlike the Subsonic API which returns
   /// tag-based virtual paths).
   Future<List<Map<String, dynamic>>> getAllSongsNativeApi() async {
     final baseUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
+    final token = await _getNativeApiToken();
     final allSongs = <Map<String, dynamic>>[];
     const pageSize = 500;
     var offset = 0;
-
-    // Navidrome native API uses basic auth or the same credentials
-    final basicAuth = base64Encode(utf8.encode('$username:$password'));
 
     while (true) {
       final uri = Uri.parse('$baseUrl/api/song?_start=$offset&_end=${offset + pageSize}&_order=ASC&_sort=path');
       try {
         final response = await _httpClient.get(uri, headers: {
-          'Authorization': 'Basic $basicAuth',
+          'x-nd-authorization': 'Bearer $token',
         }).timeout(const Duration(seconds: 30));
 
         if (response.statusCode != 200) {
