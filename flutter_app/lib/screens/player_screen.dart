@@ -355,7 +355,7 @@ class _PlaybackControls extends StatelessWidget {
                 Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Theme.of(context).primaryColor,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                   child: IconButton(
                     focusNode: playPauseFocusNode,
@@ -409,7 +409,7 @@ class _ShuffleRepeatControls extends StatelessWidget {
               icon: Icon(
                 Icons.shuffle,
                 color: state.shuffle
-                    ? Theme.of(context).primaryColor
+                    ? Theme.of(context).colorScheme.primary
                     : Colors.grey,
               ),
               iconSize: 32,
@@ -421,7 +421,7 @@ class _ShuffleRepeatControls extends StatelessWidget {
               state.shuffle ? 'Shuffle ON' : 'Shuffle OFF',
               style: TextStyle(
                 color: state.shuffle
-                    ? Theme.of(context).primaryColor
+                    ? Theme.of(context).colorScheme.primary
                     : Colors.grey[600],
                 fontSize: 14,
                 fontWeight: state.shuffle ? FontWeight.bold : FontWeight.normal,
@@ -434,7 +434,7 @@ class _ShuffleRepeatControls extends StatelessWidget {
                     ? Icons.repeat_one
                     : Icons.repeat,
                 color: state.repeat != RepeatMode.off
-                    ? Theme.of(context).primaryColor
+                    ? Theme.of(context).colorScheme.primary
                     : Colors.grey,
               ),
               iconSize: 32,
@@ -454,7 +454,7 @@ class _ShuffleRepeatControls extends StatelessWidget {
                       : 'Repeat ONE',
               style: TextStyle(
                 color: state.repeat != RepeatMode.off
-                    ? Theme.of(context).primaryColor
+                    ? Theme.of(context).colorScheme.primary
                     : Colors.grey[600],
                 fontSize: 14,
                 fontWeight: state.repeat != RepeatMode.off

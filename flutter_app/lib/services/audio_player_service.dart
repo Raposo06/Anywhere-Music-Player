@@ -21,6 +21,7 @@ class AudioPlayerService with ChangeNotifier {
   bool _isLoading = false;
   bool _isSeeking = false;
   bool _isSkipping = false;
+  bool _isRebuildingSource = false;
   bool _isShuffleEnabled = false;
   RepeatMode _repeatMode = RepeatMode.off;
   double _volume = 1.0; // 0.0 to 1.0
@@ -245,7 +246,7 @@ class AudioPlayerService with ChangeNotifier {
       _indexStreamSubscription?.cancel();
       // Listen for track changes within the concatenating source
       _indexStreamSubscription = _player.currentIndexStream.listen((index) {
-        if (index != null && index != _currentIndex && index < _playlist.length) {
+        if (index != null && index != _currentIndex && index < _playlist.length && !_isRebuildingSource) {
           _currentIndex = index;
           _currentTrack = _playlist[_currentIndex];
           if (_audioHandler != null) {
@@ -386,13 +387,16 @@ class AudioPlayerService with ChangeNotifier {
 
       // Rebuild the audio source to match the new playlist order
       try {
+        _isRebuildingSource = true;
         final source = _buildPlaylistSource(_playlist);
         await _player.setAudioSource(source, initialIndex: _currentIndex);
         await _player.seek(currentPosition);
+        _isRebuildingSource = false;
         if (wasPlaying) {
           await _player.play();
         }
       } catch (e) {
+        _isRebuildingSource = false;
         debugPrint('Error rebuilding playlist after shuffle toggle: $e');
       }
     }
