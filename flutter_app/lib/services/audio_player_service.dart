@@ -195,6 +195,9 @@ class AudioPlayerService with ChangeNotifier {
     _currentTrack = track;
     _playlist = [track];
     _currentIndex = 0;
+    // Cancel stale playlist index listener — single-track mode doesn't need it
+    _indexStreamSubscription?.cancel();
+    _indexStreamSubscription = null;
     notifyListeners();
 
     try {
@@ -255,7 +258,7 @@ class AudioPlayerService with ChangeNotifier {
       _indexStreamSubscription?.cancel();
       // Listen for track changes within the concatenating source
       _indexStreamSubscription = _player.currentIndexStream.listen((index) {
-        if (index != null && index != _currentIndex && index < _playlist.length && !_isRebuildingSource) {
+        if (index != null && index != _currentIndex && index < _playlist.length && !_isRebuildingSource && !_isSkipping) {
           _currentIndex = index;
           _currentTrack = _playlist[_currentIndex];
           if (_audioHandler != null) {
