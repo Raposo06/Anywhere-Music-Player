@@ -246,21 +246,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-      floatingActionButton: Selector<AudioPlayerService, ({bool hasTrack, bool isPlaying})>(
-        selector: (_, ps) => (hasTrack: ps.currentTrack != null, isPlaying: ps.isPlaying),
-        builder: (context, state, _) => state.hasTrack
-            ? FloatingActionButton(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                  );
-                },
-                child: Icon(
-                  state.isPlaying ? Icons.pause : Icons.play_arrow,
-                ),
-              )
-            : const SizedBox.shrink(),
-      ),
     );
   }
 

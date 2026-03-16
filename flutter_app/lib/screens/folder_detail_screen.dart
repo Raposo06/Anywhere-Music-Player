@@ -6,6 +6,7 @@ import '../models/folder.dart';
 import '../services/library_scanner.dart';
 import '../services/audio_player_service.dart';
 import '../utils/responsive.dart';
+import '../widgets/mini_player.dart';
 import 'player_screen.dart';
 
 class FolderDetailScreen extends StatefulWidget {
@@ -127,21 +128,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
           child: _buildBody(),
         ),
       ),
-      floatingActionButton: Selector<AudioPlayerService, ({bool hasTrack, bool isPlaying})>(
-        selector: (_, ps) => (hasTrack: ps.currentTrack != null, isPlaying: ps.isPlaying),
-        builder: (context, state, _) => state.hasTrack
-            ? FloatingActionButton(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                  );
-                },
-                child: Icon(
-                  state.isPlaying ? Icons.pause : Icons.play_arrow,
-                ),
-              )
-            : const SizedBox.shrink(),
-      ),
+      bottomNavigationBar: const MiniPlayer(),
     );
   }
 
