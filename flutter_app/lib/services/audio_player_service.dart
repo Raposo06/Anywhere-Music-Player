@@ -22,6 +22,8 @@ class AudioPlayerService with ChangeNotifier {
   bool _isSeeking = false;
   bool _isSkipping = false;
   bool _isRebuildingSource = false;
+  int _skipToken = 0;
+  int _loadToken = 0;
   bool _isShuffleEnabled = false;
   RepeatMode _repeatMode = RepeatMode.off;
   double _volume = 1.0; // 0.0 to 1.0
@@ -183,63 +185,70 @@ class AudioPlayerService with ChangeNotifier {
     );
   }
 
-  /// Play a single track
+  /// Play a single track.
+  /// Safe to call rapidly — only the last-tapped track loads.
   Future<void> playTrack(Track track) async {
     _lastError = null;
+    final token = ++_loadToken;
+
+    _isLoading = true;
+    _currentTrack = track;
+    _playlist = [track];
+    _currentIndex = 0;
+    notifyListeners();
 
     try {
-      _isLoading = true;
-      _currentTrack = track;
-      _playlist = [track];
-      _currentIndex = 0;
-      notifyListeners();
-
       if (_audioHandler != null) {
         _audioHandler!.updateTrackInfo(track);
       }
 
       final source = _buildPlaylistSource([track]);
       await _player.setAudioSource(source);
+      if (token != _loadToken) return;
       await _player.play();
-
-      _isLoading = false;
-      notifyListeners();
     } catch (e) {
-      _isLoading = false;
+      if (token != _loadToken) return;
       _handlePlaybackError(e);
-      rethrow;
+    } finally {
+      if (token == _loadToken) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
   /// Set a playlist and play from a specific index using ConcatenatingAudioSource
   /// for gapless playback.
+  /// Safe to call rapidly — only the last call takes effect.
   Future<void> playPlaylist(List<Track> tracks, int startIndex) async {
     if (tracks.isEmpty || startIndex < 0 || startIndex >= tracks.length) {
       return;
     }
 
     _lastError = null;
+    final token = ++_loadToken;
+
+    _isLoading = true;
+    _originalPlaylist = List.from(tracks);
+    _playlist = List.from(tracks);
+
+    if (_isShuffleEnabled) {
+      _shufflePlaylist(startIndex);
+    } else {
+      _currentIndex = startIndex;
+    }
+
+    _currentTrack = _playlist[_currentIndex];
+    notifyListeners();
 
     try {
-      _isLoading = true;
-      _originalPlaylist = List.from(tracks);
-      _playlist = List.from(tracks);
-
-      if (_isShuffleEnabled) {
-        _shufflePlaylist(startIndex);
-      } else {
-        _currentIndex = startIndex;
-      }
-
-      _currentTrack = _playlist[_currentIndex];
-      notifyListeners();
-
       if (_audioHandler != null) {
         _audioHandler!.updateTrackInfo(_currentTrack!);
       }
 
       final source = _buildPlaylistSource(_playlist);
       await _player.setAudioSource(source, initialIndex: _currentIndex);
+      if (token != _loadToken) return;
       await _player.play();
 
       // Cancel previous listener to prevent leaks
@@ -255,17 +264,19 @@ class AudioPlayerService with ChangeNotifier {
           notifyListeners();
         }
       });
-
-      _isLoading = false;
-      notifyListeners();
     } catch (e) {
-      _isLoading = false;
+      if (token != _loadToken) return;
       _handlePlaybackError(e);
-      rethrow;
+    } finally {
+      if (token == _loadToken) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
-  /// Play next track in playlist
+  /// Play next track in playlist.
+  /// Safe to call rapidly — only the final target index is actually seeked to.
   Future<void> playNext() async {
     if (_playlist.isEmpty) return;
 
@@ -282,44 +293,58 @@ class AudioPlayerService with ChangeNotifier {
       _currentIndex++;
     }
 
+    // Update track metadata immediately so the UI reflects the target.
+    _currentTrack = _playlist[_currentIndex];
+    notifyListeners();
+
     await _skipToIndex(_currentIndex);
   }
 
-  /// Play previous track in playlist
+  /// Play previous track in playlist.
+  /// Safe to call rapidly — only the final target index is actually seeked to.
   Future<void> playPrevious() async {
     if (_playlist.isEmpty || _currentIndex <= 0) return;
 
     _lastError = null;
     _currentIndex--;
+
+    _currentTrack = _playlist[_currentIndex];
+    notifyListeners();
+
     await _skipToIndex(_currentIndex);
   }
 
   /// Internal: skip to a specific index in the playlist, guarding against
   /// transient completed states that fire during seek.
+  /// Uses a token so that rapid calls cancel stale in-flight seeks.
   Future<void> _skipToIndex(int index) async {
-    _currentTrack = _playlist[index];
+    final token = ++_skipToken;
     _isLoading = true;
     _isSkipping = true;
-    notifyListeners();
+
+    if (_audioHandler != null) {
+      _audioHandler!.updateTrackInfo(_currentTrack!);
+    }
 
     try {
-      if (_audioHandler != null) {
-        _audioHandler!.updateTrackInfo(_currentTrack!);
-      }
       await _player.seek(Duration.zero, index: index);
+      // If another skip came in while we were awaiting, bail out —
+      // the newer call will handle playback.
+      if (token != _skipToken) return;
       if (!_player.playing) {
         await _player.play();
       }
-      _isLoading = false;
-      _isSkipping = false;
-      notifyListeners();
     } catch (e) {
-      _isLoading = false;
-      _isSkipping = false;
+      if (token != _skipToken) return;
       if (!e.toString().contains('Loading interrupted')) {
         _handlePlaybackError(e);
       }
-      notifyListeners();
+    } finally {
+      if (token == _skipToken) {
+        _isLoading = false;
+        _isSkipping = false;
+        notifyListeners();
+      }
     }
   }
 
