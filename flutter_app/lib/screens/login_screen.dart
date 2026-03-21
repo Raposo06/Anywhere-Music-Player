@@ -12,43 +12,25 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  static const _defaultServerUrl = String.fromEnvironment(
+  static const _serverUrl = String.fromEnvironment(
     'DEFAULT_SERVER_URL',
     defaultValue: 'https://navidrome.foxcore.dev',
   );
 
-  final _serverUrlController = TextEditingController(text: _defaultServerUrl);
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   String? _errorMessage;
 
   // Focus nodes for D-Pad navigation
-  final _serverUrlFocusNode = FocusNode();
   final _usernameFocusNode = FocusNode();
   final _passwordFocusNode = FocusNode();
   final _loginButtonFocusNode = FocusNode();
 
   @override
-  void initState() {
-    super.initState();
-    _loadServerUrl();
-  }
-
-  Future<void> _loadServerUrl() async {
-    final authService = context.read<AuthService>();
-    final savedUrl = await authService.getSavedServerUrl();
-    if (savedUrl != null) {
-      _serverUrlController.text = savedUrl;
-    }
-  }
-
-  @override
   void dispose() {
-    _serverUrlController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
-    _serverUrlFocusNode.dispose();
     _usernameFocusNode.dispose();
     _passwordFocusNode.dispose();
     _loginButtonFocusNode.dispose();
@@ -67,7 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final authService = context.read<AuthService>();
       await authService.login(
-        _serverUrlController.text.trim(),
+        _serverUrl,
         _usernameController.text.trim(),
         _passwordController.text,
       );
@@ -127,37 +109,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 48),
 
-                  // Server URL field
-                  TextFormField(
-                    autofocus: true,
-                    controller: _serverUrlController,
-                    focusNode: _serverUrlFocusNode,
-                    decoration: const InputDecoration(
-                      labelText: 'Server URL',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.dns),
-                      hintText: 'https://navidrome.example.com',
-                    ),
-                    keyboardType: TextInputType.url,
-                    textInputAction: TextInputAction.next,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter the server URL';
-                      }
-                      final uri = Uri.tryParse(value);
-                      if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
-                        return 'Please enter a valid URL (e.g. https://example.com)';
-                      }
-                      return null;
-                    },
-                    onFieldSubmitted: (_) {
-                      _usernameFocusNode.requestFocus();
-                    },
-                  ),
-                  const SizedBox(height: 16),
-
                   // Username field
                   TextFormField(
+                    autofocus: true,
                     controller: _usernameController,
                     focusNode: _usernameFocusNode,
                     decoration: const InputDecoration(

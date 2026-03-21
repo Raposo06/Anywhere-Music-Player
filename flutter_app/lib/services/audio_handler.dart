@@ -95,7 +95,7 @@ class MusicAudioHandler extends BaseAudioHandler {
     final item = MediaItem(
       id: track.id,
       title: track.title,
-      artist: (track.artist != null && track.artist!.isNotEmpty) ? track.artist! : 'Unknown Artist',
+      artist: '',
       duration: track.durationSeconds != null
           ? Duration(seconds: track.durationSeconds!)
           : null,

@@ -594,7 +594,7 @@ class _TrackTile extends StatelessWidget {
               color: isCurrentTrack ? Colors.blue : null,
             ),
           ),
-          subtitle: Text(track.artist ?? track.formattedDuration),
+          subtitle: Text(track.formattedDuration),
           trailing: isCurrentTrack
               ? const Icon(Icons.equalizer, color: Colors.blue)
               : null,

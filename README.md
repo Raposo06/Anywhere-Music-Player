@@ -124,8 +124,8 @@ flutter build web
 
 ## Features
 
-- Folder-based music browsing (mirrors Navidrome library structure)
-- Full-text search across tracks, albums, and artists
+- Folder-based music browsing (mirrors your server's filesystem structure)
+- Browse all tracks alphabetically with local search
 - Audio streaming with background playback
 - Lock screen / notification media controls (Android)
 - System media transport controls (Windows)
@@ -139,13 +139,13 @@ flutter build web
 flutter_app/lib/
   models/
     track.dart                   # Track model (Subsonic fields)
-    folder.dart                  # Folder model with Subsonic ID
+    folder.dart                  # Folder model
     user.dart                    # User model
   screens/
     login_screen.dart            # Server URL + credentials login
     home_screen.dart             # Folder browsing
     folder_detail_screen.dart    # Folder contents
-    all_tracks_screen.dart       # All tracks view
+    all_tracks_screen.dart       # All tracks list with search
     player_screen.dart           # Now playing
     main_screen.dart             # Main navigation shell
     tv_home_screen.dart          # Android TV interface
@@ -154,12 +154,13 @@ flutter_app/lib/
     auth_service.dart            # Auth (Subsonic token auth)
     audio_player_service.dart    # Audio playback (just_audio)
     audio_handler.dart           # audio_service handler
+    library_scanner.dart         # Full library scanner + folder tree builder
     windows_media_controls_service.dart  # Windows SMTC
   utils/
     platform_detector.dart       # TV detection
     responsive.dart              # Responsive layout helpers
   widgets/
-    tv_focus_wrapper.dart        # D-Pad focus management
+    mini_player.dart             # Mini player bar
     tv_player_controls.dart      # TV player overlay
   main.dart                      # App entry point
 

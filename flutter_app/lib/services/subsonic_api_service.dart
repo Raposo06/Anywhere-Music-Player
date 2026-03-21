@@ -314,13 +314,14 @@ class SubsonicApiService {
     final children = childList is List ? childList : [childList];
     final folders = <Folder>[];
     final tracks = <Track>[];
+    final dirName = directory['name'] as String? ?? '';
 
     for (final child in children) {
       final item = child as Map<String, dynamic>;
       if (item['isDir'] == true) {
         folders.add(Folder.fromSubsonic(item, api: this));
       } else {
-        tracks.add(Track.fromSubsonic(item, this));
+        tracks.add(Track.fromSubsonic(item, this, parentFolderName: dirName));
       }
     }
 

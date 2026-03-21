@@ -24,17 +24,6 @@ class AuthService with ChangeNotifier {
   bool get isAuthenticated => _apiService != null && _currentUser != null;
   bool get isLoading => _isLoading;
 
-  /// Return the saved server URL (for pre-filling the login form).
-  Future<String?> getSavedServerUrl() async {
-    try {
-      return await _secureStorage.read(key: _serverUrlKey);
-    } catch (e) {
-      // Fallback: try migrating from SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_serverUrlKey);
-    }
-  }
-
   /// Initialize auth state from stored credentials.
   Future<void> initialize() async {
     _isLoading = true;

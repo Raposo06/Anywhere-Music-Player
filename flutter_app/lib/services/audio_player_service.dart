@@ -192,7 +192,7 @@ class AudioPlayerService with ChangeNotifier {
         tag: MediaItem(
           id: track.id,
           title: track.title,
-          artist: track.artist ?? 'Unknown Artist',
+          artist: '',
           duration: track.durationSeconds != null
               ? Duration(seconds: track.durationSeconds!)
               : null,
