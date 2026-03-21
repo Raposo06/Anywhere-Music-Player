@@ -28,6 +28,10 @@ class AudioPlayerService with ChangeNotifier {
   RepeatMode _repeatMode = RepeatMode.all;
   double _volume = 1.0; // 0.0 to 1.0
   String? _lastError;
+  /// Offset applied when using timeOffset-based seeking.
+  /// When the stream is reloaded with timeOffset=N, the player reports
+  /// position from 0, but the real position is _seekOffset + playerPosition.
+  Duration _seekOffset = Duration.zero;
   final _random = Random();
   StreamSubscription<int?>? _indexStreamSubscription;
   StreamSubscription<PlayerState>? _playerStateSubscription;
@@ -36,8 +40,21 @@ class AudioPlayerService with ChangeNotifier {
 
   /// Streams exposed for UI widgets that need high-frequency updates (e.g., progress bar).
   /// Using streams instead of notifyListeners() avoids rebuilding the entire widget tree.
-  Stream<Duration> get positionStream => _player.positionStream;
-  Stream<Duration?> get durationStream => _player.durationStream;
+  /// Position stream adds _seekOffset to account for timeOffset-based seeking.
+  Stream<Duration> get positionStream =>
+      _player.positionStream.map((pos) => pos + _seekOffset);
+  Stream<Duration?> get durationStream => _player.durationStream.map((dur) {
+    if (dur == null) return null;
+    // When using timeOffset, the reported duration is shorter (remaining time).
+    // Add the offset back so the UI shows the full track duration.
+    if (_seekOffset > Duration.zero) {
+      final track = _currentTrack;
+      if (track?.durationSeconds != null) {
+        return Duration(seconds: track!.durationSeconds!);
+      }
+    }
+    return dur;
+  });
   Stream<Duration> get bufferedPositionStream => _player.bufferedPositionStream;
   Stream<bool> get playingStream => _player.playingStream;
 
@@ -54,7 +71,7 @@ class AudioPlayerService with ChangeNotifier {
 
   bool get isPlaying => _player.playing;
   Duration? get duration => _player.duration;
-  Duration? get position => _player.position;
+  Duration? get position => _player.position != null ? _player.position! + _seekOffset : null;
   Duration? get bufferedPosition => _player.bufferedPosition;
 
   /// Check if we're running on Windows
@@ -124,6 +141,7 @@ class AudioPlayerService with ChangeNotifier {
       }
     }
 
+    _seekOffset = Duration.zero; // Reset offset on track completion
     final isLastTrack = _currentIndex >= _playlist.length - 1;
 
     try {
@@ -194,12 +212,10 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   /// Build a ConcatenatingAudioSource from a list of tracks for gapless playback.
-  /// Uses LockCachingAudioSource to cache audio files locally, enabling proper
-  /// seeking even when the server doesn't support HTTP Range requests.
   ConcatenatingAudioSource _buildPlaylistSource(List<Track> tracks) {
     return ConcatenatingAudioSource(
       useLazyPreparation: true,
-      children: tracks.map((track) => LockCachingAudioSource(
+      children: tracks.map((track) => AudioSource.uri(
         Uri.parse(track.streamUrl),
         tag: MediaItem(
           id: track.id,
@@ -218,6 +234,7 @@ class AudioPlayerService with ChangeNotifier {
   /// Safe to call rapidly — only the last-tapped track loads.
   Future<void> playTrack(Track track) async {
     _lastError = null;
+    _seekOffset = Duration.zero;
     final token = ++_loadToken;
 
     _isLoading = true;
@@ -258,6 +275,7 @@ class AudioPlayerService with ChangeNotifier {
     }
 
     _lastError = null;
+    _seekOffset = Duration.zero;
     final token = ++_loadToken;
 
     _isLoading = true;
@@ -289,6 +307,7 @@ class AudioPlayerService with ChangeNotifier {
       _indexStreamSubscription = _player.currentIndexStream.listen((index) {
         if (index != null && index != _currentIndex && index < _playlist.length && !_isRebuildingSource && !_isSkipping) {
           _currentIndex = index;
+          _seekOffset = Duration.zero; // Reset offset when track changes
           _currentTrack = _playlist[_currentIndex];
           if (_audioHandler != null) {
             _audioHandler!.updateTrackInfo(_currentTrack!);
@@ -313,6 +332,7 @@ class AudioPlayerService with ChangeNotifier {
     if (_playlist.isEmpty) return;
 
     _lastError = null;
+    _seekOffset = Duration.zero;
 
     if (_currentIndex >= _playlist.length - 1) {
       if (_repeatMode == RepeatMode.all) {
@@ -338,6 +358,7 @@ class AudioPlayerService with ChangeNotifier {
     if (_playlist.isEmpty || _currentIndex <= 0) return;
 
     _lastError = null;
+    _seekOffset = Duration.zero;
     _currentIndex--;
 
     _currentTrack = _playlist[_currentIndex];
@@ -392,17 +413,99 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  /// Seek to a specific position within the current track.
-  /// Sets _isSeeking to suppress transient ProcessingState.completed events.
+  /// Seek to a specific absolute position within the current track.
+  /// The [position] is the absolute position in the track (e.g., 2:30 of 5:00).
+  /// First tries a normal seek (works if server supports HTTP Range requests).
+  /// If that doesn't work, falls back to reloading the stream with Subsonic's
+  /// timeOffset parameter for server-side seeking.
   Future<void> seek(Duration position) async {
+    if (_currentTrack == null || _playlist.isEmpty) return;
+
     _isSeeking = true;
 
     try {
-      await _player.seek(position);
+      // Convert absolute position to player-relative position
+      // (accounting for any existing timeOffset from a previous seek)
+      final playerTarget = position - _seekOffset;
+
+      // Only try normal seek if there's no timeOffset active
+      // (if timeOffset is active, the player's timeline is shifted and
+      //  normal seek can only go within the remaining portion)
+      if (_seekOffset == Duration.zero) {
+        await _player.seek(position);
+        await Future.delayed(const Duration(milliseconds: 200));
+
+        final positionAfter = _player.position;
+        final seekWorked = (positionAfter - position).abs() < const Duration(seconds: 3);
+
+        if (seekWorked || position.inSeconds == 0) {
+          return; // Normal seek worked
+        }
+        debugPrint('Standard seek failed (pos=$positionAfter, target=$position). '
+            'Falling back to timeOffset reload.');
+      }
+
+      // Fall back to reloading with timeOffset
+      await _seekViaReload(position);
+    } catch (e) {
+      debugPrint('Seek error: $e');
+      try {
+        await _seekViaReload(position);
+      } catch (e2) {
+        debugPrint('Seek reload fallback also failed: $e2');
+      }
     } finally {
-      // Brief delay so any transient completed event fires while flag is still set
-      await Future.delayed(const Duration(milliseconds: 50));
       _isSeeking = false;
+    }
+  }
+
+  /// Fallback seek: reload the current track's stream with timeOffset parameter.
+  /// This uses Subsonic's server-side seeking to start the stream at the right position.
+  /// Preserves the playlist by rebuilding the ConcatenatingAudioSource.
+  Future<void> _seekViaReload(Duration position) async {
+    final track = _currentTrack!;
+    final offsetSeconds = position.inSeconds;
+    final wasPlaying = _player.playing;
+
+    // Build playlist source but with timeOffset on the current track
+    final children = _playlist.asMap().entries.map((entry) {
+      final t = entry.value;
+      final isCurrentTrack = entry.key == _currentIndex;
+
+      // For the current track, add timeOffset to the stream URL
+      var url = t.streamUrl;
+      if (isCurrentTrack && offsetSeconds > 0) {
+        url = url.contains('?')
+            ? '$url&timeOffset=$offsetSeconds'
+            : '$url?timeOffset=$offsetSeconds';
+      }
+
+      return AudioSource.uri(
+        Uri.parse(url),
+        tag: MediaItem(
+          id: t.id,
+          title: t.title,
+          artist: t.artist ?? 'Unknown Artist',
+          duration: t.durationSeconds != null
+              ? Duration(seconds: t.durationSeconds!)
+              : null,
+          artUri: t.coverArtUrl != null ? Uri.parse(t.coverArtUrl!) : null,
+        ),
+      );
+    }).toList();
+
+    final source = ConcatenatingAudioSource(
+      useLazyPreparation: true,
+      children: children,
+    );
+
+    _isRebuildingSource = true;
+    await _player.setAudioSource(source, initialIndex: _currentIndex);
+    _seekOffset = position;
+    _isRebuildingSource = false;
+
+    if (wasPlaying) {
+      await _player.play();
     }
   }
 

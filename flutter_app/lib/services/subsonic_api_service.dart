@@ -87,9 +87,11 @@ class SubsonicApiService {
   }
 
   /// Build a stream URL for a song (with auth params baked in).
+  /// Uses format=raw to serve the original file without transcoding,
+  /// which enables HTTP Range requests for proper seeking support.
   String buildStreamUrl(String songId) {
     final baseUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
-    return '$baseUrl/rest/stream?id=$songId&${_authQueryString()}';
+    return '$baseUrl/rest/stream?id=$songId&format=raw&${_authQueryString()}';
   }
 
   /// Build a cover art URL (with auth params baked in).
