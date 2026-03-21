@@ -194,10 +194,12 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   /// Build a ConcatenatingAudioSource from a list of tracks for gapless playback.
+  /// Uses LockCachingAudioSource to cache audio files locally, enabling proper
+  /// seeking even when the server doesn't support HTTP Range requests.
   ConcatenatingAudioSource _buildPlaylistSource(List<Track> tracks) {
     return ConcatenatingAudioSource(
       useLazyPreparation: true,
-      children: tracks.map((track) => AudioSource.uri(
+      children: tracks.map((track) => LockCachingAudioSource(
         Uri.parse(track.streamUrl),
         tag: MediaItem(
           id: track.id,
@@ -391,24 +393,15 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   /// Seek to a specific position within the current track.
-  /// Passes explicit index to prevent ConcatenatingAudioSource from
-  /// resetting to a different track. Sets _isSeeking to suppress
-  /// transient ProcessingState.completed events.
+  /// Sets _isSeeking to suppress transient ProcessingState.completed events.
   Future<void> seek(Duration position) async {
     _isSeeking = true;
 
     try {
-      // Explicitly pass the current index so the player stays on the same track
-      // within the ConcatenatingAudioSource.
-      final index = _player.currentIndex;
-      await _player.seek(position, index: index);
-      // Wait for the player to settle past any transient completed state
-      await Future.delayed(const Duration(milliseconds: 200));
-      // If the player stopped due to the seek, restart playback
-      if (!_player.playing && _player.processingState != ProcessingState.completed) {
-        await _player.play();
-      }
+      await _player.seek(position);
     } finally {
+      // Brief delay so any transient completed event fires while flag is still set
+      await Future.delayed(const Duration(milliseconds: 50));
       _isSeeking = false;
     }
   }
