@@ -143,12 +143,7 @@ class TvPlayerControls extends StatelessWidget {
           ),
           child: Slider(
             value: progress.clamp(0.0, 1.0),
-            onChanged: (value) {
-              final newPosition = Duration(
-                seconds: (value * duration.inSeconds).round(),
-              );
-              audioPlayer.seek(newPosition);
-            },
+            onChanged: null,
           ),
         ),
         Padding(
@@ -185,7 +180,7 @@ class TvPlayerControls extends StatelessWidget {
         _TvControlButton(
           icon: Icons.shuffle,
           isActive: audioPlayer.isShuffleEnabled,
-          onPressed: audioPlayer.toggleShuffle,
+          onPressed: () => audioPlayer.toggleShuffle(),
           size: 48,
         ),
 

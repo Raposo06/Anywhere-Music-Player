@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
-import '../services/auth_service.dart';
-import '../services/subsonic_api_service.dart';
+import '../services/library_scanner.dart';
 import '../services/audio_player_service.dart';
 import '../utils/responsive.dart';
+import '../widgets/mini_player.dart';
 import 'player_screen.dart';
 
 class FolderDetailScreen extends StatefulWidget {
@@ -25,8 +26,6 @@ class FolderDetailScreen extends StatefulWidget {
 class _FolderDetailScreenState extends State<FolderDetailScreen> {
   List<Track> _tracks = [];
   List<Folder> _subfolders = [];
-  bool _isLoading = true;
-  String? _errorMessage;
 
   @override
   void initState() {
@@ -34,34 +33,18 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     _loadContents();
   }
 
-  SubsonicApiService? get _api => context.read<AuthService>().apiService;
-
-  Future<void> _loadContents() async {
-    if (!mounted) return;
-    final api = _api;
-    if (api == null) return;
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final contents = await api.getDirectoryContents(widget.folderId);
-
-      if (!mounted) return;
-      setState(() {
-        _tracks = contents.tracks;
-        _subfolders = contents.folders;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = 'Failed to load contents: $e';
-        _isLoading = false;
-      });
+  void _loadContents() {
+    final scanner = context.read<LibraryScanner>();
+    debugPrint('FolderDetail: loading folderId="${widget.folderId}"');
+    final contents = scanner.getFolderContents(widget.folderId);
+    debugPrint('FolderDetail: got ${contents.folders.length} subfolders, ${contents.tracks.length} tracks');
+    for (final f in contents.folders.take(5)) {
+      debugPrint('FolderDetail: subfolder path="${f.folderPath}" name="${f.displayName}"');
     }
+    setState(() {
+      _subfolders = contents.folders;
+      _tracks = contents.tracks;
+    });
   }
 
   void _playTrack(Track track) {
@@ -75,9 +58,13 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   }
 
   void _playAll() {
-    if (_tracks.isEmpty) return;
+    // Play all tracks recursively (this folder + subfolders)
+    final scanner = context.read<LibraryScanner>();
+    final allTracks = scanner.getAllTracksInFolder(widget.folderId);
+    if (allTracks.isEmpty) return;
+
     final playerService = context.read<AudioPlayerService>();
-    playerService.playPlaylist(_tracks, 0);
+    playerService.playPlaylist(allTracks, 0);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -85,12 +72,16 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   }
 
   void _shufflePlay() {
-    if (_tracks.isEmpty) return;
+    final scanner = context.read<LibraryScanner>();
+    final allTracks = scanner.getAllTracksInFolder(widget.folderId);
+    if (allTracks.isEmpty) return;
+
     final playerService = context.read<AudioPlayerService>();
+    // Enable shuffle before starting playlist — playPlaylist will shuffle internally
     if (!playerService.isShuffleEnabled) {
-      playerService.toggleShuffle();
+      playerService.toggleShuffle(); // No active playlist, so this just sets the flag
     }
-    playerService.playPlaylist(_tracks, 0);
+    playerService.playPlaylist(allTracks, 0);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -98,12 +89,11 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   }
 
   void _openSubfolder(Folder folder) {
-    if (folder.id == null) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => FolderDetailScreen(
-          folderId: folder.id!,
-          folderName: folder.folderPath,
+          folderId: folder.folderPath,
+          folderName: folder.displayName,
         ),
       ),
     );
@@ -111,21 +101,23 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final playerService = context.watch<AudioPlayerService>();
-
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.folderName),
         actions: [
-          if (playerService.currentTrack != null)
-            IconButton(
-              icon: const Icon(Icons.music_note),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                );
-              },
-            ),
+          Selector<AudioPlayerService, bool>(
+            selector: (_, ps) => ps.currentTrack != null,
+            builder: (context, hasTrack, _) => hasTrack
+                ? IconButton(
+                    icon: const Icon(Icons.music_note),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                      );
+                    },
+                  )
+                : const SizedBox.shrink(),
+          ),
         ],
       ),
       body: Center(
@@ -136,59 +128,33 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
           child: _buildBody(),
         ),
       ),
-      floatingActionButton: playerService.currentTrack != null
-          ? FloatingActionButton(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                );
-              },
-              child: Icon(
-                playerService.isPlaying ? Icons.pause : Icons.play_arrow,
-              ),
-            )
-          : null,
+      bottomNavigationBar: const MiniPlayer(),
     );
   }
 
   Widget _buildBody() {
     final horizontalPadding = Responsive.getHorizontalPadding(context);
 
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_errorMessage != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadContents,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      );
-    }
-
     if (_tracks.isEmpty && _subfolders.isEmpty) {
       return const Center(child: Text('No content found'));
     }
 
+    // Count all tracks recursively (includes subfolders)
+    final scanner = context.read<LibraryScanner>();
+    final allTracks = scanner.getAllTracksInFolder(widget.folderId);
+    final totalTrackCount = allTracks.length;
+
     return Column(
       children: [
-        // Header with play buttons
-        if (_tracks.isNotEmpty)
+        // Header with play buttons - show when there are any tracks (direct or in subfolders)
+        if (totalTrackCount > 0)
           Container(
             padding: EdgeInsets.all(horizontalPadding),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
-                    '${_tracks.length} track(s)',
+                    '$totalTrackCount track(s)',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
@@ -220,12 +186,12 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                 leading: folder.coverArtUrl != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(4),
-                        child: Image.network(
-                          folder.coverArtUrl!,
+                        child: CachedNetworkImage(
+                          imageUrl: folder.coverArtUrl!,
                           width: 48,
                           height: 48,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
+                          errorWidget: (_, __, ___) =>
                               const Icon(Icons.folder, size: 48, color: Colors.blue),
                         ),
                       )
@@ -242,7 +208,11 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
               // Tracks
               ...List.generate(_tracks.length, (index) {
                 final track = _tracks[index];
-                return _buildTrackTile(track, index);
+                return _FolderTrackTile(
+                  track: track,
+                  index: index,
+                  onTap: () => _playTrack(track),
+                );
               }),
             ],
           ),
@@ -250,58 +220,76 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
       ],
     );
   }
+}
 
-  Widget _buildTrackTile(Track track, int index) {
-    final playerService = context.watch<AudioPlayerService>();
-    final isCurrentTrack = playerService.currentTrack?.id == track.id;
+/// Extracted track tile that uses Selector to avoid rebuilding on position updates.
+class _FolderTrackTile extends StatelessWidget {
+  final Track track;
+  final int index;
+  final VoidCallback onTap;
 
-    return ListTile(
-      leading: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 30,
-            child: Text(
-              '${index + 1}',
-              style: TextStyle(
-                color: isCurrentTrack ? Colors.blue : Colors.grey,
-                fontWeight: isCurrentTrack ? FontWeight.bold : null,
+  const _FolderTrackTile({
+    required this.track,
+    required this.index,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Selector<AudioPlayerService, String?>(
+      selector: (_, ps) => ps.currentTrack?.id,
+      builder: (context, currentTrackId, _) {
+        final isCurrentTrack = currentTrackId == track.id;
+
+        return ListTile(
+          leading: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 30,
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    color: isCurrentTrack ? Colors.blue : Colors.grey,
+                    fontWeight: isCurrentTrack ? FontWeight.bold : null,
+                  ),
+                ),
               ),
-            ),
+              if (track.coverArtUrl != null)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: CachedNetworkImage(
+                    imageUrl: track.coverArtUrl!,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => const Icon(Icons.music_note, size: 48),
+                  ),
+                )
+              else
+                const Icon(Icons.music_note, size: 48),
+            ],
           ),
-          if (track.coverArtUrl != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Image.network(
-                track.coverArtUrl!,
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 48),
-              ),
-            )
-          else
-            const Icon(Icons.music_note, size: 48),
-        ],
-      ),
-      title: Text(
-        track.title,
-        style: TextStyle(
-          fontWeight: isCurrentTrack ? FontWeight.bold : null,
-          color: isCurrentTrack ? Colors.blue : null,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        '${track.artist ?? ''} ${track.formattedDuration}'.trim(),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: isCurrentTrack
-          ? const Icon(Icons.equalizer, color: Colors.blue)
-          : null,
-      onTap: () => _playTrack(track),
+          title: Text(
+            track.title,
+            style: TextStyle(
+              fontWeight: isCurrentTrack ? FontWeight.bold : null,
+              color: isCurrentTrack ? Colors.blue : null,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            '${track.artist ?? ''} ${track.formattedDuration}'.trim(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: isCurrentTrack
+              ? const Icon(Icons.equalizer, color: Colors.blue)
+              : null,
+          onTap: onTap,
+        );
+      },
     );
   }
 }

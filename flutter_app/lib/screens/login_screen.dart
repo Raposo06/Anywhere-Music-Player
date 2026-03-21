@@ -12,7 +12,12 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _serverUrlController = TextEditingController();
+  static const _defaultServerUrl = String.fromEnvironment(
+    'DEFAULT_SERVER_URL',
+    defaultValue: 'https://navidrome.foxcore.dev',
+  );
+
+  final _serverUrlController = TextEditingController(text: _defaultServerUrl);
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
@@ -89,7 +94,8 @@ class _LoginScreenState extends State<LoginScreen> {
           padding: const EdgeInsets.all(24.0),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
-            child: Form(
+            child: FocusTraversalGroup(
+              child: Form(
               key: _formKey,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -123,6 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   // Server URL field
                   TextFormField(
+                    autofocus: true,
                     controller: _serverUrlController,
                     focusNode: _serverUrlFocusNode,
                     decoration: const InputDecoration(
@@ -179,17 +186,19 @@ class _LoginScreenState extends State<LoginScreen> {
                       labelText: 'Password',
                       border: const OutlineInputBorder(),
                       prefixIcon: const Icon(Icons.lock),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility
-                              : Icons.visibility_off,
+                      suffixIcon: ExcludeFocus(
+                        child: IconButton(
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility
+                                : Icons.visibility_off,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword = !_obscurePassword;
+                            });
+                          },
                         ),
-                        onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
                       ),
                     ),
                     obscureText: _obscurePassword,
@@ -237,6 +246,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
               ),
+            ),
             ),
           ),
         ),

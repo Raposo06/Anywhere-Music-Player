@@ -1,13 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
 import '../services/auth_service.dart';
 import '../services/subsonic_api_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/library_scanner.dart';
 import '../utils/responsive.dart';
 import 'player_screen.dart';
-import 'login_screen.dart';
 import 'folder_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -19,88 +21,80 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
-  List<Folder> _folders = [];
-  List<Track> _rootTracks = [];
-  bool _isLoading = false;
-  String? _errorMessage;
   String _searchQuery = '';
+  Timer? _debounceTimer;
+
+  // Search results (only used when searching)
+  List<Folder> _searchFolders = [];
+  List<Track> _searchTracks = [];
+  bool _isSearching = false;
+  String? _searchError;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    // Trigger library scan on first load
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<LibraryScanner>().scan();
+    });
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
   SubsonicApiService? get _api => context.read<AuthService>().apiService;
 
-  Future<void> _loadData() async {
-    if (!mounted) return;
-    final api = _api;
-    if (api == null) return;
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    List<Folder> folders = [];
-    String? error;
-
-    try {
-      folders = await api.getFolders();
-    } catch (e) {
-      debugPrint('Failed to load folders: $e');
-      error = 'Failed to load folders';
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _folders = folders;
-      _rootTracks = [];
-      _isLoading = false;
-      _errorMessage = folders.isEmpty ? error : null;
-    });
-  }
-
-  Future<void> _handleSearch(String query) async {
-    if (!mounted) return;
+  void _onSearchChanged(String query) {
+    _debounceTimer?.cancel();
     setState(() {
       _searchQuery = query;
     });
 
     if (query.isEmpty) {
-      _loadData();
+      setState(() {
+        _searchFolders = [];
+        _searchTracks = [];
+        _isSearching = false;
+        _searchError = null;
+      });
       return;
     }
 
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      _performSearch(query);
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (!mounted) return;
     final api = _api;
     if (api == null) return;
 
     setState(() {
-      _isLoading = true;
-      _errorMessage = null;
+      _isSearching = true;
+      _searchError = null;
     });
 
     try {
       final result = await api.search3(query);
 
       if (!mounted) return;
+      if (_searchQuery != query) return;
+
       setState(() {
-        _folders = result.albums;
-        _rootTracks = result.songs;
-        _isLoading = false;
+        _searchFolders = result.albums;
+        _searchTracks = result.songs;
+        _isSearching = false;
       });
     } on SubsonicApiException catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.message;
-        _isLoading = false;
+        _searchError = e.message;
+        _isSearching = false;
       });
     }
   }
@@ -110,10 +104,10 @@ class _HomeScreenState extends State<HomeScreen> {
     await authService.logout();
   }
 
-  void _playRootTrack(Track track) {
+  void _playTrack(Track track, List<Track> playlist) {
     final playerService = context.read<AudioPlayerService>();
-    final trackIndex = _rootTracks.indexOf(track);
-    playerService.playPlaylist(_rootTracks, trackIndex);
+    final trackIndex = playlist.indexOf(track);
+    playerService.playPlaylist(playlist, trackIndex);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -121,62 +115,63 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _playFolder(Folder folder) async {
-    final api = _api;
-    if (api == null || folder.id == null) return;
+    final scanner = context.read<LibraryScanner>();
     final playerService = context.read<AudioPlayerService>();
+    final messenger = ScaffoldMessenger.of(context);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Loading ${folder.folderPath}...'),
-        duration: const Duration(seconds: 1),
-      ),
-    );
+    if (folder.id == null) return;
 
-    try {
-      final tracks = await api.getAllTracksInDirectory(folder.id!);
+    final tracks = scanner.getAllTracksInFolder(folder.id!);
 
-      if (tracks.isNotEmpty) {
-        playerService.playPlaylist(tracks, 0);
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-        if (mounted) {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const PlayerScreen()),
-          );
-        }
-      } else {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No tracks found in this folder')),
+    if (tracks.isNotEmpty) {
+      playerService.playPlaylist(tracks, 0);
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const PlayerScreen()),
         );
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+    } else {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No tracks found in this folder')),
       );
     }
+  }
+
+  void _openFolder(Folder folder) {
+    if (folder.id == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FolderDetailScreen(
+          folderId: folder.id!,
+          folderName: folder.displayName,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
-    final playerService = context.watch<AudioPlayerService>();
+    final scanner = context.watch<LibraryScanner>();
     final horizontalPadding = Responsive.getHorizontalPadding(context);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Folders'),
         actions: [
-          if (playerService.currentTrack != null)
-            IconButton(
-              icon: const Icon(Icons.music_note),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                );
-              },
-            ),
+          Selector<AudioPlayerService, bool>(
+            selector: (_, ps) => ps.currentTrack != null,
+            builder: (context, hasTrack, _) => hasTrack
+                ? IconButton(
+                    icon: const Icon(Icons.music_note),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                      );
+                    },
+                  )
+                : const SizedBox.shrink(),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _handleLogout,
@@ -204,73 +199,84 @@ class _HomeScreenState extends State<HomeScreen> {
                             icon: const Icon(Icons.clear),
                             onPressed: () {
                               _searchController.clear();
-                              _handleSearch('');
+                              _onSearchChanged('');
                             },
                           )
                         : null,
                     border: const OutlineInputBorder(),
                   ),
-                  onChanged: _handleSearch,
+                  onChanged: _onSearchChanged,
                 ),
               ),
 
               // User info
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Welcome, ${authService.currentUser?.username ?? "User"}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Welcome, ${authService.currentUser?.username ?? "User"}',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    if (scanner.isScanning)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    if (scanner.hasScanned && !scanner.isScanning)
+                      Text(
+                        '${scanner.allTracks.length} tracks',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
 
               // Content
               Expanded(
-                child: _buildContent(),
+                child: _searchQuery.isNotEmpty
+                    ? _buildSearchResults()
+                    : _buildFolderBrowser(scanner),
               ),
             ],
           ),
         ),
       ),
-      floatingActionButton: playerService.currentTrack != null
-          ? FloatingActionButton(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                );
-              },
-              child: Icon(
-                playerService.isPlaying ? Icons.pause : Icons.play_arrow,
-              ),
-            )
-          : null,
     );
   }
 
-  Widget _buildContent() {
+  /// Build the folder browser from the scanned library.
+  Widget _buildFolderBrowser(LibraryScanner scanner) {
     final horizontalPadding = Responsive.getHorizontalPadding(context);
     final isDesktop = Responsive.isDesktopOrLarger(context);
     final gridColumns = Responsive.getGridColumns(context);
 
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+    if (scanner.isScanning && !scanner.hasScanned) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Scanning library...'),
+          ],
+        ),
+      );
     }
 
-    if (_errorMessage != null) {
+    if (scanner.error != null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              _errorMessage!,
-              style: const TextStyle(color: Colors.red),
-            ),
+            Text(scanner.error!, style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _loadData,
+              onPressed: () => scanner.rescan(),
               child: const Text('Retry'),
             ),
           ],
@@ -278,17 +284,18 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    if (_folders.isEmpty && _rootTracks.isEmpty) {
-      return const Center(
-        child: Text('No content found'),
-      );
+    final folders = scanner.getTopLevelFolders();
+    final rootTracks = scanner.getRootTracks();
+
+    if (folders.isEmpty && rootTracks.isEmpty) {
+      return const Center(child: Text('No content found'));
     }
 
     return ListView(
       padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
       children: [
-        // Search result tracks
-        if (_rootTracks.isNotEmpty) ...[
+        // Root-level tracks (songs not in any folder)
+        if (rootTracks.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
@@ -296,7 +303,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const Icon(Icons.music_note, color: Colors.orange),
                 const SizedBox(width: 8),
                 Text(
-                  'Songs (${_rootTracks.length})',
+                  'Songs (${rootTracks.length})',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -305,7 +312,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 TextButton.icon(
                   onPressed: () {
                     final playerService = context.read<AudioPlayerService>();
-                    playerService.playPlaylist(_rootTracks, 0);
+                    playerService.playPlaylist(rootTracks, 0);
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const PlayerScreen()),
                     );
@@ -316,12 +323,15 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          ..._rootTracks.map((track) => _buildTrackTile(track)),
+          ...rootTracks.map((track) => _TrackTile(
+            track: track,
+            onTap: () => _playTrack(track, rootTracks),
+          )),
           const Divider(height: 32),
         ],
 
         // Folders section
-        if (_folders.isNotEmpty) ...[
+        if (folders.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
@@ -329,7 +339,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const Icon(Icons.folder, color: Colors.blue),
                 const SizedBox(width: 8),
                 Text(
-                  'Folders (${_folders.length})',
+                  'Folders (${folders.length})',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -337,7 +347,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          // Use grid on desktop, list on mobile
           if (isDesktop)
             GridView.builder(
               shrinkWrap: true,
@@ -348,61 +357,102 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisSpacing: 16,
                 childAspectRatio: 0.85,
               ),
-              itemCount: _folders.length,
-              itemBuilder: (context, index) => _buildFolderCard(_folders[index]),
+              itemCount: folders.length,
+              itemBuilder: (context, index) => _buildFolderCard(folders[index]),
             )
           else
-            ..._folders.map((folder) => _buildFolderTile(folder)),
+            ...folders.map((folder) => _buildFolderTile(folder)),
         ],
         const SizedBox(height: 16),
       ],
     );
   }
 
-  Widget _buildTrackTile(Track track) {
-    final playerService = context.watch<AudioPlayerService>();
-    final isCurrentTrack = playerService.currentTrack?.id == track.id;
+  /// Build search results view.
+  Widget _buildSearchResults() {
+    final horizontalPadding = Responsive.getHorizontalPadding(context);
 
-    return ListTile(
-      leading: track.coverArtUrl != null
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Image.network(
-                track.coverArtUrl!,
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Icon(
-                  Icons.music_note,
-                  size: 48,
+    if (_isSearching) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_searchError != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(_searchError!, style: const TextStyle(color: Colors.red)),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => _performSearch(_searchQuery),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_searchFolders.isEmpty && _searchTracks.isEmpty) {
+      return const Center(child: Text('No results found'));
+    }
+
+    return ListView(
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+      children: [
+        if (_searchTracks.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              children: [
+                const Icon(Icons.music_note, color: Colors.orange),
+                const SizedBox(width: 8),
+                Text(
+                  'Songs (${_searchTracks.length})',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-            )
-          : const Icon(Icons.music_note, size: 48),
-      title: Text(
-        track.title,
-        style: TextStyle(
-          fontWeight: isCurrentTrack ? FontWeight.bold : null,
-          color: isCurrentTrack ? Colors.blue : null,
-        ),
-      ),
-      subtitle: Text(track.artist ?? track.formattedDuration),
-      trailing: isCurrentTrack
-          ? const Icon(Icons.equalizer, color: Colors.blue)
-          : null,
-      onTap: () => _playRootTrack(track),
-    );
-  }
-
-  void _openFolder(Folder folder) {
-    if (folder.id == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => FolderDetailScreen(
-          folderId: folder.id!,
-          folderName: folder.folderPath,
-        ),
-      ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () {
+                    final playerService = context.read<AudioPlayerService>();
+                    playerService.playPlaylist(_searchTracks, 0);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                    );
+                  },
+                  icon: const Icon(Icons.play_arrow, size: 20),
+                  label: const Text('Play All'),
+                ),
+              ],
+            ),
+          ),
+          ..._searchTracks.map((track) => _TrackTile(
+            track: track,
+            onTap: () => _playTrack(track, _searchTracks),
+          )),
+          const Divider(height: 32),
+        ],
+        if (_searchFolders.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              children: [
+                const Icon(Icons.folder, color: Colors.blue),
+                const SizedBox(width: 8),
+                Text(
+                  'Albums (${_searchFolders.length})',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ..._searchFolders.map((folder) => _buildFolderTile(folder)),
+        ],
+        const SizedBox(height: 16),
+      ],
     );
   }
 
@@ -411,18 +461,18 @@ class _HomeScreenState extends State<HomeScreen> {
       leading: folder.coverArtUrl != null
           ? ClipRRect(
               borderRadius: BorderRadius.circular(4),
-              child: Image.network(
-                folder.coverArtUrl!,
+              child: CachedNetworkImage(
+                imageUrl: folder.coverArtUrl!,
                 width: 48,
                 height: 48,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
+                errorWidget: (_, __, ___) =>
                     const Icon(Icons.folder, size: 48, color: Colors.blue),
               ),
             )
           : const Icon(Icons.folder, size: 48, color: Colors.blue),
       title: Text(
-        folder.folderPath,
+        folder.displayName,
         style: const TextStyle(
           fontWeight: FontWeight.bold,
           fontSize: 16,
@@ -438,7 +488,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Card-style folder widget for grid layout on desktop
   Widget _buildFolderCard(Folder folder) {
     return Card(
       elevation: 2,
@@ -450,10 +499,10 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Expanded(
               child: folder.coverArtUrl != null
-                  ? Image.network(
-                      folder.coverArtUrl!,
+                  ? CachedNetworkImage(
+                      imageUrl: folder.coverArtUrl!,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Center(
+                      errorWidget: (_, __, ___) => const Center(
                         child: Icon(Icons.folder, size: 64, color: Colors.blue),
                       ),
                     )
@@ -464,7 +513,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
               child: Text(
-                folder.folderPath,
+                folder.displayName,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
@@ -503,6 +552,55 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Extracted track tile widget that uses Selector to only rebuild when
+/// the current track ID changes, not on every position update.
+class _TrackTile extends StatelessWidget {
+  final Track track;
+  final VoidCallback onTap;
+
+  const _TrackTile({required this.track, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Selector<AudioPlayerService, String?>(
+      selector: (_, ps) => ps.currentTrack?.id,
+      builder: (context, currentTrackId, _) {
+        final isCurrentTrack = currentTrackId == track.id;
+
+        return ListTile(
+          leading: track.coverArtUrl != null
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: CachedNetworkImage(
+                    imageUrl: track.coverArtUrl!,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => const Icon(
+                      Icons.music_note,
+                      size: 48,
+                    ),
+                  ),
+                )
+              : const Icon(Icons.music_note, size: 48),
+          title: Text(
+            track.title,
+            style: TextStyle(
+              fontWeight: isCurrentTrack ? FontWeight.bold : null,
+              color: isCurrentTrack ? Colors.blue : null,
+            ),
+          ),
+          subtitle: Text(track.artist ?? track.formattedDuration),
+          trailing: isCurrentTrack
+              ? const Icon(Icons.equalizer, color: Colors.blue)
+              : null,
+          onTap: onTap,
+        );
+      },
     );
   }
 }
