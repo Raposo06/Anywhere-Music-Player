@@ -7,6 +7,7 @@ class Track {
   final String streamUrl;
   final String? coverArtUrl;
   final String folderPath;
+  final String folderName;
   final int? durationSeconds;
   final int? fileSizeBytes;
   final DateTime createdAt;
@@ -20,6 +21,7 @@ class Track {
     required this.streamUrl,
     this.coverArtUrl,
     required this.folderPath,
+    this.folderName = '',
     this.durationSeconds,
     this.fileSizeBytes,
     required this.createdAt,
@@ -28,17 +30,20 @@ class Track {
   });
 
   /// Create a Track from a Subsonic API song response.
-  factory Track.fromSubsonic(Map<String, dynamic> json, SubsonicApiService api) {
+  factory Track.fromSubsonic(Map<String, dynamic> json, SubsonicApiService api, {String? parentFolderName}) {
     final songId = json['id'].toString();
     final coverArtId = json['coverArt']?.toString();
+    final filePath = json['path'] as String?;
+    final extractedFolderPath = _extractFolderPath(filePath);
 
     return Track(
       id: songId,
       title: json['title'] as String? ?? 'Unknown',
-      filename: json['path'] as String? ?? '${json['title'] ?? 'unknown'}.${json['suffix'] ?? 'mp3'}',
+      filename: filePath ?? '${json['title'] ?? 'unknown'}.${json['suffix'] ?? 'mp3'}',
       streamUrl: api.buildStreamUrl(songId),
       coverArtUrl: coverArtId != null ? api.buildCoverArtUrl(coverArtId) : null,
-      folderPath: _extractFolderPath(json['path'] as String?),
+      folderPath: extractedFolderPath,
+      folderName: parentFolderName ?? _lastSegment(extractedFolderPath),
       durationSeconds: json['duration'] as int?,
       fileSizeBytes: json['size'] as int?,
       createdAt: json['created'] != null
@@ -56,6 +61,7 @@ class Track {
     'stream_url': streamUrl,
     'cover_art_url': coverArtUrl,
     'folder_path': folderPath,
+    'folder_name': folderName,
     'duration_seconds': durationSeconds,
     'file_size_bytes': fileSizeBytes,
     'created_at': createdAt.toIso8601String(),
@@ -63,10 +69,9 @@ class Track {
     'album': album,
   };
 
-  /// The last folder name from the folder path.
-  String get folderName {
-    if (folderPath.isEmpty) return '';
-    final parts = folderPath.split('/');
+  static String _lastSegment(String path) {
+    if (path.isEmpty) return '';
+    final parts = path.split('/');
     return parts.last;
   }
 
