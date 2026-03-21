@@ -12,7 +12,12 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _serverUrlController = TextEditingController(text: 'https://navidrome.foxcore.dev');
+  static const _defaultServerUrl = String.fromEnvironment(
+    'DEFAULT_SERVER_URL',
+    defaultValue: 'https://navidrome.foxcore.dev',
+  );
+
+  final _serverUrlController = TextEditingController(text: _defaultServerUrl);
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
