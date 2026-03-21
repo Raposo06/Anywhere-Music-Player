@@ -106,8 +106,24 @@ class AudioPlayerService with ChangeNotifier {
 
   /// Handle playlist completion with proper error handling.
   /// Called when the player reaches ProcessingState.completed and we're not
-  /// in the middle of a skip operation.
+  /// in the middle of a skip or seek operation.
+  /// Also verifies the position is actually near the end of the track to avoid
+  /// false completions triggered by seeking in network streams.
   Future<void> _handleCompletion() async {
+    // Verify this is a genuine completion: position should be near the track's end.
+    final pos = _player.position;
+    final dur = _player.duration;
+    if (dur != null && dur.inSeconds > 0) {
+      final remaining = dur - pos;
+      if (remaining.inSeconds > 3) {
+        // Position is not near the end — this is a false completion (e.g. from seek).
+        // Restart playback from current position instead of treating as end-of-track.
+        debugPrint('Ignoring false completion: position=$pos, duration=$dur, remaining=${remaining.inSeconds}s');
+        await _player.play();
+        return;
+      }
+    }
+
     final isLastTrack = _currentIndex >= _playlist.length - 1;
 
     try {
@@ -374,16 +390,24 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  /// Seek to a specific position.
-  /// Sets _isSeeking to prevent transient ProcessingState.completed events
-  /// from triggering the completion handler (which would restart the song).
+  /// Seek to a specific position within the current track.
+  /// Passes explicit index to prevent ConcatenatingAudioSource from
+  /// resetting to a different track. Sets _isSeeking to suppress
+  /// transient ProcessingState.completed events.
   Future<void> seek(Duration position) async {
     _isSeeking = true;
 
     try {
-      await _player.seek(position);
-      // Small delay to let the player settle past any transient completed state
-      await Future.delayed(const Duration(milliseconds: 100));
+      // Explicitly pass the current index so the player stays on the same track
+      // within the ConcatenatingAudioSource.
+      final index = _player.currentIndex;
+      await _player.seek(position, index: index);
+      // Wait for the player to settle past any transient completed state
+      await Future.delayed(const Duration(milliseconds: 200));
+      // If the player stopped due to the seek, restart playback
+      if (!_player.playing && _player.processingState != ProcessingState.completed) {
+        await _player.play();
+      }
     } finally {
       _isSeeking = false;
     }
