@@ -31,7 +31,7 @@ void main() async {
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
         androidNotificationClickStartsActivity: true,
-        androidNotificationIcon: 'drawable/ic_notification',
+        androidNotificationIcon: 'mipmap/ic_launcher',
         androidShowNotificationBadge: true,
       ),
     );
