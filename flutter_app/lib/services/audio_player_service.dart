@@ -90,7 +90,7 @@ class AudioPlayerService with ChangeNotifier {
     // Only act on genuine end-of-playlist, not transient completed states
     // that occur during seek/skip operations.
     _playerStateSubscription = _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed && !_isSkipping) {
+      if (state.processingState == ProcessingState.completed && !_isSkipping && !_isSeeking) {
         _handleCompletion();
       }
     });
@@ -374,23 +374,18 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  /// Seek to a specific position
+  /// Seek to a specific position.
+  /// Sets _isSeeking to prevent transient ProcessingState.completed events
+  /// from triggering the completion handler (which would restart the song).
   Future<void> seek(Duration position) async {
-    final currentPos = _player.position;
-    final seekDistance = (position - currentPos).abs();
-
-    if (seekDistance.inSeconds > 30) {
-      _isSeeking = true;
-      notifyListeners();
-    }
+    _isSeeking = true;
 
     try {
       await _player.seek(position);
+      // Small delay to let the player settle past any transient completed state
+      await Future.delayed(const Duration(milliseconds: 100));
     } finally {
-      if (_isSeeking) {
-        _isSeeking = false;
-        notifyListeners();
-      }
+      _isSeeking = false;
     }
   }
 
