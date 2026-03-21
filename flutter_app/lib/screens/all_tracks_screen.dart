@@ -237,7 +237,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _searchQuery.isEmpty ? _loadInitialTracks : () => _performSearch(_searchQuery),
+              onPressed: _searchQuery.isEmpty ? _loadInitialTracks : () => _filterTracks(_searchQuery),
               child: const Text('Retry'),
             ),
           ],
