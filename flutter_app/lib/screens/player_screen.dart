@@ -263,9 +263,6 @@ class _ProgressBar extends StatefulWidget {
 }
 
 class _ProgressBarState extends State<_ProgressBar> {
-  bool _isDragging = false;
-  double _dragValue = 0.0;
-
   String _formatDuration(Duration? d) {
     if (d == null) return '0:00';
     String twoDigits(int n) => n.toString().padLeft(2, '0');
@@ -290,11 +287,8 @@ class _ProgressBarState extends State<_ProgressBar> {
             ? position.inMilliseconds / widget.duration.inMilliseconds
             : 0.0;
 
-        // While dragging, use the drag value; otherwise use stream position
-        final displayProgress = _isDragging ? _dragValue : streamProgress.clamp(0.0, 1.0);
-        final displayPosition = _isDragging
-            ? Duration(milliseconds: (_dragValue * widget.duration.inMilliseconds).round())
-            : position;
+        final displayProgress = streamProgress.clamp(0.0, 1.0);
+        final displayPosition = position;
 
         return Column(
           children: [
@@ -307,26 +301,7 @@ class _ProgressBarState extends State<_ProgressBar> {
               ),
               child: Slider(
                 value: displayProgress.clamp(0.0, 1.0),
-                onChangeStart: (value) {
-                  setState(() {
-                    _isDragging = true;
-                    _dragValue = value;
-                  });
-                },
-                onChanged: (value) {
-                  setState(() {
-                    _dragValue = value;
-                  });
-                },
-                onChangeEnd: (value) {
-                  final newPosition = Duration(
-                    milliseconds: (value * widget.duration.inMilliseconds).round(),
-                  );
-                  playerService.seek(newPosition);
-                  setState(() {
-                    _isDragging = false;
-                  });
-                },
+                onChanged: null,
               ),
             ),
             Padding(

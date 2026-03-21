@@ -143,12 +143,7 @@ class TvPlayerControls extends StatelessWidget {
           ),
           child: Slider(
             value: progress.clamp(0.0, 1.0),
-            onChanged: (value) {
-              final newPosition = Duration(
-                seconds: (value * duration.inSeconds).round(),
-              );
-              audioPlayer.seek(newPosition);
-            },
+            onChanged: null,
           ),
         ),
         Padding(
