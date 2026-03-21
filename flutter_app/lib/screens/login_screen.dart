@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../config/app_config.dart';
 import '../services/auth_service.dart';
 import '../services/subsonic_api_service.dart';
 
@@ -13,20 +12,43 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
+  static const _defaultServerUrl = String.fromEnvironment(
+    'DEFAULT_SERVER_URL',
+    defaultValue: 'https://navidrome.foxcore.dev',
+  );
+
+  final _serverUrlController = TextEditingController(text: _defaultServerUrl);
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   String? _errorMessage;
 
   // Focus nodes for D-Pad navigation
+  final _serverUrlFocusNode = FocusNode();
   final _usernameFocusNode = FocusNode();
   final _passwordFocusNode = FocusNode();
   final _loginButtonFocusNode = FocusNode();
 
   @override
+  void initState() {
+    super.initState();
+    _loadServerUrl();
+  }
+
+  Future<void> _loadServerUrl() async {
+    final authService = context.read<AuthService>();
+    final savedUrl = await authService.getSavedServerUrl();
+    if (savedUrl != null) {
+      _serverUrlController.text = savedUrl;
+    }
+  }
+
+  @override
   void dispose() {
+    _serverUrlController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _serverUrlFocusNode.dispose();
     _usernameFocusNode.dispose();
     _passwordFocusNode.dispose();
     _loginButtonFocusNode.dispose();
@@ -45,14 +67,17 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final authService = context.read<AuthService>();
       await authService.login(
+        _serverUrlController.text.trim(),
         _usernameController.text.trim(),
         _passwordController.text,
       );
     } on SubsonicApiException catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = e.message;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Connection failed: $e';
       });
@@ -69,7 +94,8 @@ class _LoginScreenState extends State<LoginScreen> {
           padding: const EdgeInsets.all(24.0),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
-            child: Form(
+            child: FocusTraversalGroup(
+              child: Form(
               key: _formKey,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -91,15 +117,44 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    'Sign in to ${AppConfig.serverUrl}',
+                  const Text(
+                    'Connect to your Navidrome server',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       color: Colors.grey,
                     ),
                   ),
                   const SizedBox(height: 48),
+
+                  // Server URL field
+                  TextFormField(
+                    autofocus: true,
+                    controller: _serverUrlController,
+                    focusNode: _serverUrlFocusNode,
+                    decoration: const InputDecoration(
+                      labelText: 'Server URL',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.dns),
+                      hintText: 'https://navidrome.example.com',
+                    ),
+                    keyboardType: TextInputType.url,
+                    textInputAction: TextInputAction.next,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter the server URL';
+                      }
+                      final uri = Uri.tryParse(value);
+                      if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+                        return 'Please enter a valid URL (e.g. https://example.com)';
+                      }
+                      return null;
+                    },
+                    onFieldSubmitted: (_) {
+                      _usernameFocusNode.requestFocus();
+                    },
+                  ),
+                  const SizedBox(height: 16),
 
                   // Username field
                   TextFormField(
@@ -131,17 +186,19 @@ class _LoginScreenState extends State<LoginScreen> {
                       labelText: 'Password',
                       border: const OutlineInputBorder(),
                       prefixIcon: const Icon(Icons.lock),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility
-                              : Icons.visibility_off,
+                      suffixIcon: ExcludeFocus(
+                        child: IconButton(
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility
+                                : Icons.visibility_off,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword = !_obscurePassword;
+                            });
+                          },
                         ),
-                        onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
                       ),
                     ),
                     obscureText: _obscurePassword,
@@ -189,6 +246,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
               ),
+            ),
             ),
           ),
         ),

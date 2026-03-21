@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../services/auth_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../services/audio_player_service.dart';
-import '../services/subsonic_api_service.dart';
+import '../services/library_scanner.dart';
 import '../models/folder.dart';
 import '../models/track.dart';
 import '../widgets/tv_player_controls.dart';
@@ -24,58 +24,51 @@ class TvHomeScreen extends StatefulWidget {
 class _TvHomeScreenState extends State<TvHomeScreen> {
   List<Folder> _folders = [];
   List<Track> _tracks = [];
-  bool _isLoadingFolders = false;
-  bool _isLoadingTracks = false;
-  String? _selectedFolderId;
-  int _selectedIndex = 0;
+  String? _selectedFolderPath;
 
   @override
   void initState() {
     super.initState();
-    _loadFolders();
-  }
-
-  SubsonicApiService? get _api => context.read<AuthService>().apiService;
-
-  Future<void> _loadFolders() async {
-    final api = _api;
-    if (api == null) return;
-
-    setState(() => _isLoadingFolders = true);
-
-    try {
-      final folders = await api.getFolders();
-
-      setState(() {
-        _folders = folders;
-        _isLoadingFolders = false;
-      });
-    } catch (e) {
-      debugPrint('Error loading folders: $e');
-      setState(() => _isLoadingFolders = false);
-    }
-  }
-
-  Future<void> _loadTracks(Folder folder) async {
-    final api = _api;
-    if (api == null || folder.id == null) return;
-
-    setState(() {
-      _isLoadingTracks = true;
-      _selectedFolderId = folder.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadFolders();
     });
+  }
 
-    try {
-      final contents = await api.getDirectoryContents(folder.id!);
-
-      setState(() {
-        _tracks = contents.tracks;
-        _isLoadingTracks = false;
-      });
-    } catch (e) {
-      debugPrint('Error loading tracks: $e');
-      setState(() => _isLoadingTracks = false);
+  void _loadFolders() {
+    final scanner = context.read<LibraryScanner>();
+    if (!scanner.hasScanned) {
+      // Wait for scan to complete, then reload
+      scanner.addListener(_onScannerChanged);
+      scanner.scan();
+      return;
     }
+    setState(() {
+      _folders = scanner.getTopLevelFolders();
+    });
+  }
+
+  void _onScannerChanged() {
+    final scanner = context.read<LibraryScanner>();
+    if (scanner.hasScanned) {
+      scanner.removeListener(_onScannerChanged);
+      setState(() {
+        _folders = scanner.getTopLevelFolders();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  void _loadTracks(Folder folder) {
+    final scanner = context.read<LibraryScanner>();
+    final contents = scanner.getFolderContents(folder.folderPath);
+    setState(() {
+      _selectedFolderPath = folder.folderPath;
+      _tracks = contents.tracks;
+    });
   }
 
   void _playTrack(Track track, int index) {
@@ -153,7 +146,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
 
           // Folders list
           Expanded(
-            child: _isLoadingFolders
+            child: _folders.isEmpty
                 ? const Center(
                     child: CircularProgressIndicator(
                       color: Colors.white,
@@ -163,7 +156,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                     itemCount: _folders.length,
                     itemBuilder: (context, index) {
                       final folder = _folders[index];
-                      final isSelected = folder.id == _selectedFolderId;
+                      final isSelected = folder.folderPath == _selectedFolderPath;
 
                       return _TvFolderCard(
                         folder: folder,
@@ -180,7 +173,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
   }
 
   Widget _buildTracksGrid() {
-    if (_selectedFolderId == null) {
+    if (_selectedFolderPath == null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -199,14 +192,6 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
               ),
             ),
           ],
-        ),
-      );
-    }
-
-    if (_isLoadingTracks) {
-      return const Center(
-        child: CircularProgressIndicator(
-          color: Colors.white,
         ),
       );
     }
@@ -382,10 +367,10 @@ class _TvTrackCardState extends State<_TvTrackCard> {
                 child: widget.track.coverArtUrl != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(4),
-                        child: Image.network(
-                          widget.track.coverArtUrl!,
+                        child: CachedNetworkImage(
+                          imageUrl: widget.track.coverArtUrl!,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
+                          errorWidget: (_, __, ___) {
                             return const Icon(
                               Icons.music_note,
                               color: Colors.white54,

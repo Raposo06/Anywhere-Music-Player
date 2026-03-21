@@ -5,6 +5,7 @@ import 'package:audio_service/audio_service.dart';
 import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/audio_handler.dart';
+import 'services/library_scanner.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/tv_home_screen.dart';
@@ -30,7 +31,7 @@ void main() async {
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
         androidNotificationClickStartsActivity: true,
-        androidNotificationIcon: 'drawable/ic_notification',
+        androidNotificationIcon: 'mipmap/ic_launcher',
         androidShowNotificationBadge: true,
       ),
     );
@@ -60,6 +61,21 @@ class MyApp extends StatelessWidget {
         // Audio Player Service
         ChangeNotifierProvider<AudioPlayerService>(
           create: (_) => AudioPlayerService(audioHandler: audioHandler),
+        ),
+
+        // Library Scanner - depends on AuthService for the API connection.
+        // Provided at the top level so it's accessible to all routes
+        // (including Navigator.push routes like FolderDetailScreen).
+        ChangeNotifierProxyProvider<AuthService, LibraryScanner>(
+          create: (_) => LibraryScanner(null),
+          update: (_, auth, previous) {
+            if (auth.isAuthenticated && auth.apiService != null) {
+              if (previous == null || !previous.hasApi) {
+                return LibraryScanner(auth.apiService!);
+              }
+            }
+            return previous ?? LibraryScanner(null);
+          },
         ),
       ],
       child: MaterialApp(
@@ -94,12 +110,15 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
+  bool _initialized = false;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Initialize auth state from storage
-      context.read<AuthService>().initialize();
+      await context.read<AuthService>().initialize();
+      if (mounted) setState(() => _initialized = true);
       // Request notification permission for lock screen controls (Android 13+)
       _requestNotificationPermission();
     });
@@ -122,8 +141,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final size = MediaQuery.of(context).size;
     PlatformDetector.initializeWithScreenSize(size.width, size.height);
 
-    // Show loading screen while checking auth state
-    if (authService.isLoading) {
+    // Show loading screen only during initial auth check (not during login)
+    if (!_initialized) {
       return const Scaffold(
         body: Center(
           child: CircularProgressIndicator(),
@@ -136,7 +155,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return const LoginScreen();
     }
 
-    // Use TV UI for Android TV, regular UI for other platforms
     return PlatformDetector.isAndroidTV
         ? const TvHomeScreen()
         : const MainScreen();

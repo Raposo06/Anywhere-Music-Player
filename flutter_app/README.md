@@ -24,35 +24,35 @@ flutter pub get
 
 ### 2. Run the App
 
-The server URL is provided at build time via `--dart-define`:
+The default server URL is set at build time via `--dart-define`. Edit `dart_defines.env` to change it, then pass it on the command line:
 
 ```bash
-flutter run --dart-define=SERVER_URL=https://your-navidrome-server:4533
+flutter run --dart-define=DEFAULT_SERVER_URL=https://your-navidrome-server:4533
 ```
+
+If omitted, the value in `dart_defines.env` is used as the fallback default.
 
 ### 3. Build for Production
 
 **Android APK:**
 ```bash
-flutter build apk --dart-define=SERVER_URL=https://your-server:4533
+flutter build apk --dart-define=DEFAULT_SERVER_URL=https://your-server:4533
 ```
 
 **Windows:**
 ```bash
-flutter build windows --dart-define=SERVER_URL=https://your-server:4533
+flutter build windows --dart-define=DEFAULT_SERVER_URL=https://your-server:4533
 ```
 
 **Web:**
 ```bash
-flutter build web --dart-define=SERVER_URL=https://your-server:4533
+flutter build web --dart-define=DEFAULT_SERVER_URL=https://your-server:4533
 ```
 
 ## Project Structure
 
 ```
 lib/
-  config/
-    app_config.dart              # Compile-time SERVER_URL config
   models/
     track.dart                   # Track data model (Subsonic fields)
     folder.dart                  # Folder model with Subsonic directory ID
@@ -114,7 +114,7 @@ The Android manifest includes `LEANBACK_LAUNCHER` for TV launcher integration.
 ## Troubleshooting
 
 ### App won't connect
-- Verify the `SERVER_URL` was passed via `--dart-define` at build time
+- Verify the `DEFAULT_SERVER_URL` was passed via `--dart-define` at build time
 - Check that the Navidrome server is reachable from the device
 
 ### Audio not playing
