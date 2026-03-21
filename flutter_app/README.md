@@ -55,27 +55,28 @@ flutter build web --dart-define=DEFAULT_SERVER_URL=https://your-server:4533
 lib/
   models/
     track.dart                   # Track data model (Subsonic fields)
-    folder.dart                  # Folder model with Subsonic directory ID
+    folder.dart                  # Folder model
     user.dart                    # User model
   screens/
     login_screen.dart            # Login (username + password)
     home_screen.dart             # Music library with folder browsing
     folder_detail_screen.dart    # Folder contents
-    all_tracks_screen.dart       # All tracks list
+    all_tracks_screen.dart       # All tracks list with search
     player_screen.dart           # Now playing screen with cover art
     main_screen.dart             # Navigation shell
     tv_home_screen.dart          # Android TV interface
   services/
-    subsonic_api_service.dart    # Subsonic API client (replaces old ApiService)
+    subsonic_api_service.dart    # Subsonic API client
     auth_service.dart            # Subsonic token authentication
     audio_player_service.dart    # Audio playback via just_audio
     audio_handler.dart           # audio_service background handler
+    library_scanner.dart         # Full library scanner + folder tree builder
     windows_media_controls_service.dart  # Windows SMTC integration
   utils/
     platform_detector.dart       # Android TV detection
     responsive.dart              # Responsive layout utilities
   widgets/
-    tv_focus_wrapper.dart        # D-Pad focus management
+    mini_player.dart             # Mini player bar
     tv_player_controls.dart      # TV player overlay controls
   main.dart                      # Entry point, provider setup
 ```
