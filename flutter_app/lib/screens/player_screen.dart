@@ -134,6 +134,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+              const SizedBox(height: 8),
+              Text(
+                track.folderPath,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
               const SizedBox(height: 32),
               _ProgressBar(duration: duration),
               const SizedBox(height: 32),
@@ -173,6 +180,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
           textAlign: TextAlign.center,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          track.folderPath,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: Colors.grey[600],
+              ),
+          textAlign: TextAlign.center,
         ),
         const SizedBox(height: 32),
         _ProgressBar(duration: duration),

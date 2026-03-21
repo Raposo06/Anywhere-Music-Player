@@ -280,7 +280,7 @@ class _FolderTrackTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: Text(
-            '${track.artist ?? ''} ${track.formattedDuration}'.trim(),
+            track.formattedDuration,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),

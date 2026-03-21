@@ -353,7 +353,7 @@ class _AllTracksTile extends StatelessWidget {
             ),
           ),
           subtitle: Text(
-            '${track.artist ?? ''} ${track.formattedDuration}'.trim(),
+            track.formattedDuration,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),

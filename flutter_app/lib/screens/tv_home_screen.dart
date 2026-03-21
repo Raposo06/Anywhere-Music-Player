@@ -405,7 +405,7 @@ class _TvTrackCardState extends State<_TvTrackCard> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      widget.track.artist ?? 'Unknown Artist',
+                      widget.track.formattedDuration,
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.grey[400],
