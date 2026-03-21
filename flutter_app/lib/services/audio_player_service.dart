@@ -27,7 +27,7 @@ class AudioPlayerService with ChangeNotifier {
   double _volume = 1.0; // 0.0 to 1.0
   String? _lastError;
   final _random = Random();
-  StreamSubscription<int?>? _indexStreamSubscription;
+  StreamSubscription<SequenceState?>? _sequenceStateSubscription;
   StreamSubscription<PlayerState>? _playerStateSubscription;
   StreamSubscription<bool>? _playingSubscription;
   StreamSubscription<PlaybackEvent>? _playbackEventSubscription;
@@ -79,6 +79,21 @@ class AudioPlayerService with ChangeNotifier {
         _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
       }
       notifyListeners();
+    });
+
+    // Track auto-advance: sequenceStateStream reliably fires when
+    // ConcatenatingAudioSource moves to the next track.
+    _sequenceStateSubscription = _player.sequenceStateStream.listen((state) {
+      if (state == null || _isSkipping || _playlist.isEmpty) return;
+      final index = state.currentIndex;
+      if (index != _currentIndex && index >= 0 && index < _playlist.length) {
+        _currentIndex = index;
+        _currentTrack = _playlist[_currentIndex];
+        if (_audioHandler != null) {
+          _audioHandler!.updateTrackInfo(_currentTrack!);
+        }
+        notifyListeners();
+      }
     });
 
     // Handle playlist completion and repeat modes.
@@ -197,8 +212,6 @@ class AudioPlayerService with ChangeNotifier {
     _currentTrack = track;
     _playlist = [track];
     _currentIndex = 0;
-    _indexStreamSubscription?.cancel();
-    _indexStreamSubscription = null;
     notifyListeners();
 
     try {
@@ -254,20 +267,6 @@ class AudioPlayerService with ChangeNotifier {
       await _player.setAudioSource(source, initialIndex: _currentIndex);
       if (token != _loadToken) return;
       await _player.play();
-
-      // Cancel previous listener to prevent leaks
-      _indexStreamSubscription?.cancel();
-      // Listen for track changes within the concatenating source
-      _indexStreamSubscription = _player.currentIndexStream.listen((index) {
-        if (index != null && index != _currentIndex && index < _playlist.length && !_isSkipping) {
-          _currentIndex = index;
-          _currentTrack = _playlist[_currentIndex];
-          if (_audioHandler != null) {
-            _audioHandler!.updateTrackInfo(_currentTrack!);
-          }
-          notifyListeners();
-        }
-      });
     } catch (e) {
       if (token != _loadToken) return;
       _handlePlaybackError(e);
@@ -441,7 +440,7 @@ class AudioPlayerService with ChangeNotifier {
 
   @override
   void dispose() {
-    _indexStreamSubscription?.cancel();
+    _sequenceStateSubscription?.cancel();
     _playerStateSubscription?.cancel();
     _playingSubscription?.cancel();
     _playbackEventSubscription?.cancel();
