@@ -38,7 +38,7 @@ class Track {
       filename: json['path'] as String? ?? '${json['title'] ?? 'unknown'}.${json['suffix'] ?? 'mp3'}',
       streamUrl: api.buildStreamUrl(songId),
       coverArtUrl: coverArtId != null ? api.buildCoverArtUrl(coverArtId) : null,
-      folderPath: json['parent']?.toString() ?? '',
+      folderPath: _extractFolderPath(json['path'] as String?),
       durationSeconds: json['duration'] as int?,
       fileSizeBytes: json['size'] as int?,
       createdAt: json['created'] != null
@@ -62,6 +62,18 @@ class Track {
     'artist': artist,
     'album': album,
   };
+
+  /// The last folder name from the folder path.
+  String get folderName {
+    if (folderPath.isEmpty) return '';
+    final parts = folderPath.split('/');
+    return parts.last;
+  }
+
+  static String _extractFolderPath(String? path) {
+    if (path == null || !path.contains('/')) return '';
+    return path.substring(0, path.lastIndexOf('/'));
+  }
 
   /// Format duration as MM:SS or H:MM:SS for 1 hour+ tracks
   String get formattedDuration {

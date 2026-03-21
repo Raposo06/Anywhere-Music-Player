@@ -136,7 +136,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                track.folderPath,
+                track.folderName,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: Colors.grey[600],
                     ),
@@ -183,7 +183,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          track.folderPath,
+          track.folderName,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 color: Colors.grey[600],
               ),

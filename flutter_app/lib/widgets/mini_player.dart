@@ -88,9 +88,9 @@ class _MiniPlayerContent extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (track.artist != null)
+                        if (track.folderName.isNotEmpty)
                           Text(
-                            track.artist!,
+                            track.folderName,
                             style: TextStyle(
                               color: Colors.grey[400],
                               fontSize: 12,
