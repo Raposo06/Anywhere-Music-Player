@@ -77,8 +77,8 @@ class WindowsMediaControlsService {
         ),
         metadata: const MusicMetadata(
           title: 'Anywhere Music Player',
-          artist: 'Unknown Artist',
-          album: 'Unknown Album',
+          artist: '',
+          album: '',
         ),
       );
 
