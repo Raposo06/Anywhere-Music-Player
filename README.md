@@ -52,15 +52,31 @@ services:
 
 The first user created via the Navidrome web UI becomes admin.
 
-### 2. Build the Flutter App
+### 2. Configure the Flutter App
+
+Copy the example environment file and set your Navidrome server URL:
 
 ```bash
 cd flutter_app
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```env
+API_BASE_URL=https://your-navidrome-server.com
+```
+
+| Variable        | Description                              |
+|-----------------|------------------------------------------|
+| `API_BASE_URL`  | Base URL of your Navidrome instance      |
+
+Then install dependencies and run:
+
+```bash
 flutter pub get
 flutter run
 ```
-
-The server URL is configured at build time via `--dart-define=DEFAULT_SERVER_URL=https://your-server.com`.
 
 ### 3. Build for Production
 
