@@ -19,19 +19,13 @@ class AudioPlayerService with ChangeNotifier {
   List<Track> _originalPlaylist = [];
   int _currentIndex = -1;
   bool _isLoading = false;
-  bool _isSeeking = false;
   bool _isSkipping = false;
-  bool _isRebuildingSource = false;
   int _skipToken = 0;
   int _loadToken = 0;
   bool _isShuffleEnabled = false;
   RepeatMode _repeatMode = RepeatMode.all;
   double _volume = 1.0; // 0.0 to 1.0
   String? _lastError;
-  /// Offset applied when using timeOffset-based seeking.
-  /// When the stream is reloaded with timeOffset=N, the player reports
-  /// position from 0, but the real position is _seekOffset + playerPosition.
-  Duration _seekOffset = Duration.zero;
   final _random = Random();
   StreamSubscription<int?>? _indexStreamSubscription;
   StreamSubscription<PlayerState>? _playerStateSubscription;
@@ -39,22 +33,8 @@ class AudioPlayerService with ChangeNotifier {
   StreamSubscription<PlaybackEvent>? _playbackEventSubscription;
 
   /// Streams exposed for UI widgets that need high-frequency updates (e.g., progress bar).
-  /// Using streams instead of notifyListeners() avoids rebuilding the entire widget tree.
-  /// Position stream adds _seekOffset to account for timeOffset-based seeking.
-  Stream<Duration> get positionStream =>
-      _player.positionStream.map((pos) => pos + _seekOffset);
-  Stream<Duration?> get durationStream => _player.durationStream.map((dur) {
-    if (dur == null) return null;
-    // When using timeOffset, the reported duration is shorter (remaining time).
-    // Add the offset back so the UI shows the full track duration.
-    if (_seekOffset > Duration.zero) {
-      final track = _currentTrack;
-      if (track?.durationSeconds != null) {
-        return Duration(seconds: track!.durationSeconds!);
-      }
-    }
-    return dur;
-  });
+  Stream<Duration> get positionStream => _player.positionStream;
+  Stream<Duration?> get durationStream => _player.durationStream;
   Stream<Duration> get bufferedPositionStream => _player.bufferedPositionStream;
   Stream<bool> get playingStream => _player.playingStream;
 
@@ -63,7 +43,6 @@ class AudioPlayerService with ChangeNotifier {
   List<Track> get playlist => _playlist;
   int get currentIndex => _currentIndex;
   bool get isLoading => _isLoading;
-  bool get isSeeking => _isSeeking;
   bool get isShuffleEnabled => _isShuffleEnabled;
   RepeatMode get repeatMode => _repeatMode;
   double get volume => _volume;
@@ -71,7 +50,7 @@ class AudioPlayerService with ChangeNotifier {
 
   bool get isPlaying => _player.playing;
   Duration? get duration => _player.duration;
-  Duration? get position => _player.position != null ? _player.position! + _seekOffset : null;
+  Duration? get position => _player.position;
   Duration? get bufferedPosition => _player.bufferedPosition;
 
   /// Check if we're running on Windows
@@ -79,7 +58,6 @@ class AudioPlayerService with ChangeNotifier {
 
   AudioPlayerService({MusicAudioHandler? audioHandler})
       : _audioHandler = audioHandler {
-    // Initialize audio player
     _player = AudioPlayer();
 
     // Attach player to the pre-initialized audio handler
@@ -104,15 +82,13 @@ class AudioPlayerService with ChangeNotifier {
     });
 
     // Handle playlist completion and repeat modes.
-    // Only act on genuine end-of-playlist, not transient completed states
-    // that occur during seek/skip operations.
     _playerStateSubscription = _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed && !_isSkipping && !_isSeeking) {
+      if (state.processingState == ProcessingState.completed && !_isSkipping) {
         _handleCompletion();
       }
     });
 
-    // Listen for playback errors (constructor continues)
+    // Listen for playback errors
     _playbackEventSubscription = _player.playbackEventStream.listen(
       (event) {},
       onError: (Object e, StackTrace st) {
@@ -122,56 +98,25 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   /// Handle playlist completion with proper error handling.
-  /// Called when the player reaches ProcessingState.completed and we're not
-  /// in the middle of a skip or seek operation.
-  /// Also verifies the position is actually near the end of the track to avoid
-  /// false completions triggered by seeking in network streams.
   Future<void> _handleCompletion() async {
-    // Verify this is a genuine completion: position should be near the track's end.
-    final pos = _player.position;
-    final dur = _player.duration;
-    if (dur != null && dur.inSeconds > 0) {
-      final remaining = dur - pos;
-      if (remaining.inSeconds > 3) {
-        // Position is not near the end — this is a false completion (e.g. from seek).
-        // Restart playback from current position instead of treating as end-of-track.
-        debugPrint('Ignoring false completion: position=$pos, duration=$dur, remaining=${remaining.inSeconds}s');
-        await _player.play();
-        return;
-      }
-    }
-
-    _seekOffset = Duration.zero; // Reset offset on track completion
     final isLastTrack = _currentIndex >= _playlist.length - 1;
 
     try {
       if (_repeatMode == RepeatMode.one) {
-        // Replay current track from the beginning
-        await _restorePlaylist(_currentIndex);
-      } else if (isLastTrack) {
-        if (_repeatMode == RepeatMode.all && _playlist.isNotEmpty) {
-          // Wrap to first track
-          _currentIndex = 0;
-          _currentTrack = _playlist[0];
-          if (_audioHandler != null) {
-            _audioHandler!.updateTrackInfo(_currentTrack!);
-          }
-          notifyListeners();
-          await _restorePlaylist(0);
-        }
-        // For repeat-off on last track: do nothing — player stops.
-      } else if (_needsPlaylistRestore) {
-        // Not the last track, but the ConcatenatingAudioSource was replaced
-        // by a single source (timeOffset seek), so auto-advance doesn't work.
-        // Manually advance to the next track and restore the playlist.
-        _currentIndex++;
-        _currentTrack = _playlist[_currentIndex];
+        await _player.seek(Duration.zero);
+        await _player.play();
+      } else if (_repeatMode == RepeatMode.all && _playlist.isNotEmpty && isLastTrack) {
+        _currentIndex = 0;
+        _currentTrack = _playlist[0];
         if (_audioHandler != null) {
           _audioHandler!.updateTrackInfo(_currentTrack!);
         }
         notifyListeners();
-        await _restorePlaylist(_currentIndex);
+        await _player.seek(Duration.zero, index: 0);
+        await _player.play();
       }
+      // For repeat-off on last track: do nothing — player stops.
+      // For non-last tracks: ConcatenatingAudioSource auto-advances.
     } catch (e) {
       debugPrint('Error handling playlist completion: $e');
     }
@@ -246,14 +191,12 @@ class AudioPlayerService with ChangeNotifier {
   /// Safe to call rapidly — only the last-tapped track loads.
   Future<void> playTrack(Track track) async {
     _lastError = null;
-    _seekOffset = Duration.zero;
     final token = ++_loadToken;
 
     _isLoading = true;
     _currentTrack = track;
     _playlist = [track];
     _currentIndex = 0;
-    // Cancel stale playlist index listener — single-track mode doesn't need it
     _indexStreamSubscription?.cancel();
     _indexStreamSubscription = null;
     notifyListeners();
@@ -287,7 +230,6 @@ class AudioPlayerService with ChangeNotifier {
     }
 
     _lastError = null;
-    _seekOffset = Duration.zero;
     final token = ++_loadToken;
 
     _isLoading = true;
@@ -317,9 +259,8 @@ class AudioPlayerService with ChangeNotifier {
       _indexStreamSubscription?.cancel();
       // Listen for track changes within the concatenating source
       _indexStreamSubscription = _player.currentIndexStream.listen((index) {
-        if (index != null && index != _currentIndex && index < _playlist.length && !_isRebuildingSource && !_isSkipping) {
+        if (index != null && index != _currentIndex && index < _playlist.length && !_isSkipping) {
           _currentIndex = index;
-          _seekOffset = Duration.zero; // Reset offset when track changes
           _currentTrack = _playlist[_currentIndex];
           if (_audioHandler != null) {
             _audioHandler!.updateTrackInfo(_currentTrack!);
@@ -338,16 +279,11 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  /// Whether the audio source was replaced by a single-track seek (timeOffset).
-  bool get _needsPlaylistRestore =>
-      _playlist.length > 1 && _player.audioSource is! ConcatenatingAudioSource;
-
   /// Play next track in playlist.
   Future<void> playNext() async {
     if (_playlist.isEmpty) return;
 
     _lastError = null;
-    _seekOffset = Duration.zero;
 
     if (_currentIndex >= _playlist.length - 1) {
       if (_repeatMode == RepeatMode.all) {
@@ -362,12 +298,7 @@ class AudioPlayerService with ChangeNotifier {
 
     _currentTrack = _playlist[_currentIndex];
     notifyListeners();
-
-    if (_needsPlaylistRestore) {
-      await _restorePlaylist(_currentIndex);
-    } else {
-      await _skipToIndex(_currentIndex);
-    }
+    await _skipToIndex(_currentIndex);
   }
 
   /// Play previous track in playlist.
@@ -375,17 +306,11 @@ class AudioPlayerService with ChangeNotifier {
     if (_playlist.isEmpty || _currentIndex <= 0) return;
 
     _lastError = null;
-    _seekOffset = Duration.zero;
     _currentIndex--;
 
     _currentTrack = _playlist[_currentIndex];
     notifyListeners();
-
-    if (_needsPlaylistRestore) {
-      await _restorePlaylist(_currentIndex);
-    } else {
-      await _skipToIndex(_currentIndex);
-    }
+    await _skipToIndex(_currentIndex);
   }
 
   /// Internal: skip to a specific index in the playlist, guarding against
@@ -401,12 +326,9 @@ class AudioPlayerService with ChangeNotifier {
         _audioHandler!.updateTrackInfo(_currentTrack!);
       }
 
-      // Guard: ensure the player has an audio source before seeking.
       if (_player.audioSource == null) return;
 
       await _player.seek(Duration.zero, index: index);
-      // If another skip came in while we were awaiting, bail out —
-      // the newer call will handle playback.
       if (token != _skipToken) return;
       if (!_player.playing) {
         await _player.play();
@@ -432,113 +354,6 @@ class AudioPlayerService with ChangeNotifier {
     } else {
       await _player.play();
     }
-  }
-
-  /// Seek to a specific absolute position within the current track.
-  /// The [position] is the absolute position in the track (e.g., 2:30 of 5:00).
-  /// First tries a normal seek (works if server supports HTTP Range requests).
-  /// If that doesn't work, falls back to reloading the stream with Subsonic's
-  /// timeOffset parameter for server-side seeking.
-  Future<void> seek(Duration position) async {
-    if (_currentTrack == null || _playlist.isEmpty) return;
-
-    _isSeeking = true;
-
-    try {
-      // Convert absolute position to player-relative position
-      // (accounting for any existing timeOffset from a previous seek)
-      final playerTarget = position - _seekOffset;
-
-      // Only try normal seek if there's no timeOffset active
-      // (if timeOffset is active, the player's timeline is shifted and
-      //  normal seek can only go within the remaining portion)
-      if (_seekOffset == Duration.zero) {
-        await _player.seek(position);
-        await Future.delayed(const Duration(milliseconds: 200));
-
-        final positionAfter = _player.position;
-        final seekWorked = (positionAfter - position).abs() < const Duration(seconds: 3);
-
-        if (seekWorked || position.inSeconds == 0) {
-          return; // Normal seek worked
-        }
-        debugPrint('Standard seek failed (pos=$positionAfter, target=$position). '
-            'Falling back to timeOffset reload.');
-      }
-
-      // Fall back to reloading with timeOffset
-      await _seekViaReload(position);
-    } catch (e) {
-      debugPrint('Seek error: $e');
-      try {
-        await _seekViaReload(position);
-      } catch (e2) {
-        debugPrint('Seek reload fallback also failed: $e2');
-      }
-    } finally {
-      _isSeeking = false;
-    }
-  }
-
-  /// Fallback seek: reload just the current track with timeOffset parameter.
-  /// Uses a single AudioSource (not ConcatenatingAudioSource) to avoid
-  /// breaking playlist state. Next/previous are handled by the service.
-  Future<void> _seekViaReload(Duration position) async {
-    final track = _currentTrack!;
-    final offsetSeconds = position.inSeconds;
-
-    // Build a single-track source with timeOffset
-    var url = track.streamUrl;
-    if (offsetSeconds > 0) {
-      url = url.contains('?')
-          ? '$url&timeOffset=$offsetSeconds'
-          : '$url?timeOffset=$offsetSeconds';
-    }
-
-    final source = AudioSource.uri(
-      Uri.parse(url),
-      tag: MediaItem(
-        id: track.id,
-        title: track.title,
-        artist: track.artist ?? 'Unknown Artist',
-        duration: track.durationSeconds != null
-            ? Duration(seconds: track.durationSeconds!)
-            : null,
-        artUri: track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
-      ),
-    );
-
-    _isRebuildingSource = true;
-    await _player.setAudioSource(source);
-    _seekOffset = position;
-    _isRebuildingSource = false;
-    await _player.play();
-  }
-
-  /// Rebuild and restore the full ConcatenatingAudioSource playlist
-  /// (e.g. after a timeOffset seek replaced it with a single source).
-  Future<void> _restorePlaylist(int startIndex) async {
-
-    _isRebuildingSource = true;
-    final source = _buildPlaylistSource(_playlist);
-    await _player.setAudioSource(source, initialIndex: startIndex);
-    _isRebuildingSource = false;
-
-    // Re-subscribe to index changes for auto-advance
-    _indexStreamSubscription?.cancel();
-    _indexStreamSubscription = _player.currentIndexStream.listen((index) {
-      if (index != null && index != _currentIndex && index < _playlist.length && !_isRebuildingSource && !_isSkipping) {
-        _currentIndex = index;
-        _seekOffset = Duration.zero;
-        _currentTrack = _playlist[_currentIndex];
-        if (_audioHandler != null) {
-          _audioHandler!.updateTrackInfo(_currentTrack!);
-        }
-        notifyListeners();
-      }
-    });
-
-    await _player.play();
   }
 
   /// Stop playback and clear current track
@@ -576,16 +391,13 @@ class AudioPlayerService with ChangeNotifier {
 
       // Rebuild the audio source to match the new playlist order
       try {
-        _isRebuildingSource = true;
         final source = _buildPlaylistSource(_playlist);
         await _player.setAudioSource(source, initialIndex: _currentIndex);
         await _player.seek(currentPosition);
-        _isRebuildingSource = false;
         if (wasPlaying) {
           await _player.play();
         }
       } catch (e) {
-        _isRebuildingSource = false;
         debugPrint('Error rebuilding playlist after shuffle toggle: $e');
       }
     }
