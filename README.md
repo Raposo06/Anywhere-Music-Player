@@ -52,49 +52,6 @@ services:
 
 The first user created via the Navidrome web UI becomes admin.
 
-### 1b. (Optional) Sync music from MinIO
-
-If your music library lives in a **MinIO bucket**, you can run a sidecar container using the official MinIO Client (`mc`) with `mc mirror --watch` to continuously sync files into Navidrome's music volume. The moment an MP3 is uploaded to MinIO, it is mirrored to the local folder and Navidrome picks it up on its next scan.
-
-```yaml
-# docker-compose.yml (add alongside navidrome service)
-services:
-  navidrome:
-    image: deluan/navidrome:latest
-    ports:
-      - "4533:4533"
-    environment:
-      ND_SCANSCHEDULE: 5m          # Lower scan interval so new files appear faster
-      ND_LOGLEVEL: info
-    volumes:
-      - ./data:/data
-      - music:/music:ro            # Read-only for Navidrome
-
-  minio-sync:
-    image: minio/mc
-    entrypoint: /bin/sh
-    command: >
-      -c "mc alias set myminio http://minio:9000 $${MINIO_ACCESS_KEY} $${MINIO_SECRET_KEY} &&
-          mc mirror --watch --overwrite myminio/music-bucket /music"
-    environment:
-      MINIO_ACCESS_KEY: your-access-key
-      MINIO_SECRET_KEY: your-secret-key
-    volumes:
-      - music:/music               # Shared with Navidrome
-    restart: always
-
-volumes:
-  music:
-```
-
-**How it works:**
-- `mc mirror --watch` subscribes to MinIO bucket events natively — no polling
-- On `ObjectCreated`, the file is downloaded to `/music` in under a second
-- On `ObjectRemoved`, the file is deleted from the mirror
-- `restart: always` ensures the sync resumes automatically after a crash (it does a full diff on restart before resuming watch, so no files are missed)
-
-> **Note:** Music is stored in both MinIO and the local volume, so plan for doubled disk usage.
-
 ### 2. Build the Flutter App
 
 ```bash
@@ -103,7 +60,7 @@ flutter pub get
 flutter run
 ```
 
-The server URL is entered on the login screen at runtime — no build-time configuration needed.
+The server URL is configured at build time via `--dart-define=DEFAULT_SERVER_URL=https://your-server.com`.
 
 ### 3. Build for Production
 
@@ -142,7 +99,7 @@ flutter_app/lib/
     folder.dart                  # Folder model
     user.dart                    # User model
   screens/
-    login_screen.dart            # Server URL + credentials login
+    login_screen.dart            # Credentials login
     home_screen.dart             # Folder browsing
     folder_detail_screen.dart    # Folder contents
     all_tracks_screen.dart       # All tracks list with search
@@ -165,8 +122,6 @@ flutter_app/lib/
   main.dart                      # App entry point
 
 scripts/
-  upload.py                      # Upload music to MinIO
-  download.py                    # Download music from MinIO
   convert_vbr.py                 # VBR to CBR MP3 converter
 ```
 
