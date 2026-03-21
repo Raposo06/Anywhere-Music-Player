@@ -146,20 +146,32 @@ class AudioPlayerService with ChangeNotifier {
 
     try {
       if (_repeatMode == RepeatMode.one) {
-        await _player.seek(Duration.zero);
-        await _player.play();
-      } else if (_repeatMode == RepeatMode.all && _playlist.isNotEmpty && isLastTrack) {
-        _currentIndex = 0;
-        _currentTrack = _playlist[0];
+        // Replay current track from the beginning
+        await _restorePlaylist(_currentIndex);
+      } else if (isLastTrack) {
+        if (_repeatMode == RepeatMode.all && _playlist.isNotEmpty) {
+          // Wrap to first track
+          _currentIndex = 0;
+          _currentTrack = _playlist[0];
+          if (_audioHandler != null) {
+            _audioHandler!.updateTrackInfo(_currentTrack!);
+          }
+          notifyListeners();
+          await _restorePlaylist(0);
+        }
+        // For repeat-off on last track: do nothing — player stops.
+      } else if (_needsPlaylistRestore) {
+        // Not the last track, but the ConcatenatingAudioSource was replaced
+        // by a single source (timeOffset seek), so auto-advance doesn't work.
+        // Manually advance to the next track and restore the playlist.
+        _currentIndex++;
+        _currentTrack = _playlist[_currentIndex];
         if (_audioHandler != null) {
           _audioHandler!.updateTrackInfo(_currentTrack!);
         }
         notifyListeners();
-        await _player.seek(Duration.zero, index: 0);
-        await _player.play();
+        await _restorePlaylist(_currentIndex);
       }
-      // For repeat-off: do nothing — the player naturally stops,
-      // and the UI keeps showing the last track (not "no track").
     } catch (e) {
       debugPrint('Error handling playlist completion: $e');
     }
@@ -326,8 +338,11 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
+  /// Whether the audio source was replaced by a single-track seek (timeOffset).
+  bool get _needsPlaylistRestore =>
+      _playlist.length > 1 && _player.audioSource is! ConcatenatingAudioSource;
+
   /// Play next track in playlist.
-  /// Safe to call rapidly — only the final target index is actually seeked to.
   Future<void> playNext() async {
     if (_playlist.isEmpty) return;
 
@@ -345,15 +360,17 @@ class AudioPlayerService with ChangeNotifier {
       _currentIndex++;
     }
 
-    // Update track metadata immediately so the UI reflects the target.
     _currentTrack = _playlist[_currentIndex];
     notifyListeners();
 
-    await _skipToIndex(_currentIndex);
+    if (_needsPlaylistRestore) {
+      await _restorePlaylist(_currentIndex);
+    } else {
+      await _skipToIndex(_currentIndex);
+    }
   }
 
   /// Play previous track in playlist.
-  /// Safe to call rapidly — only the final target index is actually seeked to.
   Future<void> playPrevious() async {
     if (_playlist.isEmpty || _currentIndex <= 0) return;
 
@@ -364,7 +381,11 @@ class AudioPlayerService with ChangeNotifier {
     _currentTrack = _playlist[_currentIndex];
     notifyListeners();
 
-    await _skipToIndex(_currentIndex);
+    if (_needsPlaylistRestore) {
+      await _restorePlaylist(_currentIndex);
+    } else {
+      await _skipToIndex(_currentIndex);
+    }
   }
 
   /// Internal: skip to a specific index in the playlist, guarding against
@@ -459,54 +480,65 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  /// Fallback seek: reload the current track's stream with timeOffset parameter.
-  /// This uses Subsonic's server-side seeking to start the stream at the right position.
-  /// Preserves the playlist by rebuilding the ConcatenatingAudioSource.
+  /// Fallback seek: reload just the current track with timeOffset parameter.
+  /// Uses a single AudioSource (not ConcatenatingAudioSource) to avoid
+  /// breaking playlist state. Next/previous are handled by the service.
   Future<void> _seekViaReload(Duration position) async {
     final track = _currentTrack!;
     final offsetSeconds = position.inSeconds;
-    final wasPlaying = _player.playing;
 
-    // Build playlist source but with timeOffset on the current track
-    final children = _playlist.asMap().entries.map((entry) {
-      final t = entry.value;
-      final isCurrentTrack = entry.key == _currentIndex;
+    // Build a single-track source with timeOffset
+    var url = track.streamUrl;
+    if (offsetSeconds > 0) {
+      url = url.contains('?')
+          ? '$url&timeOffset=$offsetSeconds'
+          : '$url?timeOffset=$offsetSeconds';
+    }
 
-      // For the current track, add timeOffset to the stream URL
-      var url = t.streamUrl;
-      if (isCurrentTrack && offsetSeconds > 0) {
-        url = url.contains('?')
-            ? '$url&timeOffset=$offsetSeconds'
-            : '$url?timeOffset=$offsetSeconds';
-      }
-
-      return AudioSource.uri(
-        Uri.parse(url),
-        tag: MediaItem(
-          id: t.id,
-          title: t.title,
-          artist: t.artist ?? 'Unknown Artist',
-          duration: t.durationSeconds != null
-              ? Duration(seconds: t.durationSeconds!)
-              : null,
-          artUri: t.coverArtUrl != null ? Uri.parse(t.coverArtUrl!) : null,
-        ),
-      );
-    }).toList();
-
-    final source = ConcatenatingAudioSource(
-      useLazyPreparation: true,
-      children: children,
+    final source = AudioSource.uri(
+      Uri.parse(url),
+      tag: MediaItem(
+        id: track.id,
+        title: track.title,
+        artist: track.artist ?? 'Unknown Artist',
+        duration: track.durationSeconds != null
+            ? Duration(seconds: track.durationSeconds!)
+            : null,
+        artUri: track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
+      ),
     );
 
     _isRebuildingSource = true;
-    await _player.setAudioSource(source, initialIndex: _currentIndex);
+    await _player.setAudioSource(source);
     _seekOffset = position;
     _isRebuildingSource = false;
+    await _player.play();
+  }
 
-    if (wasPlaying) {
-      await _player.play();
-    }
+  /// Rebuild and restore the full ConcatenatingAudioSource playlist
+  /// (e.g. after a timeOffset seek replaced it with a single source).
+  Future<void> _restorePlaylist(int startIndex) async {
+
+    _isRebuildingSource = true;
+    final source = _buildPlaylistSource(_playlist);
+    await _player.setAudioSource(source, initialIndex: startIndex);
+    _isRebuildingSource = false;
+
+    // Re-subscribe to index changes for auto-advance
+    _indexStreamSubscription?.cancel();
+    _indexStreamSubscription = _player.currentIndexStream.listen((index) {
+      if (index != null && index != _currentIndex && index < _playlist.length && !_isRebuildingSource && !_isSkipping) {
+        _currentIndex = index;
+        _seekOffset = Duration.zero;
+        _currentTrack = _playlist[_currentIndex];
+        if (_audioHandler != null) {
+          _audioHandler!.updateTrackInfo(_currentTrack!);
+        }
+        notifyListeners();
+      }
+    });
+
+    await _player.play();
   }
 
   /// Stop playback and clear current track
