@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../services/auth_service.dart';
-import '../services/subsonic_api_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/library_scanner.dart';
 import '../utils/responsive.dart';
 import 'player_screen.dart';
 
@@ -34,36 +34,39 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
   void dispose() {
     _searchController.dispose();
     _debounceTimer?.cancel();
+    try {
+      context.read<LibraryScanner>().removeListener(_onScannerUpdate);
+    } catch (_) {}
     super.dispose();
   }
 
-  SubsonicApiService? get _api => context.read<AuthService>().apiService;
-
-  /// Load songs immediately on screen open using getRandomSongs.
-  Future<void> _loadInitialTracks() async {
+  /// Load all songs from the library scanner's cached data.
+  void _loadInitialTracks() {
     if (!mounted) return;
-    final api = _api;
-    if (api == null) return;
+    final scanner = context.read<LibraryScanner>();
+
+    if (!scanner.hasScanned) {
+      // Scanner hasn't finished yet — wait for it
+      setState(() => _isLoading = true);
+      scanner.addListener(_onScannerUpdate);
+      return;
+    }
+
+    final tracks = List<Track>.from(scanner.allTracks)
+      ..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
 
     setState(() {
-      _isLoading = true;
-      _errorMessage = null;
+      _tracks = tracks;
+      _isLoading = false;
+      _errorMessage = scanner.error;
     });
+  }
 
-    try {
-      final tracks = await api.getRandomSongs(size: 200);
-
-      if (!mounted) return;
-      setState(() {
-        _tracks = tracks;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = 'Failed to load tracks: $e';
-        _isLoading = false;
-      });
+  void _onScannerUpdate() {
+    final scanner = context.read<LibraryScanner>();
+    if (!scanner.isScanning) {
+      scanner.removeListener(_onScannerUpdate);
+      _loadInitialTracks();
     }
   }
 
@@ -74,44 +77,29 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     });
 
     if (query.isEmpty) {
-      // Return to initial random tracks
       _loadInitialTracks();
       return;
     }
 
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-      _performSearch(query);
+      _filterTracks(query);
     });
   }
 
-  Future<void> _performSearch(String query) async {
+  void _filterTracks(String query) {
     if (!mounted) return;
+    final scanner = context.read<LibraryScanner>();
+    final lowerQuery = query.toLowerCase();
 
-    final api = _api;
-    if (api == null) return;
+    final filtered = scanner.allTracks
+        .where((t) => t.title.toLowerCase().contains(lowerQuery))
+        .toList()
+      ..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
 
     setState(() {
-      _isLoading = true;
-      _errorMessage = null;
+      _tracks = filtered;
+      _isLoading = false;
     });
-
-    try {
-      final result = await api.search3(query, songCount: 100);
-
-      if (!mounted) return;
-      if (_searchQuery != query) return;
-
-      setState(() {
-        _tracks = result.songs;
-        _isLoading = false;
-      });
-    } on SubsonicApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = e.message;
-        _isLoading = false;
-      });
-    }
   }
 
   Future<void> _handleLogout() async {
@@ -207,26 +195,15 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
                   children: [
                     Text(
                       _searchQuery.isEmpty
-                          ? 'Discover (${_tracks.length} tracks)'
+                          ? '${_tracks.length} tracks'
                           : 'Results (${_tracks.length} tracks)',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     if (_tracks.isNotEmpty)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_searchQuery.isEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.refresh),
-                              onPressed: _loadInitialTracks,
-                              tooltip: 'Shuffle new tracks',
-                            ),
-                          ElevatedButton.icon(
-                            onPressed: _playAll,
-                            icon: const Icon(Icons.play_arrow),
-                            label: const Text('Play All'),
-                          ),
-                        ],
+                      ElevatedButton.icon(
+                        onPressed: _playAll,
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Play All'),
                       ),
                   ],
                 ),
