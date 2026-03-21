@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:audio_service/audio_service.dart';
@@ -13,6 +14,8 @@ import 'utils/platform_detector.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await dotenv.load(fileName: '.env');
 
   // Initialize native platform detection (Android TV detection)
   await PlatformDetector.initialize();

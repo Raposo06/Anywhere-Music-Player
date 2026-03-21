@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/subsonic_api_service.dart';
@@ -12,10 +13,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  static const _serverUrl = String.fromEnvironment(
-    'DEFAULT_SERVER_URL',
-    defaultValue: 'https://navidrome.foxcore.dev',
-  );
+  static String get _serverUrl =>
+      dotenv.env['API_BASE_URL'] ?? '';
 
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
