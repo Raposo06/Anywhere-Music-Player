@@ -57,7 +57,7 @@ The first user created via the Navidrome web UI becomes admin.
 Copy the example environment file and set your Navidrome server URL:
 
 ```bash
-cd flutter_app
+cd anywhere_music_player
 cp .env.example .env
 ```
 
@@ -109,7 +109,7 @@ flutter build web
 ## Project Structure
 
 ```
-flutter_app/lib/
+anywhere_music_player/lib/
   models/
     track.dart                   # Track model (Subsonic fields)
     folder.dart                  # Folder model
@@ -136,9 +136,6 @@ flutter_app/lib/
     mini_player.dart             # Mini player bar
     tv_player_controls.dart      # TV player overlay
   main.dart                      # App entry point
-
-scripts/
-  convert_vbr.py                 # VBR to CBR MP3 converter
 ```
 
 ## TV Controls
