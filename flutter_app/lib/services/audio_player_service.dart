@@ -25,7 +25,7 @@ class AudioPlayerService with ChangeNotifier {
   int _skipToken = 0;
   int _loadToken = 0;
   bool _isShuffleEnabled = false;
-  RepeatMode _repeatMode = RepeatMode.off;
+  RepeatMode _repeatMode = RepeatMode.all;
   double _volume = 1.0; // 0.0 to 1.0
   String? _lastError;
   final _random = Random();

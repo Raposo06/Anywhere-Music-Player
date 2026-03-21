@@ -139,17 +139,22 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
       return const Center(child: Text('No content found'));
     }
 
+    // Count all tracks recursively (includes subfolders)
+    final scanner = context.read<LibraryScanner>();
+    final allTracks = scanner.getAllTracksInFolder(widget.folderId);
+    final totalTrackCount = allTracks.length;
+
     return Column(
       children: [
-        // Header with play buttons
-        if (_tracks.isNotEmpty)
+        // Header with play buttons - show when there are any tracks (direct or in subfolders)
+        if (totalTrackCount > 0)
           Container(
             padding: EdgeInsets.all(horizontalPadding),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
-                    '${_tracks.length} track(s)',
+                    '$totalTrackCount track(s)',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),

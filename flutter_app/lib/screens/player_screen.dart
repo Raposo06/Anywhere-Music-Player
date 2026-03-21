@@ -251,10 +251,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
 /// Progress bar that uses StreamBuilder for high-frequency position updates
 /// instead of rebuilding the entire widget tree via notifyListeners().
-class _ProgressBar extends StatelessWidget {
+/// Uses onChangeStart/onChangeEnd to prevent the position stream from
+/// fighting with the user's drag/tap gesture.
+class _ProgressBar extends StatefulWidget {
   final Duration duration;
 
   const _ProgressBar({required this.duration});
+
+  @override
+  State<_ProgressBar> createState() => _ProgressBarState();
+}
+
+class _ProgressBarState extends State<_ProgressBar> {
+  bool _isDragging = false;
+  double _dragValue = 0.0;
 
   String _formatDuration(Duration? d) {
     if (d == null) return '0:00';
@@ -276,9 +286,15 @@ class _ProgressBar extends StatelessWidget {
       stream: playerService.positionStream,
       builder: (context, snapshot) {
         final position = snapshot.data ?? Duration.zero;
-        final progress = duration.inMilliseconds > 0
-            ? position.inMilliseconds / duration.inMilliseconds
+        final streamProgress = widget.duration.inMilliseconds > 0
+            ? position.inMilliseconds / widget.duration.inMilliseconds
             : 0.0;
+
+        // While dragging, use the drag value; otherwise use stream position
+        final displayProgress = _isDragging ? _dragValue : streamProgress.clamp(0.0, 1.0);
+        final displayPosition = _isDragging
+            ? Duration(milliseconds: (_dragValue * widget.duration.inMilliseconds).round())
+            : position;
 
         return Column(
           children: [
@@ -290,12 +306,26 @@ class _ProgressBar extends StatelessWidget {
                 ),
               ),
               child: Slider(
-                value: progress.clamp(0.0, 1.0),
+                value: displayProgress.clamp(0.0, 1.0),
+                onChangeStart: (value) {
+                  setState(() {
+                    _isDragging = true;
+                    _dragValue = value;
+                  });
+                },
                 onChanged: (value) {
+                  setState(() {
+                    _dragValue = value;
+                  });
+                },
+                onChangeEnd: (value) {
                   final newPosition = Duration(
-                    milliseconds: (value * duration.inMilliseconds).round(),
+                    milliseconds: (value * widget.duration.inMilliseconds).round(),
                   );
                   playerService.seek(newPosition);
+                  setState(() {
+                    _isDragging = false;
+                  });
                 },
               ),
             ),
@@ -304,8 +334,8 @@ class _ProgressBar extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(_formatDuration(position)),
-                  Text(_formatDuration(duration)),
+                  Text(_formatDuration(displayPosition)),
+                  Text(_formatDuration(widget.duration)),
                 ],
               ),
             ),
