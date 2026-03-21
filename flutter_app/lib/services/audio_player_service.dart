@@ -121,9 +121,7 @@ class AudioPlayerService with ChangeNotifier {
           _audioHandler!.updateTrackInfo(_currentTrack!);
         }
         notifyListeners();
-        // Use setAudioSource to safely jump to index 0 (avoids lazy-prep crash)
-        final source = _buildPlaylistSource(_playlist);
-        await _player.setAudioSource(source, initialIndex: 0);
+        await _player.seek(Duration.zero, index: 0);
         await _player.play();
       }
       // For repeat-off: do nothing — the player naturally stops,
@@ -333,11 +331,6 @@ class AudioPlayerService with ChangeNotifier {
   /// Internal: skip to a specific index in the playlist, guarding against
   /// transient completed states that fire during seek.
   /// Uses a token so that rapid calls cancel stale in-flight seeks.
-  ///
-  /// Uses setAudioSource(initialIndex) instead of seek(index) because
-  /// seek can crash ExoPlayer on Android when the target track in a
-  /// ConcatenatingAudioSource hasn't been lazily prepared yet.
-  /// setAudioSource safely cancels any in-flight load before starting.
   Future<void> _skipToIndex(int index) async {
     final token = ++_skipToken;
     _isLoading = true;
@@ -348,17 +341,16 @@ class AudioPlayerService with ChangeNotifier {
         _audioHandler!.updateTrackInfo(_currentTrack!);
       }
 
-      if (_playlist.isEmpty || index < 0 || index >= _playlist.length) return;
+      // Guard: ensure the player has an audio source before seeking.
+      if (_player.audioSource == null) return;
 
-      // Re-set the audio source at the target index instead of seeking.
-      // This is safer than seek(index) because it properly handles lazy
-      // preparation and cancels any in-flight source loading.
-      final source = _buildPlaylistSource(_playlist);
-      await _player.setAudioSource(source, initialIndex: index);
+      await _player.seek(Duration.zero, index: index);
       // If another skip came in while we were awaiting, bail out —
       // the newer call will handle playback.
       if (token != _skipToken) return;
-      await _player.play();
+      if (!_player.playing) {
+        await _player.play();
+      }
     } catch (e) {
       if (token != _skipToken) return;
       if (!e.toString().contains('Loading interrupted')) {
