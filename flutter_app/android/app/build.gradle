@@ -43,7 +43,7 @@ android {
     defaultConfig {
         applicationId "com.anywhere.music_player"
         // Android TV requires minSdkVersion 21+
-        minSdkVersion 21
+        minSdkVersion flutter.minSdkVersion
         targetSdk 36
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
