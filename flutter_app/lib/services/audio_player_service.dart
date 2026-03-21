@@ -91,33 +91,46 @@ class AudioPlayerService with ChangeNotifier {
     // that occur during seek/skip operations.
     _playerStateSubscription = _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed && !_isSkipping) {
-        final isLastTrack = _currentIndex >= _playlist.length - 1;
-
-        if (_repeatMode == RepeatMode.one) {
-          _player.seek(Duration.zero);
-          _player.play();
-        } else if (_repeatMode == RepeatMode.all && _playlist.isNotEmpty && isLastTrack) {
-          _currentIndex = 0;
-          _currentTrack = _playlist[0];
-          if (_audioHandler != null) {
-            _audioHandler!.updateTrackInfo(_currentTrack!);
-          }
-          notifyListeners();
-          _player.seek(Duration.zero, index: 0);
-          _player.play();
-        }
-        // For repeat-off: do nothing — the player naturally stops,
-        // and the UI keeps showing the last track (not "no track").
+        _handleCompletion();
       }
     });
 
-    // Listen for playback errors
+    // Listen for playback errors (constructor continues)
     _playbackEventSubscription = _player.playbackEventStream.listen(
       (event) {},
       onError: (Object e, StackTrace st) {
         _handlePlaybackError(e);
       },
     );
+  }
+
+  /// Handle playlist completion with proper error handling.
+  /// Called when the player reaches ProcessingState.completed and we're not
+  /// in the middle of a skip operation.
+  Future<void> _handleCompletion() async {
+    final isLastTrack = _currentIndex >= _playlist.length - 1;
+
+    try {
+      if (_repeatMode == RepeatMode.one) {
+        await _player.seek(Duration.zero);
+        await _player.play();
+      } else if (_repeatMode == RepeatMode.all && _playlist.isNotEmpty && isLastTrack) {
+        _currentIndex = 0;
+        _currentTrack = _playlist[0];
+        if (_audioHandler != null) {
+          _audioHandler!.updateTrackInfo(_currentTrack!);
+        }
+        notifyListeners();
+        // Use setAudioSource to safely jump to index 0 (avoids lazy-prep crash)
+        final source = _buildPlaylistSource(_playlist);
+        await _player.setAudioSource(source, initialIndex: 0);
+        await _player.play();
+      }
+      // For repeat-off: do nothing — the player naturally stops,
+      // and the UI keeps showing the last track (not "no track").
+    } catch (e) {
+      debugPrint('Error handling playlist completion: $e');
+    }
   }
 
   /// Initialize Windows media controls for keyboard support (Fn+F5/F6/F7)
@@ -289,7 +302,7 @@ class AudioPlayerService with ChangeNotifier {
       if (_repeatMode == RepeatMode.all) {
         _currentIndex = 0;
       } else {
-        stop();
+        await stop();
         return;
       }
     } else {
@@ -320,6 +333,11 @@ class AudioPlayerService with ChangeNotifier {
   /// Internal: skip to a specific index in the playlist, guarding against
   /// transient completed states that fire during seek.
   /// Uses a token so that rapid calls cancel stale in-flight seeks.
+  ///
+  /// Uses setAudioSource(initialIndex) instead of seek(index) because
+  /// seek can crash ExoPlayer on Android when the target track in a
+  /// ConcatenatingAudioSource hasn't been lazily prepared yet.
+  /// setAudioSource safely cancels any in-flight load before starting.
   Future<void> _skipToIndex(int index) async {
     final token = ++_skipToken;
     _isLoading = true;
@@ -330,16 +348,17 @@ class AudioPlayerService with ChangeNotifier {
         _audioHandler!.updateTrackInfo(_currentTrack!);
       }
 
-      // Guard: ensure the player has an audio source before seeking.
-      if (_player.audioSource == null) return;
+      if (_playlist.isEmpty || index < 0 || index >= _playlist.length) return;
 
-      await _player.seek(Duration.zero, index: index);
+      // Re-set the audio source at the target index instead of seeking.
+      // This is safer than seek(index) because it properly handles lazy
+      // preparation and cancels any in-flight source loading.
+      final source = _buildPlaylistSource(_playlist);
+      await _player.setAudioSource(source, initialIndex: index);
       // If another skip came in while we were awaiting, bail out —
       // the newer call will handle playback.
       if (token != _skipToken) return;
-      if (!_player.playing) {
-        await _player.play();
-      }
+      await _player.play();
     } catch (e) {
       if (token != _skipToken) return;
       if (!e.toString().contains('Loading interrupted')) {
