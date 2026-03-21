@@ -325,11 +325,14 @@ class AudioPlayerService with ChangeNotifier {
     _isLoading = true;
     _isSkipping = true;
 
-    if (_audioHandler != null) {
-      _audioHandler!.updateTrackInfo(_currentTrack!);
-    }
-
     try {
+      if (_audioHandler != null && _currentTrack != null) {
+        _audioHandler!.updateTrackInfo(_currentTrack!);
+      }
+
+      // Guard: ensure the player has an audio source before seeking.
+      if (_player.audioSource == null) return;
+
       await _player.seek(Duration.zero, index: index);
       // If another skip came in while we were awaiting, bail out —
       // the newer call will handle playback.
