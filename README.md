@@ -52,15 +52,31 @@ services:
 
 The first user created via the Navidrome web UI becomes admin.
 
-### 2. Build the Flutter App
+### 2. Configure the Flutter App
+
+Copy the example environment file and set your Navidrome server URL:
 
 ```bash
-cd flutter_app
+cd anywhere_music_player
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```env
+API_BASE_URL=https://your-navidrome-server.com
+```
+
+| Variable        | Description                              |
+|-----------------|------------------------------------------|
+| `API_BASE_URL`  | Base URL of your Navidrome instance      |
+
+Then install dependencies and run:
+
+```bash
 flutter pub get
 flutter run
 ```
-
-The server URL is configured at build time via `--dart-define=DEFAULT_SERVER_URL=https://your-server.com`.
 
 ### 3. Build for Production
 
@@ -93,7 +109,7 @@ flutter build web
 ## Project Structure
 
 ```
-flutter_app/lib/
+anywhere_music_player/lib/
   models/
     track.dart                   # Track model (Subsonic fields)
     folder.dart                  # Folder model
@@ -120,9 +136,6 @@ flutter_app/lib/
     mini_player.dart             # Mini player bar
     tv_player_controls.dart      # TV player overlay
   main.dart                      # App entry point
-
-scripts/
-  convert_vbr.py                 # VBR to CBR MP3 converter
 ```
 
 ## TV Controls

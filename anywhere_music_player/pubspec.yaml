@@ -41,6 +41,9 @@ dependencies:
   # Cached network images
   cached_network_image: ^3.3.0
 
+  # Environment variables
+  flutter_dotenv: ^5.2.1
+
   # JSON Serialization
   json_annotation: any
 
@@ -57,6 +60,7 @@ flutter:
 
   assets:
     - assets/icons/
+    - .env
 
 flutter_launcher_icons:
   android: "launcher_icon"
