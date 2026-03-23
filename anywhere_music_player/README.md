@@ -18,35 +18,47 @@ Cross-platform music streaming app built with Flutter, connecting to a Navidrome
 ### 1. Install Dependencies
 
 ```bash
-cd flutter_app
+cd anywhere_music_player
 flutter pub get
 ```
 
-### 2. Run the App
+### 2. Configure the Server URL
 
-The default server URL is set at build time via `--dart-define`. Edit `dart_defines.env` to change it, then pass it on the command line:
+Create a `.env` file in the project root:
 
-```bash
-flutter run --dart-define=DEFAULT_SERVER_URL=https://your-navidrome-server:4533
+```
+API_BASE_URL=https://your-navidrome-server:4533
 ```
 
-If omitted, the value in `dart_defines.env` is used as the fallback default.
+This file is loaded at runtime via `flutter_dotenv`. Do not commit it — it is listed in `.gitignore`.
 
-### 3. Build for Production
+### 3. Run the App
+
+```bash
+flutter run
+```
+
+### 4. Build for Production
 
 **Android APK:**
 ```bash
-flutter build apk --dart-define=DEFAULT_SERVER_URL=https://your-server:4533
+flutter build apk
 ```
 
 **Windows:**
 ```bash
-flutter build windows --dart-define=DEFAULT_SERVER_URL=https://your-server:4533
+flutter build windows
 ```
+
+> **Windows note:** If the build fails with a MAX_PATH error, enable long path support in Windows:
+> ```powershell
+> reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f
+> ```
+> Then restart your terminal and retry.
 
 **Web:**
 ```bash
-flutter build web --dart-define=DEFAULT_SERVER_URL=https://your-server:4533
+flutter build web
 ```
 
 ## Project Structure
@@ -93,6 +105,7 @@ lib/
 | `http`               | HTTP client for Subsonic API calls     |
 | `permission_handler` | Android notification permission        |
 | `smtc_windows`       | Windows system media transport controls|
+| `flutter_dotenv`     | Runtime `.env` configuration           |
 
 ## Authentication
 
@@ -100,22 +113,33 @@ The app uses Subsonic token auth:
 - Each request includes `u=<username>&t=<md5(password+salt)>&s=<salt>&v=1.16.1&c=AnywherePlayer&f=json`
 - Login verifies credentials by calling the Subsonic `ping` endpoint
 - Username and password are stored in SharedPreferences
-- No signup flow -- users are created via the Navidrome web UI
+- No signup flow — users are created via the Navidrome web UI
 
 ## Android TV
 
-The app automatically detects Android TV and shows a TV-optimized UI with:
-- D-Pad navigation with focus management
-- Large UI elements for 10-foot viewing
-- Remote control media button support
-- Dark theme optimized for TV displays
+The app automatically detects Android TV (via `UiModeManager`) and shows a TV-optimized UI.
 
-The Android manifest includes `LEANBACK_LAUNCHER` for TV launcher integration.
+### Remote control navigation
+
+| Button | Action |
+|--------|--------|
+| D-pad up/down | Navigate within the folder list or track grid |
+| D-pad right (from folder list) | Jump to track grid |
+| D-pad left (from track grid) | Return to folder list |
+| D-pad down (from last grid row) | Jump to player controls |
+| D-pad up (from player controls) | Return to track grid |
+| D-pad left/right (on player controls) | Move between Shuffle / Prev / Play / Next / Repeat |
+| Select / Enter | Open folder, play track, or activate button |
+| Back | Deselect folder (first press) → exit app (second press) |
+
+### TV launcher
+
+The Android manifest includes `LEANBACK_LAUNCHER` for TV launcher integration and a `tv_banner.png` app banner.
 
 ## Troubleshooting
 
 ### App won't connect
-- Verify the `DEFAULT_SERVER_URL` was passed via `--dart-define` at build time
+- Verify `.env` exists in the project root and contains a valid `API_BASE_URL`
 - Check that the Navidrome server is reachable from the device
 
 ### Audio not playing
@@ -123,8 +147,11 @@ The Android manifest includes `LEANBACK_LAUNCHER` for TV launcher integration.
 - Verify the Navidrome user has streaming permissions
 
 ### Android TV: app not in launcher
-- Ensure `tv_banner.png` exists at `android/app/src/main/res/drawable-xhdpi/`
-- Verify AndroidManifest.xml has the `LEANBACK_LAUNCHER` intent filter
+- Ensure `tv_banner.png` exists at `android/app/src/main/res/drawable/`
+- Verify `AndroidManifest.xml` has the `LEANBACK_LAUNCHER` intent filter
+
+### Windows: build fails with MAX_PATH error
+- Enable long path support (see build instructions above) and restart your terminal
 
 ## License
 
