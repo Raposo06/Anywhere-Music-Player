@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
@@ -21,10 +22,47 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   String? _errorMessage;
 
-  // Focus nodes for D-Pad navigation
-  final _usernameFocusNode = FocusNode();
-  final _passwordFocusNode = FocusNode();
-  final _loginButtonFocusNode = FocusNode();
+  // Focus nodes for D-Pad navigation.
+  // onKeyEvent intercepts arrow keys BEFORE the text field's internal
+  // handler, so D-pad up/down navigates between fields instead of
+  // moving the cursor within the text.
+  late final FocusNode _usernameFocusNode;
+  late final FocusNode _passwordFocusNode;
+  late final FocusNode _loginButtonFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _loginButtonFocusNode = FocusNode();
+    _usernameFocusNode = FocusNode(
+      onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+          return KeyEventResult.ignored;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          _passwordFocusNode.requestFocus();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+    );
+    _passwordFocusNode = FocusNode(
+      onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+          return KeyEventResult.ignored;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+          _usernameFocusNode.requestFocus();
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          _loginButtonFocusNode.requestFocus();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+    );
+  }
 
   @override
   void dispose() {

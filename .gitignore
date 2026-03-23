@@ -34,7 +34,7 @@ venv/
 env/
 
 # Environment files with credentials (NEVER COMMIT)
-.env
+anywhere_music_player/.env
 *.env
 !*.env.example
 

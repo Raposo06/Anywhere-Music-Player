@@ -6,7 +6,11 @@ import '../services/audio_player_service.dart';
 /// TV-optimized player controls with D-pad navigation
 /// Displays at bottom of screen with large buttons for remote control
 class TvPlayerControls extends StatelessWidget {
-  const TvPlayerControls({super.key});
+  /// Called when the user presses D-pad up from the control buttons,
+  /// allowing the parent to move focus back to the main content area.
+  final VoidCallback? onNavigateUp;
+
+  const TvPlayerControls({super.key, this.onNavigateUp});
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +185,7 @@ class TvPlayerControls extends StatelessWidget {
           icon: Icons.shuffle,
           isActive: audioPlayer.isShuffleEnabled,
           onPressed: () => audioPlayer.toggleShuffle(),
+          onNavigateUp: onNavigateUp,
           size: 48,
         ),
 
@@ -190,6 +195,7 @@ class TvPlayerControls extends StatelessWidget {
         _TvControlButton(
           icon: Icons.skip_previous,
           onPressed: audioPlayer.playPrevious,
+          onNavigateUp: onNavigateUp,
           size: 56,
         ),
 
@@ -199,6 +205,7 @@ class TvPlayerControls extends StatelessWidget {
         _TvControlButton(
           icon: audioPlayer.isPlaying ? Icons.pause : Icons.play_arrow,
           onPressed: audioPlayer.togglePlayPause,
+          onNavigateUp: onNavigateUp,
           size: 72,
           isPrimary: true,
         ),
@@ -209,6 +216,7 @@ class TvPlayerControls extends StatelessWidget {
         _TvControlButton(
           icon: Icons.skip_next,
           onPressed: audioPlayer.playNext,
+          onNavigateUp: onNavigateUp,
           size: 56,
         ),
 
@@ -219,6 +227,7 @@ class TvPlayerControls extends StatelessWidget {
           icon: _getRepeatIcon(audioPlayer.repeatMode),
           isActive: audioPlayer.repeatMode != RepeatMode.off,
           onPressed: audioPlayer.toggleRepeatMode,
+          onNavigateUp: onNavigateUp,
           size: 48,
         ),
       ],
@@ -247,6 +256,7 @@ class TvPlayerControls extends StatelessWidget {
 class _TvControlButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onPressed;
+  final VoidCallback? onNavigateUp;
   final double size;
   final bool isActive;
   final bool isPrimary;
@@ -254,6 +264,7 @@ class _TvControlButton extends StatefulWidget {
   const _TvControlButton({
     required this.icon,
     required this.onPressed,
+    this.onNavigateUp,
     this.size = 48,
     this.isActive = false,
     this.isPrimary = false,
@@ -271,12 +282,18 @@ class _TvControlButtonState extends State<_TvControlButton> {
     return Focus(
       onFocusChange: (focused) => setState(() => _isFocused = focused),
       onKeyEvent: (node, event) {
-        if (event is KeyDownEvent &&
-            (event.logicalKey == LogicalKeyboardKey.select ||
-             event.logicalKey == LogicalKeyboardKey.enter ||
-             event.logicalKey == LogicalKeyboardKey.space)) {
-          widget.onPressed();
-          return KeyEventResult.handled;
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.select ||
+              event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.space) {
+            widget.onPressed();
+            return KeyEventResult.handled;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.arrowUp &&
+              widget.onNavigateUp != null) {
+            widget.onNavigateUp!();
+            return KeyEventResult.handled;
+          }
         }
         return KeyEventResult.ignored;
       },
