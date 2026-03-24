@@ -72,7 +72,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
     if (!audioPlayer.isShuffleEnabled) {
       audioPlayer.toggleShuffle();
     }
-    audioPlayer.playPlaylist(_tracks, 0);
+    audioPlayer.playPlaylist(_tracks, -1);
   }
 
   @override

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(find /d/David/Projects/Anywhere-Music-Player -type f -name *tv* -o -name *leanback* -o -name *android_tv*)",
-      "Bash(find /d/David/Projects/Anywhere-Music-Player -path */android/* -type f -name *.kt -o -name *.java)"
+      "Bash(find /d/David/Projects/Anywhere-Music-Player -path */android/* -type f -name *.kt -o -name *.java)",
+      "Bash(flutter analyze:*)"
     ]
   }
 }

@@ -115,7 +115,10 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     if (_tracks.isEmpty) return;
 
     final playerService = context.read<AudioPlayerService>();
-    playerService.playPlaylist(_tracks, 0);
+    if (!playerService.isShuffleEnabled) {
+      playerService.toggleShuffle();
+    }
+    playerService.playPlaylist(_tracks, -1);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -190,8 +193,8 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
                     if (_tracks.isNotEmpty)
                       ElevatedButton.icon(
                         onPressed: _playAll,
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('Play All'),
+                        icon: const Icon(Icons.shuffle),
+                        label: const Text('Shuffle All'),
                       ),
                   ],
                 ),

@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:window_manager/window_manager.dart';
 import '../models/track.dart';
 import 'audio_handler.dart';
 import 'windows_media_controls_service.dart';
@@ -56,6 +57,20 @@ class AudioPlayerService with ChangeNotifier {
   /// Check if we're running on Windows
   bool get _isWindows => !kIsWeb && Platform.isWindows;
 
+  static const _appName = 'Anywhere Music Player';
+
+  /// Update the Windows window title and SMTC metadata.
+  /// Call this AFTER playback has been set up, not during setup.
+  void _updateWindowsMetadata(Track? track) {
+    if (!_isWindows) return;
+    if (track != null) {
+      windowManager.setTitle('${track.title} - $_appName');
+      _windowsMediaControls.updateMetadata(track);
+    } else {
+      windowManager.setTitle(_appName);
+    }
+  }
+
   AudioPlayerService({MusicAudioHandler? audioHandler})
       : _audioHandler = audioHandler {
     _player = AudioPlayer();
@@ -92,6 +107,7 @@ class AudioPlayerService with ChangeNotifier {
         if (_audioHandler != null) {
           _audioHandler!.updateTrackInfo(_currentTrack!);
         }
+        _updateWindowsMetadata(_currentTrack);
         notifyListeners();
       }
     });
@@ -220,9 +236,11 @@ class AudioPlayerService with ChangeNotifier {
       }
 
       final source = _buildPlaylistSource([track]);
-      await _player.setAudioSource(source);
+      await _player.setAudioSource(source, initialPosition: Duration.zero);
       if (token != _loadToken) return;
       await _player.play();
+      if (token != _loadToken) return;
+      _updateWindowsMetadata(track);
     } catch (e) {
       if (token != _loadToken) return;
       _handlePlaybackError(e);
@@ -237,8 +255,12 @@ class AudioPlayerService with ChangeNotifier {
   /// Set a playlist and play from a specific index using ConcatenatingAudioSource
   /// for gapless playback.
   /// Safe to call rapidly — only the last call takes effect.
+  /// Play a playlist. Pass [startIndex] = -1 with shuffle enabled to start
+  /// from a random track.
   Future<void> playPlaylist(List<Track> tracks, int startIndex) async {
-    if (tracks.isEmpty || startIndex < 0 || startIndex >= tracks.length) {
+    if (tracks.isEmpty) return;
+    // Allow -1 only when shuffle is on (random start); otherwise clamp to valid range.
+    if (startIndex != -1 && (startIndex < 0 || startIndex >= tracks.length)) {
       return;
     }
 
@@ -267,6 +289,8 @@ class AudioPlayerService with ChangeNotifier {
       await _player.setAudioSource(source, initialIndex: _currentIndex);
       if (token != _loadToken) return;
       await _player.play();
+      if (token != _loadToken) return;
+      _updateWindowsMetadata(_currentTrack);
     } catch (e) {
       if (token != _loadToken) return;
       _handlePlaybackError(e);
@@ -332,6 +356,9 @@ class AudioPlayerService with ChangeNotifier {
       if (!_player.playing) {
         await _player.play();
       }
+      if (token == _skipToken) {
+        _updateWindowsMetadata(_currentTrack);
+      }
     } catch (e) {
       if (token != _skipToken) return;
       if (!e.toString().contains('Loading interrupted')) {
@@ -359,6 +386,7 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> stop() async {
     await _player.stop();
     _currentTrack = null;
+    _updateWindowsMetadata(null);
     if (_isWindows) {
       _windowsMediaControls.clear();
     }
@@ -428,13 +456,20 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   /// Shuffle the playlist, keeping the track at startIndex at position 0
+  /// Shuffle the playlist. If [startIndex] is -1, pick a random track to start.
+  /// Otherwise, keep the track at [startIndex] first.
   void _shufflePlaylist(int startIndex) {
     if (_playlist.isEmpty) return;
 
-    final firstTrack = _playlist[startIndex];
-    _playlist.removeAt(startIndex);
-    _playlist.shuffle(_random);
-    _playlist.insert(0, firstTrack);
+    if (startIndex < 0 || startIndex >= _playlist.length) {
+      // Fully random shuffle — pick a random track to lead
+      _playlist.shuffle(_random);
+    } else {
+      final firstTrack = _playlist[startIndex];
+      _playlist.removeAt(startIndex);
+      _playlist.shuffle(_random);
+      _playlist.insert(0, firstTrack);
+    }
     _currentIndex = 0;
   }
 

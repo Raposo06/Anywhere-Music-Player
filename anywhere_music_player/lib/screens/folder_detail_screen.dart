@@ -77,9 +77,9 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     final playerService = context.read<AudioPlayerService>();
     // Enable shuffle before starting playlist — playPlaylist will shuffle internally
     if (!playerService.isShuffleEnabled) {
-      playerService.toggleShuffle(); // No active playlist, so this just sets the flag
+      playerService.toggleShuffle();
     }
-    playerService.playPlaylist(allTracks, 0);
+    playerService.playPlaylist(allTracks, -1);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),

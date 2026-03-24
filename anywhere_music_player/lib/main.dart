@@ -1,8 +1,11 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:window_manager/window_manager.dart';
 import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/audio_handler.dart';
@@ -16,6 +19,11 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await dotenv.load(fileName: '.env');
+
+  // Initialize window manager for desktop (dynamic title)
+  if (!kIsWeb && Platform.isWindows) {
+    await windowManager.ensureInitialized();
+  }
 
   // Initialize native platform detection (Android TV detection)
   await PlatformDetector.initialize();

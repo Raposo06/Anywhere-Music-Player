@@ -38,6 +38,9 @@ dependencies:
   # Secure credential storage
   flutter_secure_storage: ^9.0.0
 
+  # Window management (desktop title bar)
+  window_manager: ^0.4.3
+
   # Cached network images
   cached_network_image: ^3.3.0
 

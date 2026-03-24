@@ -124,7 +124,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final tracks = scanner.getAllTracksInFolder(folder.id!);
 
     if (tracks.isNotEmpty) {
-      playerService.playPlaylist(tracks, 0);
+      if (!playerService.isShuffleEnabled) {
+        playerService.toggleShuffle();
+      }
+      playerService.playPlaylist(tracks, -1);
       if (mounted) {
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -312,7 +315,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 TextButton.icon(
                   onPressed: () {
                     final playerService = context.read<AudioPlayerService>();
-                    playerService.playPlaylist(rootTracks, 0);
+                    if (!playerService.isShuffleEnabled) {
+                      playerService.toggleShuffle();
+                    }
+                    playerService.playPlaylist(rootTracks, -1);
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const PlayerScreen()),
                     );
@@ -416,7 +422,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 TextButton.icon(
                   onPressed: () {
                     final playerService = context.read<AudioPlayerService>();
-                    playerService.playPlaylist(_searchTracks, 0);
+                    if (!playerService.isShuffleEnabled) {
+                      playerService.toggleShuffle();
+                    }
+                    playerService.playPlaylist(_searchTracks, -1);
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const PlayerScreen()),
                     );

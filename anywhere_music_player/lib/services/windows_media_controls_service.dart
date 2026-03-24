@@ -40,29 +40,15 @@ class WindowsMediaControlsService {
     VoidCallback? onPrevious,
     VoidCallback? onStop,
   }) async {
-    if (!isSupported) {
-      debugPrint('⚠️ Windows Media Controls not supported on this platform');
-      return;
-    }
+    if (!isSupported) return;
 
-    if (_isInitialized) {
-      debugPrint('⚠️ Windows Media Controls already initialized');
-      return;
-    }
+    if (_isInitialized) return;
 
-    debugPrint('🎹 Initializing Windows Media Controls...');
     this.onPlay = onPlay;
     this.onPause = onPause;
     this.onNext = onNext;
     this.onPrevious = onPrevious;
     this.onStop = onStop;
-
-    debugPrint('🎹 Callbacks registered:');
-    debugPrint('   Play: ${this.onPlay != null}');
-    debugPrint('   Pause: ${this.onPause != null}');
-    debugPrint('   Next: ${this.onNext != null}');
-    debugPrint('   Previous: ${this.onPrevious != null}');
-    debugPrint('   Stop: ${this.onStop != null}');
 
     try {
       _smtc = SMTCWindows(
@@ -82,73 +68,37 @@ class WindowsMediaControlsService {
         ),
       );
 
-      // Listen for button presses with error handling
-      // Using instance variables (this.onPlay, etc.) instead of parameters to ensure
-      // callbacks are always current and not stale closures
       _buttonPressSubscription = _smtc!.buttonPressStream.listen(
         (event) {
-          debugPrint('🎹 Windows keyboard button pressed: $event');
           switch (event) {
             case PressedButton.play:
-              debugPrint('▶️ Play button pressed (callback: ${this.onPlay != null ? "available" : "NULL"})');
-              if (this.onPlay != null) {
-                this.onPlay!();
-              } else {
-                debugPrint('⚠️ Play callback is null!');
-              }
+              onPlay?.call();
               break;
             case PressedButton.pause:
-              debugPrint('⏸️ Pause button pressed (callback: ${this.onPause != null ? "available" : "NULL"})');
-              if (this.onPause != null) {
-                this.onPause!();
-              } else {
-                debugPrint('⚠️ Pause callback is null!');
-              }
+              onPause?.call();
               break;
             case PressedButton.next:
-              debugPrint('⏭️ Next button pressed (callback: ${this.onNext != null ? "available" : "NULL"})');
-              if (this.onNext != null) {
-                this.onNext!();
-              } else {
-                debugPrint('⚠️ Next callback is null!');
-              }
+              onNext?.call();
               break;
             case PressedButton.previous:
-              debugPrint('⏮️ Previous button pressed (callback: ${this.onPrevious != null ? "available" : "NULL"})');
-              if (this.onPrevious != null) {
-                this.onPrevious!();
-              } else {
-                debugPrint('⚠️ Previous callback is null!');
-              }
+              onPrevious?.call();
               break;
             case PressedButton.stop:
-              debugPrint('⏹️ Stop button pressed (callback: ${this.onStop != null ? "available" : "NULL"})');
-              if (this.onStop != null) {
-                this.onStop!();
-              } else {
-                debugPrint('⚠️ Stop callback is null!');
-              }
+              onStop?.call();
               break;
             default:
-              debugPrint('⚠️ Unknown button pressed: $event');
               break;
           }
         },
         onError: (error) {
-          debugPrint('🔴 Error in button press stream: $error');
-          // Try to reinitialize if the stream fails
+          debugPrint('SMTC button stream error: $error');
           _handleStreamError();
         },
-        cancelOnError: false, // Keep listening even if there's an error
+        cancelOnError: false,
       );
 
       _isInitialized = true;
-      debugPrint('✅ Windows Media Controls initialized');
-
-      // Initialize taskbar thumbnail buttons (re-enabled with stable playback)
       await _initializeTaskbarButtons();
-
-      debugPrint('✅ SMTC and taskbar controls ready');
     } catch (e) {
       debugPrint('⚠️ Failed to initialize Windows Media Controls: $e');
     }
@@ -162,14 +112,11 @@ class WindowsMediaControlsService {
       // Check if icon files exist
       final iconsExist = await _checkIconsExist();
       if (!iconsExist) {
-        debugPrint('⚠️ Taskbar icons not found. Skipping thumbnail buttons.');
-        debugPrint('   Add prev.ico, play.ico, pause.ico, next.ico to assets/icons/');
         return;
       }
 
       await _updateTaskbarButtons();
       _taskbarButtonsInitialized = true;
-      debugPrint('✅ Taskbar thumbnail buttons initialized');
     } catch (e) {
       debugPrint('⚠️ Failed to initialize taskbar buttons: $e');
     }
@@ -197,12 +144,7 @@ class WindowsMediaControlsService {
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon('assets/icons/prev.ico'),
           'Previous',
-          () {
-            debugPrint('🖱️ Taskbar: Previous clicked');
-            if (onPrevious != null) {
-              onPrevious!();
-            }
-          },
+          () => onPrevious?.call(),
         ),
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon(
@@ -210,23 +152,17 @@ class WindowsMediaControlsService {
           ),
           _isPlaying ? 'Pause' : 'Play',
           () {
-            debugPrint('🖱️ Taskbar: ${_isPlaying ? "Pause" : "Play"} clicked');
-            if (_isPlaying && onPause != null) {
-              onPause!();
-            } else if (!_isPlaying && onPlay != null) {
-              onPlay!();
+            if (_isPlaying) {
+              onPause?.call();
+            } else {
+              onPlay?.call();
             }
           },
         ),
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon('assets/icons/next.ico'),
           'Next',
-          () {
-            debugPrint('🖱️ Taskbar: Next clicked');
-            if (onNext != null) {
-              onNext!();
-            }
-          },
+          () => onNext?.call(),
         ),
       ]);
     } catch (e) {
@@ -234,41 +170,32 @@ class WindowsMediaControlsService {
     }
   }
 
-  /// Update the metadata shown in taskbar
+  /// Update the metadata shown in Windows media overlay / taskbar
   Future<void> updateMetadata(Track track) async {
     if (!isSupported || !_isInitialized || _smtc == null) return;
 
-    // DISABLED: updateMetadata() also disrupts keyboard controls
-    // Calling _smtc!.updateMetadata() appears to reset/interfere with buttonPressStream
-    // Static metadata from initialization is acceptable for consistent keyboard controls
-    debugPrint('⚠️ updateMetadata called but disabled to prevent keyboard interference: ${track.title}');
-    return;
+    try {
+      final title = track.title.isNotEmpty ? track.title : 'Unknown Track';
+      final artist = track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist';
+      final thumbnail = track.coverArtUrl;
 
-    // try {
-    //   // smtc_windows crashes with empty strings, so provide defaults
-    //   final title = track.title.isNotEmpty ? track.title : 'Unknown Track';
-    //   final artist = track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist';
-    //   final thumbnail = track.coverArtUrl;
-
-    //   // Only include thumbnail if it's a valid non-empty URL
-    //   if (thumbnail != null && thumbnail.isNotEmpty) {
-    //     await _smtc!.updateMetadata(MusicMetadata(
-    //       title: title,
-    //       artist: artist,
-    //       album: artist,
-    //       thumbnail: thumbnail,
-    //     ));
-    //   } else {
-    //     await _smtc!.updateMetadata(MusicMetadata(
-    //       title: title,
-    //       artist: artist,
-    //       album: artist,
-    //     ));
-    //   }
-    //   debugPrint('📻 Updated SMTC metadata: $title');
-    // } catch (e) {
-    //   debugPrint('⚠️ Failed to update SMTC metadata: $e');
-    // }
+      if (thumbnail != null && thumbnail.isNotEmpty) {
+        await _smtc!.updateMetadata(MusicMetadata(
+          title: title,
+          artist: artist,
+          album: artist,
+          thumbnail: thumbnail,
+        ));
+      } else {
+        await _smtc!.updateMetadata(MusicMetadata(
+          title: title,
+          artist: artist,
+          album: artist,
+        ));
+      }
+    } catch (e) {
+      debugPrint('Failed to update SMTC metadata: $e');
+    }
   }
 
   /// Update playback status
@@ -278,41 +205,9 @@ class WindowsMediaControlsService {
     final bool playStateChanged = _isPlaying != isPlaying;
     _isPlaying = isPlaying;
 
-    debugPrint('🎵 Player playback status: ${isPlaying ? "Playing" : "Paused"} (state changed: $playStateChanged)');
-
-    // Update taskbar buttons to show correct play/pause icon
-    // NOTE: We do NOT call _smtc!.setPlaybackStatus() because it causes feedback loop
-    // Only updating visual taskbar buttons is safe and doesn't interfere with keyboard controls
     if (_taskbarButtonsInitialized && playStateChanged) {
       await _updateTaskbarButtons();
     }
-  }
-
-  /// Enable/disable previous button based on playlist position
-  Future<void> updateButtonStates({
-    required bool canPrevious,
-    required bool canNext,
-  }) async {
-    if (!isSupported || !_isInitialized || _smtc == null) return;
-
-    // DISABLED: updateConfig() disrupts the buttonPressStream keyboard event routing
-    // Calling updateConfig seems to reset or interfere with the keyboard event listener
-    // Keeping all buttons enabled at all times is acceptable for consistent keyboard controls
-    debugPrint('⚠️ updateButtonStates called but disabled to prevent keyboard interference (canPrev: $canPrevious, canNext: $canNext)');
-
-    // try {
-    //   await _smtc!.updateConfig(SMTCConfig(
-    //     fastForwardEnabled: false,
-    //     rewindEnabled: false,
-    //     prevEnabled: canPrevious,
-    //     nextEnabled: canNext,
-    //     pauseEnabled: true,
-    //     playEnabled: true,
-    //     stopEnabled: true,
-    //   ));
-    // } catch (e) {
-    //   debugPrint('⚠️ Failed to update SMTC button states: $e');
-    // }
   }
 
   /// Clear metadata and disable controls
@@ -329,8 +224,6 @@ class WindowsMediaControlsService {
 
   /// Handle stream errors by attempting to recover
   Future<void> _handleStreamError() async {
-    debugPrint('🔄 Attempting to recover from button press stream error...');
-
     // Cancel existing subscription
     await _buttonPressSubscription?.cancel();
     _buttonPressSubscription = null;
