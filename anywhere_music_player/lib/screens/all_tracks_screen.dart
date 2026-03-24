@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
-import '../services/auth_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/library_scanner.dart';
 import '../utils/responsive.dart';
@@ -102,11 +101,6 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     });
   }
 
-  Future<void> _handleLogout() async {
-    final authService = context.read<AuthService>();
-    await authService.logout();
-  }
-
   void _playTrack(Track track) {
     final playerService = context.read<AudioPlayerService>();
     final trackIndex = _tracks.indexOf(track);
@@ -130,7 +124,6 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authService = context.watch<AuthService>();
     final horizontalPadding = Responsive.getHorizontalPadding(context);
 
     return Scaffold(
@@ -149,11 +142,6 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
                     },
                   )
                 : const SizedBox.shrink(),
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _handleLogout,
-            tooltip: 'Logout',
           ),
         ],
       ),

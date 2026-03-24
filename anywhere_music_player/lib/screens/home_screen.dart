@@ -151,7 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authService = context.watch<AuthService>();
+    final authService = context.read<AuthService>();
     final scanner = context.watch<LibraryScanner>();
     final horizontalPadding = Responsive.getHorizontalPadding(context);
 

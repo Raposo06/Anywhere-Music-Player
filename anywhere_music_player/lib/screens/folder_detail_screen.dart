@@ -26,6 +26,7 @@ class FolderDetailScreen extends StatefulWidget {
 class _FolderDetailScreenState extends State<FolderDetailScreen> {
   List<Track> _tracks = [];
   List<Folder> _subfolders = [];
+  int _totalTrackCount = 0;
 
   @override
   void initState() {
@@ -35,15 +36,12 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
 
   void _loadContents() {
     final scanner = context.read<LibraryScanner>();
-    debugPrint('FolderDetail: loading folderId="${widget.folderId}"');
     final contents = scanner.getFolderContents(widget.folderId);
-    debugPrint('FolderDetail: got ${contents.folders.length} subfolders, ${contents.tracks.length} tracks');
-    for (final f in contents.folders.take(5)) {
-      debugPrint('FolderDetail: subfolder path="${f.folderPath}" name="${f.displayName}"');
-    }
+    final allTracks = scanner.getAllTracksInFolder(widget.folderId);
     setState(() {
       _subfolders = contents.folders;
       _tracks = contents.tracks;
+      _totalTrackCount = allTracks.length;
     });
   }
 
@@ -139,22 +137,17 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
       return const Center(child: Text('No content found'));
     }
 
-    // Count all tracks recursively (includes subfolders)
-    final scanner = context.read<LibraryScanner>();
-    final allTracks = scanner.getAllTracksInFolder(widget.folderId);
-    final totalTrackCount = allTracks.length;
-
     return Column(
       children: [
         // Header with play buttons - show when there are any tracks (direct or in subfolders)
-        if (totalTrackCount > 0)
+        if (_totalTrackCount > 0)
           Container(
             padding: EdgeInsets.all(horizontalPadding),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
-                    '$totalTrackCount track(s)',
+                    '$_totalTrackCount track(s)',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),

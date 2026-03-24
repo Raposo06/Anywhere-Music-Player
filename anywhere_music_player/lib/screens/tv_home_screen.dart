@@ -4,16 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/audio_player_service.dart';
 import '../services/library_scanner.dart';
-import '../models/folder.dart';
 import '../models/track.dart';
 import '../widgets/tv_player_controls.dart';
 
-/// Android TV optimized home screen with leanback design
-/// Features:
-/// - Large text and touch targets for 10-foot UI
-/// - D-pad navigation support with cross-pane focus management
-/// - Focus management for remote controls
-/// - Dark theme optimized for TV displays
+/// Android TV optimized home screen — simple "All Tracks" view with shuffle.
 class TvHomeScreen extends StatefulWidget {
   const TvHomeScreen({super.key});
 
@@ -22,26 +16,20 @@ class TvHomeScreen extends StatefulWidget {
 }
 
 class _TvHomeScreenState extends State<TvHomeScreen> {
-  List<Folder> _folders = [];
   List<Track> _tracks = [];
-  String? _selectedFolderPath;
 
-  // Focus scope nodes for cross-pane D-pad navigation.
-  // FocusScopeNode remembers the last focused child, so calling
-  // requestFocus() on a scope restores focus to the last item.
-  final _sidebarScopeNode = FocusScopeNode(debugLabel: 'sidebar');
-  final _gridScopeNode = FocusScopeNode(debugLabel: 'grid');
+  final _listScopeNode = FocusScopeNode(debugLabel: 'trackList');
   final _controlsScopeNode = FocusScopeNode(debugLabel: 'controls');
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadFolders();
+      _loadTracks();
     });
   }
 
-  void _loadFolders() {
+  void _loadTracks() {
     final scanner = context.read<LibraryScanner>();
     if (!scanner.hasScanned) {
       scanner.addListener(_onScannerChanged);
@@ -49,7 +37,8 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
       return;
     }
     setState(() {
-      _folders = scanner.getTopLevelFolders();
+      _tracks = List<Track>.from(scanner.allTracks)
+        ..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
     });
   }
 
@@ -58,45 +47,32 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
     if (scanner.hasScanned) {
       scanner.removeListener(_onScannerChanged);
       setState(() {
-        _folders = scanner.getTopLevelFolders();
+        _tracks = List<Track>.from(scanner.allTracks)
+          ..sort(
+              (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
       });
     }
   }
 
   @override
   void dispose() {
-    _sidebarScopeNode.dispose();
-    _gridScopeNode.dispose();
+    _listScopeNode.dispose();
     _controlsScopeNode.dispose();
     super.dispose();
   }
 
-  void _loadTracks(Folder folder) {
-    final scanner = context.read<LibraryScanner>();
-    final contents = scanner.getFolderContents(folder.folderPath);
-    setState(() {
-      _selectedFolderPath = folder.folderPath;
-      _tracks = contents.tracks;
-    });
-  }
-
-  void _playTrack(Track track, int index) {
+  void _playTrack(int index) {
     final audioPlayer = context.read<AudioPlayerService>();
     audioPlayer.playPlaylist(_tracks, index);
   }
 
-  /// Handle TV remote back button:
-  /// - If a folder is selected → deselect it
-  /// - Otherwise → exit the app
-  void _handleBackButton() {
-    if (_selectedFolderPath != null) {
-      setState(() {
-        _selectedFolderPath = null;
-        _tracks = [];
-      });
-    } else {
-      SystemNavigator.pop();
+  void _shuffleAll() {
+    if (_tracks.isEmpty) return;
+    final audioPlayer = context.read<AudioPlayerService>();
+    if (!audioPlayer.isShuffleEnabled) {
+      audioPlayer.toggleShuffle();
     }
+    audioPlayer.playPlaylist(_tracks, 0);
   }
 
   @override
@@ -104,40 +80,20 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _handleBackButton();
+        if (!didPop) SystemNavigator.pop();
       },
       child: Scaffold(
         backgroundColor: const Color(0xFF0F0F0F),
         body: Stack(
           children: [
-            // Main content
             SafeArea(
-              child: Row(
-                children: [
-                  // Left sidebar - Folders list
-                  SizedBox(
-                    width: 400,
-                    child: FocusScope(
-                      node: _sidebarScopeNode,
-                      child: FocusTraversalGroup(
-                        child: _buildFoldersList(),
-                      ),
-                    ),
-                  ),
-
-                  // Right content - Tracks grid
-                  Expanded(
-                    child: FocusScope(
-                      node: _gridScopeNode,
-                      child: FocusTraversalGroup(
-                        child: _buildTracksGrid(),
-                      ),
-                    ),
-                  ),
-                ],
+              child: FocusScope(
+                node: _listScopeNode,
+                child: FocusTraversalGroup(
+                  child: _buildBody(),
+                ),
               ),
             ),
-
             // Player controls overlay at bottom
             Positioned(
               left: 0,
@@ -147,7 +103,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                 node: _controlsScopeNode,
                 child: FocusTraversalGroup(
                   child: TvPlayerControls(
-                    onNavigateUp: () => _gridScopeNode.requestFocus(),
+                    onNavigateUp: () => _listScopeNode.requestFocus(),
                   ),
                 ),
               ),
@@ -158,151 +114,97 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
     );
   }
 
-  Widget _buildFoldersList() {
-    return Container(
-      color: const Color(0xFF1A1A1A),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.all(32.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Anywhere Music',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Folders',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.grey[400],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Folders list
-          Expanded(
-            child: _folders.isEmpty
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
+  Widget _buildBody() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header with title and shuffle button
+        Padding(
+          padding: const EdgeInsets.fromLTRB(48, 32, 48, 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Anywhere Music',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
-                  )
-                : ListView.builder(
-                    itemCount: _folders.length,
-                    itemBuilder: (context, index) {
-                      final folder = _folders[index];
-                      final isSelected =
-                          folder.folderPath == _selectedFolderPath;
-
-                      return _TvFolderCard(
-                        folder: folder,
-                        isSelected: isSelected,
-                        onTap: () => _loadTracks(folder),
-                        autofocus: index == 0,
-                        onNavigateRight: () {
-                          if (_tracks.isNotEmpty) {
-                            _gridScopeNode.requestFocus();
-                          }
-                        },
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTracksGrid() {
-    if (_selectedFolderPath == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.music_note,
-              size: 120,
-              color: Colors.grey[700],
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Select a folder to view tracks',
-              style: TextStyle(
-                fontSize: 24,
-                color: Colors.grey[500],
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_tracks.length} tracks',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.grey[400],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_tracks.isEmpty) {
-      return Center(
-        child: Text(
-          'No tracks found',
-          style: TextStyle(
-            fontSize: 24,
-            color: Colors.grey[500],
+              _TvShuffleButton(
+                onPressed: _shuffleAll,
+                onNavigateDown: () => _controlsScopeNode.requestFocus(),
+                autofocus: _tracks.isNotEmpty,
+              ),
+            ],
           ),
         ),
-      );
-    }
 
-    return GridView.builder(
-      padding: const EdgeInsets.all(32),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        childAspectRatio: 2.5,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-      ),
-      itemCount: _tracks.length,
-      itemBuilder: (context, index) {
-        final track = _tracks[index];
-        return _TvTrackCard(
-          track: track,
-          onTap: () => _playTrack(track, index),
-          onNavigateLeft: () => _sidebarScopeNode.requestFocus(),
-          onNavigateDown: () => _controlsScopeNode.requestFocus(),
-        );
-      },
+        // Track list
+        Expanded(
+          child: _tracks.isEmpty
+              ? const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(32, 0, 32, 220),
+                  itemCount: _tracks.length,
+                  itemBuilder: (context, index) {
+                    final track = _tracks[index];
+                    return _TvTrackRow(
+                      track: track,
+                      onTap: () => _playTrack(index),
+                      onNavigateDown: () {
+                        // Jump to controls if at bottom of visible list
+                        final didMove = Actions.invoke(
+                          context,
+                          DirectionalFocusIntent(TraversalDirection.down),
+                        );
+                        if (didMove == null) {
+                          _controlsScopeNode.requestFocus();
+                        }
+                      },
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 }
 
-/// TV-optimized folder card with focus support
-class _TvFolderCard extends StatefulWidget {
-  final Folder folder;
-  final bool isSelected;
-  final VoidCallback onTap;
-  final VoidCallback onNavigateRight;
+/// Large shuffle button for the TV header
+class _TvShuffleButton extends StatefulWidget {
+  final VoidCallback onPressed;
+  final VoidCallback onNavigateDown;
   final bool autofocus;
 
-  const _TvFolderCard({
-    required this.folder,
-    required this.isSelected,
-    required this.onTap,
-    required this.onNavigateRight,
+  const _TvShuffleButton({
+    required this.onPressed,
+    required this.onNavigateDown,
     this.autofocus = false,
   });
 
   @override
-  State<_TvFolderCard> createState() => _TvFolderCardState();
+  State<_TvShuffleButton> createState() => _TvShuffleButtonState();
 }
 
-class _TvFolderCardState extends State<_TvFolderCard> {
+class _TvShuffleButtonState extends State<_TvShuffleButton> {
   bool _isFocused = false;
 
   @override
@@ -315,53 +217,42 @@ class _TvFolderCardState extends State<_TvFolderCard> {
           if (event.logicalKey == LogicalKeyboardKey.select ||
               event.logicalKey == LogicalKeyboardKey.enter ||
               event.logicalKey == LogicalKeyboardKey.space) {
-            widget.onTap();
+            widget.onPressed();
             return KeyEventResult.handled;
           }
-          if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-            widget.onNavigateRight();
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            widget.onNavigateDown();
             return KeyEventResult.handled;
           }
         }
         return KeyEventResult.ignored;
       },
       child: GestureDetector(
-        onTap: widget.onTap,
+        onTap: widget.onPressed,
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
           decoration: BoxDecoration(
-            color: widget.isSelected
-                ? const Color(0xFF2D5F9F)
-                : _isFocused
-                    ? const Color(0xFF2A2A2A)
-                    : const Color(0xFF1F1F1F),
-            borderRadius: BorderRadius.circular(8),
+            color: _isFocused ? Colors.white : const Color(0xFF2D5F9F),
+            borderRadius: BorderRadius.circular(32),
             border: _isFocused
                 ? Border.all(color: Colors.white, width: 3)
                 : null,
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.folder,
-                color: widget.isSelected ? Colors.white : Colors.grey[400],
-                size: 32,
+                Icons.shuffle,
+                size: 28,
+                color: _isFocused ? Colors.black : Colors.white,
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  widget.folder.displayName,
-                  style: TextStyle(
-                    fontSize: 20,
-                    color:
-                        widget.isSelected ? Colors.white : Colors.grey[300],
-                    fontWeight: widget.isSelected
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              const SizedBox(width: 12),
+              Text(
+                'Shuffle All',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: _isFocused ? Colors.black : Colors.white,
                 ),
               ),
             ],
@@ -372,29 +263,30 @@ class _TvFolderCardState extends State<_TvFolderCard> {
   }
 }
 
-/// TV-optimized track card with focus support
-class _TvTrackCard extends StatefulWidget {
+/// TV-optimized track row with focus support
+class _TvTrackRow extends StatefulWidget {
   final Track track;
   final VoidCallback onTap;
-  final VoidCallback onNavigateLeft;
   final VoidCallback onNavigateDown;
 
-  const _TvTrackCard({
+  const _TvTrackRow({
     required this.track,
     required this.onTap,
-    required this.onNavigateLeft,
     required this.onNavigateDown,
   });
 
   @override
-  State<_TvTrackCard> createState() => _TvTrackCardState();
+  State<_TvTrackRow> createState() => _TvTrackRowState();
 }
 
-class _TvTrackCardState extends State<_TvTrackCard> {
+class _TvTrackRowState extends State<_TvTrackRow> {
   bool _isFocused = false;
 
   @override
   Widget build(BuildContext context) {
+    final audioPlayer = context.watch<AudioPlayerService>();
+    final isPlaying = audioPlayer.currentTrack?.id == widget.track.id;
+
     return Focus(
       onFocusChange: (focused) => setState(() => _isFocused = focused),
       onKeyEvent: (node, event) {
@@ -405,98 +297,70 @@ class _TvTrackCardState extends State<_TvTrackCard> {
             widget.onTap();
             return KeyEventResult.handled;
           }
-          if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-            widget.onNavigateLeft();
-            return KeyEventResult.handled;
-          }
-          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-            // Let the grid handle normal down navigation first;
-            // only jump to controls if we can't move down in the grid.
-            final didMove = Actions.invoke(
-              context,
-              DirectionalFocusIntent(TraversalDirection.down),
-            );
-            if (didMove == null) {
-              widget.onNavigateDown();
-            }
-            return KeyEventResult.handled;
-          }
         }
         return KeyEventResult.ignored;
       },
       child: GestureDetector(
         onTap: widget.onTap,
         child: Container(
-          padding: const EdgeInsets.all(16),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           decoration: BoxDecoration(
-            color: _isFocused
-                ? const Color(0xFF2A2A2A)
-                : const Color(0xFF1A1A1A),
+            color: isPlaying
+                ? const Color(0xFF2D5F9F).withOpacity(0.3)
+                : _isFocused
+                    ? const Color(0xFF2A2A2A)
+                    : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             border: _isFocused
                 ? Border.all(color: Colors.white, width: 3)
-                : Border.all(color: const Color(0xFF2A2A2A), width: 1),
+                : null,
           ),
           child: Row(
             children: [
-              // Album art or placeholder
+              // Playing indicator or album art
               Container(
-                width: 60,
-                height: 60,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
                   color: Colors.grey[800],
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: widget.track.coverArtUrl != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: CachedNetworkImage(
-                          imageUrl: widget.track.coverArtUrl!,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) {
-                            return const Icon(
-                              Icons.music_note,
-                              color: Colors.white54,
-                              size: 32,
-                            );
-                          },
-                        ),
-                      )
-                    : const Icon(
-                        Icons.music_note,
-                        color: Colors.white54,
-                        size: 32,
-                      ),
+                child: isPlaying
+                    ? const Icon(Icons.equalizer, color: Color(0xFF2D5F9F), size: 28)
+                    : widget.track.coverArtUrl != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: CachedNetworkImage(
+                              imageUrl: widget.track.coverArtUrl!,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => const Icon(
+                                Icons.music_note,
+                                color: Colors.white54,
+                                size: 24,
+                              ),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.music_note,
+                            color: Colors.white54,
+                            size: 24,
+                          ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 20),
 
-              // Track info
+              // Track title
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      widget.track.title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      widget.track.formattedDuration,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[400],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                child: Text(
+                  widget.track.title,
+                  style: TextStyle(
+                    fontSize: 20,
+                    color: isPlaying ? const Color(0xFF5B9BF0) : Colors.white,
+                    fontWeight:
+                        isPlaying ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
 
@@ -505,7 +369,7 @@ class _TvTrackCardState extends State<_TvTrackCard> {
                 Text(
                   _formatDuration(widget.track.durationSeconds!),
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 18,
                     color: Colors.grey[500],
                   ),
                 ),

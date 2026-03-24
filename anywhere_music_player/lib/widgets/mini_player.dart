@@ -110,24 +110,19 @@ class _MiniProgressBar extends StatelessWidget {
     final playerService = context.read<AudioPlayerService>();
     return StreamBuilder<Duration>(
       stream: playerService.positionStream,
-      builder: (context, posSnapshot) {
-        return StreamBuilder<Duration?>(
-          stream: playerService.durationStream,
-          builder: (context, durSnapshot) {
-            final position = posSnapshot.data ?? Duration.zero;
-            final duration = durSnapshot.data ?? Duration.zero;
-            final progress = duration.inMilliseconds > 0
-                ? position.inMilliseconds / duration.inMilliseconds
-                : 0.0;
-            return LinearProgressIndicator(
-              value: progress.clamp(0.0, 1.0),
-              minHeight: 2,
-              backgroundColor: Colors.transparent,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                Theme.of(context).colorScheme.primary,
-              ),
-            );
-          },
+      builder: (context, snapshot) {
+        final position = snapshot.data ?? Duration.zero;
+        final duration = playerService.duration ?? Duration.zero;
+        final progress = duration.inMilliseconds > 0
+            ? position.inMilliseconds / duration.inMilliseconds
+            : 0.0;
+        return LinearProgressIndicator(
+          value: progress.clamp(0.0, 1.0),
+          minHeight: 2,
+          backgroundColor: Colors.transparent,
+          valueColor: AlwaysStoppedAnimation<Color>(
+            Theme.of(context).colorScheme.primary,
+          ),
         );
       },
     );

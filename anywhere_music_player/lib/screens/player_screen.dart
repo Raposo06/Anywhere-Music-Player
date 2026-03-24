@@ -35,21 +35,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     super.dispose();
   }
 
-  String _formatDuration(Duration? duration) {
-    if (duration == null) return '0:00';
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    final seconds = duration.inSeconds.remainder(60);
-
-    if (hours > 0) {
-      return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
-    } else {
-      return '${twoDigits(minutes)}:${twoDigits(seconds)}';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     // Use Selector for track changes (discrete, not high-frequency)
@@ -198,11 +183,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
       height: size,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withOpacity(0.3),
+            color: Color(0x4D000000),
             blurRadius: 20,
-            offset: const Offset(0, 10),
+            offset: Offset(0, 10),
           ),
         ],
       ),
