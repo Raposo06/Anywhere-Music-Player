@@ -65,7 +65,6 @@ class AudioPlayerService with ChangeNotifier {
   Duration? get bufferedPosition => _player?.bufferedPosition;
 
   bool get _isWindows => !kIsWeb && Platform.isWindows;
-  bool get _useSingleTrackMode => _isWindows;
 
   static const _appName = 'Anywhere Music Player';
 
@@ -94,7 +93,6 @@ class AudioPlayerService with ChangeNotifier {
       : _audioHandler = audioHandler;
 
   /// Lazily initialize the AudioPlayer and all stream listeners.
-  /// Called automatically before the first playback operation.
   void _ensurePlayerInitialized() {
     if (_playerInitialized) return;
     _playerInitialized = true;
@@ -118,25 +116,23 @@ class AudioPlayerService with ChangeNotifier {
       notifyListeners();
     });
 
-    // Track auto-advance (only for ConcatenatingAudioSource mode — Android/iOS).
-    if (!_useSingleTrackMode) {
-      _sequenceStateSubscription =
-          _player!.sequenceStateStream.listen((state) {
-        if (state == null || _isSkipping || _playlist.isEmpty) return;
-        final index = state.currentIndex;
-        if (index != _currentIndex &&
-            index >= 0 &&
-            index < _playlist.length) {
-          _currentIndex = index;
-          _currentTrack = _playlist[_currentIndex];
-          if (_audioHandler != null) {
-            _audioHandler!.updateTrackInfo(_currentTrack!);
-          }
-          _updateWindowsMetadata(_currentTrack);
-          notifyListeners();
+    // Track auto-advance via ConcatenatingAudioSource.
+    _sequenceStateSubscription =
+        _player!.sequenceStateStream.listen((state) {
+      if (state == null || _isSkipping || _playlist.isEmpty) return;
+      final index = state.currentIndex;
+      if (index != _currentIndex &&
+          index >= 0 &&
+          index < _playlist.length) {
+        _currentIndex = index;
+        _currentTrack = _playlist[_currentIndex];
+        if (_audioHandler != null) {
+          _audioHandler!.updateTrackInfo(_currentTrack!);
         }
-      });
-    }
+        _updateWindowsMetadata(_currentTrack);
+        notifyListeners();
+      }
+    });
 
     // Handle track completion.
     _playerStateSubscription = _player!.playerStateStream.listen((state) {
@@ -158,11 +154,6 @@ class AudioPlayerService with ChangeNotifier {
 
   /// Handle track completion with proper repeat/advance logic.
   Future<void> _handleCompletion() async {
-    if (_useSingleTrackMode) {
-      await _handleSingleTrackCompletion();
-      return;
-    }
-
     final isLastTrack = _currentIndex >= _playlist.length - 1;
     try {
       if (_repeatMode == RepeatMode.one) {
@@ -185,25 +176,6 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  /// Handle completion in single-track mode (Windows).
-  Future<void> _handleSingleTrackCompletion() async {
-    try {
-      if (_repeatMode == RepeatMode.one) {
-        await _player!.seek(Duration.zero);
-        _player!.play();
-      } else if (_playlist.isNotEmpty) {
-        final isLastTrack = _currentIndex >= _playlist.length - 1;
-        if (isLastTrack && _repeatMode == RepeatMode.off) {
-          return;
-        }
-        final nextIndex = isLastTrack ? 0 : _currentIndex + 1;
-        await _loadAndPlayIndex(nextIndex);
-      }
-    } catch (e) {
-      debugPrint('Error handling single-track completion: $e');
-    }
-  }
-
   Future<void> _initializeWindowsMediaControls() async {
     if (!_isWindows) return;
     try {
@@ -221,12 +193,7 @@ class AudioPlayerService with ChangeNotifier {
 
   void _handlePlaybackError(Object error) {
     final errorStr = error.toString();
-    if (_isWindows && errorStr.contains('Media error')) {
-      _lastError =
-          'Windows playback error. The audio format may not be supported.';
-    } else {
-      _lastError = 'Playback error: $errorStr';
-    }
+    _lastError = 'Playback error: $errorStr';
     debugPrint('Playback error: $errorStr');
     notifyListeners();
   }
@@ -258,25 +225,7 @@ class AudioPlayerService with ChangeNotifier {
     );
   }
 
-  AudioSource _buildSingleSource(Track track) {
-    return AudioSource.uri(
-      Uri.parse(track.streamUrl),
-      tag: MediaItem(
-        id: track.id,
-        title: track.title,
-        artist: '',
-        duration: track.durationSeconds != null
-            ? Duration(seconds: track.durationSeconds!)
-            : null,
-        artUri:
-            track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
-      ),
-    );
-  }
-
   /// Set the audio source and start playback.
-  /// On Windows, waits for the player to reach 'ready' state before playing,
-  /// because Windows Media Foundation ignores play() if the source isn't ready.
   Future<void> _setSourceAndPlay(AudioSource source,
       {int? initialIndex}) async {
     if (initialIndex != null) {
@@ -284,48 +233,7 @@ class AudioPlayerService with ChangeNotifier {
     } else {
       await _player!.setAudioSource(source);
     }
-
-    if (_useSingleTrackMode) {
-      // On Windows, wait until WMF has the source loaded and ready.
-      // setAudioSource resolves after loading, but WMF might need one
-      // more event loop turn before it accepts play().
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
-
     _player!.play();
-  }
-
-  /// Load a single track by playlist index and start playback (Windows).
-  Future<void> _loadAndPlayIndex(int index) async {
-    if (index < 0 || index >= _playlist.length) return;
-
-    _ensurePlayerInitialized();
-    final token = ++_loadToken;
-    _isLoading = true;
-    _isSkipping = true;
-    _currentIndex = index;
-    _currentTrack = _playlist[index];
-    notifyListeners();
-
-    try {
-      if (_audioHandler != null) {
-        _audioHandler!.updateTrackInfo(_currentTrack!);
-      }
-
-      final source = _buildSingleSource(_currentTrack!);
-      await _setSourceAndPlay(source);
-      if (token != _loadToken) return;
-      _updateWindowsMetadata(_currentTrack);
-    } catch (e) {
-      if (token != _loadToken) return;
-      _handlePlaybackError(e);
-    } finally {
-      if (token == _loadToken) {
-        _isLoading = false;
-        _isSkipping = false;
-        notifyListeners();
-      }
-    }
   }
 
   /// Play a single track.
@@ -346,9 +254,7 @@ class AudioPlayerService with ChangeNotifier {
         _audioHandler!.updateTrackInfo(track);
       }
 
-      final source = _useSingleTrackMode
-          ? _buildSingleSource(track)
-          : _buildPlaylistSource([track]);
+      final source = _buildPlaylistSource([track]);
       await _setSourceAndPlay(source);
       if (token != _loadToken) return;
       _updateWindowsMetadata(track);
@@ -393,13 +299,8 @@ class AudioPlayerService with ChangeNotifier {
         _audioHandler!.updateTrackInfo(_currentTrack!);
       }
 
-      if (_useSingleTrackMode) {
-        final source = _buildSingleSource(_currentTrack!);
-        await _setSourceAndPlay(source);
-      } else {
-        final source = _buildPlaylistSource(_playlist);
-        await _setSourceAndPlay(source, initialIndex: _currentIndex);
-      }
+      final source = _buildPlaylistSource(_playlist);
+      await _setSourceAndPlay(source, initialIndex: _currentIndex);
 
       if (token != _loadToken) return;
       _updateWindowsMetadata(_currentTrack);
@@ -433,12 +334,7 @@ class AudioPlayerService with ChangeNotifier {
 
     _currentTrack = _playlist[_currentIndex];
     notifyListeners();
-
-    if (_useSingleTrackMode) {
-      await _loadAndPlayIndex(_currentIndex);
-    } else {
-      await _skipToIndex(_currentIndex);
-    }
+    await _skipToIndex(_currentIndex);
   }
 
   /// Play previous track in playlist.
@@ -450,15 +346,10 @@ class AudioPlayerService with ChangeNotifier {
 
     _currentTrack = _playlist[_currentIndex];
     notifyListeners();
-
-    if (_useSingleTrackMode) {
-      await _loadAndPlayIndex(_currentIndex);
-    } else {
-      await _skipToIndex(_currentIndex);
-    }
+    await _skipToIndex(_currentIndex);
   }
 
-  /// Internal: skip to a specific index (Android/iOS ConcatenatingAudioSource).
+  /// Internal: skip to a specific index in the ConcatenatingAudioSource.
   Future<void> _skipToIndex(int index) async {
     final token = ++_skipToken;
     _isLoading = true;
@@ -539,17 +430,15 @@ class AudioPlayerService with ChangeNotifier {
         }
       }
 
-      if (!_useSingleTrackMode) {
-        try {
-          final source = _buildPlaylistSource(_playlist);
-          await _player!.setAudioSource(source, initialIndex: _currentIndex);
-          await _player!.seek(currentPosition);
-          if (wasPlaying) {
-            _player!.play();
-          }
-        } catch (e) {
-          debugPrint('Error rebuilding playlist after shuffle toggle: $e');
+      try {
+        final source = _buildPlaylistSource(_playlist);
+        await _player!.setAudioSource(source, initialIndex: _currentIndex);
+        await _player!.seek(currentPosition);
+        if (wasPlaying) {
+          _player!.play();
         }
+      } catch (e) {
+        debugPrint('Error rebuilding playlist after shuffle toggle: $e');
       }
     }
 

@@ -21,7 +21,8 @@ dependencies:
 
   # Audio Player
   just_audio: ^0.9.40
-  just_audio_windows: ^0.2.1
+  just_audio_media_kit: ^2.1.0
+  media_kit_libs_windows_audio: ^1.0.9
   audio_service: ^0.18.12
   smtc_windows: ^0.1.3
   windows_taskbar: ^1.1.2

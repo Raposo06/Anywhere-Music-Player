@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/audio_handler.dart';
@@ -17,6 +18,12 @@ import 'utils/platform_detector.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize media_kit backend for just_audio on desktop (replaces
+  // just_audio_windows which had WMF threading deadlocks on startup).
+  if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+    JustAudioMediaKit.ensureInitialized();
+  }
 
   // Initialize window manager early — must happen right after Flutter binding
   // init, before runApp(), per window_manager docs.
