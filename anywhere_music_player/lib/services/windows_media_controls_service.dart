@@ -5,8 +5,9 @@ import 'package:smtc_windows/smtc_windows.dart';
 import 'package:windows_taskbar/windows_taskbar.dart';
 import '../models/track.dart';
 
-/// Service to handle Windows System Media Transport Controls
+/// Service to handle Windows System Media Transport Controls.
 /// This enables taskbar thumbnail controls (play/pause, next, prev)
+/// and keyboard media key support.
 class WindowsMediaControlsService {
   static WindowsMediaControlsService? _instance;
   SMTCWindows? _smtc;
@@ -29,10 +30,10 @@ class WindowsMediaControlsService {
     return _instance!;
   }
 
-  /// Check if we're running on Windows
-  bool get isSupported => !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+  bool get isSupported =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
-  /// Initialize the Windows media controls
+  /// Initialize the Windows media controls.
   Future<void> initialize({
     VoidCallback? onPlay,
     VoidCallback? onPause,
@@ -40,9 +41,7 @@ class WindowsMediaControlsService {
     VoidCallback? onPrevious,
     VoidCallback? onStop,
   }) async {
-    if (!isSupported) return;
-
-    if (_isInitialized) return;
+    if (!isSupported || _isInitialized) return;
 
     this.onPlay = onPlay;
     this.onPause = onPause;
@@ -92,40 +91,34 @@ class WindowsMediaControlsService {
         },
         onError: (error) {
           debugPrint('SMTC button stream error: $error');
-          _handleStreamError();
         },
         cancelOnError: false,
       );
 
       _isInitialized = true;
-      await _initializeTaskbarButtons();
+      _initializeTaskbarButtons();
     } catch (e) {
-      debugPrint('⚠️ Failed to initialize Windows Media Controls: $e');
+      debugPrint('Failed to initialize Windows Media Controls: $e');
     }
   }
 
-  /// Initialize taskbar thumbnail toolbar buttons (prev, play/pause, next)
+  /// Initialize taskbar thumbnail toolbar buttons (prev, play/pause, next).
   Future<void> _initializeTaskbarButtons() async {
     if (_taskbarButtonsInitialized) return;
 
     try {
-      // Check if icon files exist
       final iconsExist = await _checkIconsExist();
-      if (!iconsExist) {
-        return;
-      }
+      if (!iconsExist) return;
 
       await _updateTaskbarButtons();
       _taskbarButtonsInitialized = true;
     } catch (e) {
-      debugPrint('⚠️ Failed to initialize taskbar buttons: $e');
+      debugPrint('Failed to initialize taskbar buttons: $e');
     }
   }
 
-  /// Check if required icon files exist
   Future<bool> _checkIconsExist() async {
     try {
-      // Try to load one of the icons to verify assets are available
       await rootBundle.load('assets/icons/play.ico');
       return true;
     } catch (e) {
@@ -133,13 +126,11 @@ class WindowsMediaControlsService {
     }
   }
 
-  /// Update taskbar buttons with current play state
+  /// Update taskbar buttons with current play state.
   Future<void> _updateTaskbarButtons() async {
-    if (!isSupported) return;
+    if (!isSupported || !_taskbarButtonsInitialized) return;
 
     try {
-      // Set taskbar buttons with actual callbacks
-      // Note: Taskbar button clicks are separate from keyboard events (SMTC buttonPressStream)
       await WindowsTaskbar.setThumbnailToolbar([
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon('assets/icons/prev.ico'),
@@ -148,7 +139,7 @@ class WindowsMediaControlsService {
         ),
         ThumbnailToolbarButton(
           ThumbnailToolbarAssetIcon(
-            _isPlaying ? 'assets/icons/pause.ico' : 'assets/icons/play.ico'
+            _isPlaying ? 'assets/icons/pause.ico' : 'assets/icons/play.ico',
           ),
           _isPlaying ? 'Pause' : 'Play',
           () {
@@ -166,51 +157,54 @@ class WindowsMediaControlsService {
         ),
       ]);
     } catch (e) {
-      debugPrint('⚠️ Failed to update taskbar buttons: $e');
+      debugPrint('Failed to update taskbar buttons: $e');
     }
   }
 
-  /// Update the metadata shown in Windows media overlay / taskbar
+  /// Update the metadata shown in Windows media overlay.
   Future<void> updateMetadata(Track track) async {
     if (!isSupported || !_isInitialized || _smtc == null) return;
 
     try {
       final title = track.title.isNotEmpty ? track.title : 'Unknown Track';
-      final artist = track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist';
+      final artist =
+          track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist';
       final thumbnail = track.coverArtUrl;
 
-      if (thumbnail != null && thumbnail.isNotEmpty) {
-        await _smtc!.updateMetadata(MusicMetadata(
-          title: title,
-          artist: artist,
-          album: artist,
-          thumbnail: thumbnail,
-        ));
-      } else {
-        await _smtc!.updateMetadata(MusicMetadata(
-          title: title,
-          artist: artist,
-          album: artist,
-        ));
-      }
+      await _smtc!.updateMetadata(MusicMetadata(
+        title: title,
+        artist: artist,
+        album: artist,
+        thumbnail: (thumbnail != null && thumbnail.isNotEmpty) ? thumbnail : null,
+      ));
     } catch (e) {
       debugPrint('Failed to update SMTC metadata: $e');
     }
   }
 
-  /// Update playback status
-  Future<void> updatePlaybackStatus({required bool isPlaying}) async {
-    if (!isSupported) return;
+  /// Update playback status (play/pause state).
+  void updatePlaybackStatus({required bool isPlaying}) {
+    if (!isSupported || !_isInitialized) return;
 
-    final bool playStateChanged = _isPlaying != isPlaying;
+    final bool changed = _isPlaying != isPlaying;
     _isPlaying = isPlaying;
 
-    if (_taskbarButtonsInitialized && playStateChanged) {
-      await _updateTaskbarButtons();
+    if (_smtc != null) {
+      try {
+        _smtc!.setPlaybackStatus(
+          isPlaying ? PlaybackStatus.Playing : PlaybackStatus.Paused,
+        );
+      } catch (e) {
+        debugPrint('Failed to update SMTC playback status: $e');
+      }
+    }
+
+    if (_taskbarButtonsInitialized && changed) {
+      _updateTaskbarButtons();
     }
   }
 
-  /// Clear metadata and disable controls
+  /// Clear metadata and disable controls.
   Future<void> clear() async {
     if (!isSupported || !_isInitialized || _smtc == null) return;
 
@@ -218,38 +212,19 @@ class WindowsMediaControlsService {
       await _smtc!.clearMetadata();
       await _smtc!.setPlaybackStatus(PlaybackStatus.Stopped);
     } catch (e) {
-      debugPrint('⚠️ Failed to clear SMTC: $e');
+      debugPrint('Failed to clear SMTC: $e');
     }
   }
 
-  /// Handle stream errors by attempting to recover
-  Future<void> _handleStreamError() async {
-    // Cancel existing subscription
-    await _buttonPressSubscription?.cancel();
-    _buttonPressSubscription = null;
-
-    // Mark as not initialized to allow re-initialization
-    _isInitialized = false;
-
-    // Try to reinitialize after a short delay
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    await initialize(
-      onPlay: onPlay,
-      onPause: onPause,
-      onNext: onNext,
-      onPrevious: onPrevious,
-      onStop: onStop,
-    );
-  }
-
-  /// Dispose the service
+  /// Dispose the service.
   Future<void> dispose() async {
     await _buttonPressSubscription?.cancel();
     _buttonPressSubscription = null;
 
     if (_smtc != null) {
-      await _smtc!.dispose();
+      try {
+        await _smtc!.dispose();
+      } catch (_) {}
       _smtc = null;
     }
     _isInitialized = false;

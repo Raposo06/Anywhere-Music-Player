@@ -18,38 +18,41 @@ import 'utils/platform_detector.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await dotenv.load(fileName: '.env');
-
-  // Initialize window manager for desktop (dynamic title)
+  // Initialize window manager early — must happen right after Flutter binding
+  // init, before runApp(), per window_manager docs.
   if (!kIsWeb && Platform.isWindows) {
     await windowManager.ensureInitialized();
   }
 
+  await dotenv.load(fileName: '.env');
+
   // Initialize native platform detection (Android TV detection)
   await PlatformDetector.initialize();
 
-  // Initialize audio service early for reliable background playback.
-  // The handler is created now but the AudioPlayer is attached later
-  // by AudioPlayerService via attachPlayer().
+  // Initialize audio service for Android/iOS background playback and
+  // lock screen controls. Skip on Windows — SMTC handles media controls there.
   MusicAudioHandler? audioHandler;
-  try {
-    audioHandler = await AudioService.init(
-      builder: () => MusicAudioHandler(),
-      config: const AudioServiceConfig(
-        androidNotificationChannelId: 'com.anywhere_music_player.audio',
-        androidNotificationChannelName: 'Music Playback',
-        androidNotificationChannelDescription: 'Controls for music playback',
-        androidNotificationOngoing: true,
-        androidStopForegroundOnPause: true,
-        androidNotificationClickStartsActivity: true,
-        androidNotificationIcon: 'mipmap/ic_launcher',
-        androidShowNotificationBadge: true,
-      ),
-    );
-    debugPrint('Audio service initialized successfully');
-  } catch (e, stackTrace) {
-    debugPrint('Audio service initialization failed: $e');
-    debugPrint('Stack trace: $stackTrace');
+  final bool isDesktop = !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+  if (!isDesktop) {
+    try {
+      audioHandler = await AudioService.init(
+        builder: () => MusicAudioHandler(),
+        config: const AudioServiceConfig(
+          androidNotificationChannelId: 'com.anywhere_music_player.audio',
+          androidNotificationChannelName: 'Music Playback',
+          androidNotificationChannelDescription: 'Controls for music playback',
+          androidNotificationOngoing: true,
+          androidStopForegroundOnPause: true,
+          androidNotificationClickStartsActivity: true,
+          androidNotificationIcon: 'mipmap/ic_launcher',
+          androidShowNotificationBadge: true,
+        ),
+      );
+      debugPrint('Audio service initialized successfully');
+    } catch (e, stackTrace) {
+      debugPrint('Audio service initialization failed: $e');
+      debugPrint('Stack trace: $stackTrace');
+    }
   }
 
   runApp(MyApp(audioHandler: audioHandler));
@@ -128,10 +131,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Initialize auth state from storage
-      await context.read<AuthService>().initialize();
+      if (mounted) {
+        await context.read<AuthService>().initialize();
+      }
       if (mounted) setState(() => _initialized = true);
       // Request notification permission for lock screen controls (Android 13+)
-      _requestNotificationPermission();
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        _requestNotificationPermission();
+      }
     });
   }
 
