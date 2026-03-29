@@ -95,17 +95,20 @@ lib/
 
 ## Key Dependencies
 
-| Package              | Purpose                                |
-|----------------------|----------------------------------------|
-| `just_audio`         | Cross-platform audio streaming         |
-| `audio_service`      | Background playback + media controls   |
-| `provider`           | State management                       |
-| `crypto`             | MD5 hashing for Subsonic auth tokens   |
-| `shared_preferences` | Local credential storage               |
-| `http`               | HTTP client for Subsonic API calls     |
-| `permission_handler` | Android notification permission        |
-| `smtc_windows`       | Windows system media transport controls|
-| `flutter_dotenv`     | Runtime `.env` configuration           |
+| Package                        | Purpose                                         |
+|--------------------------------|-------------------------------------------------|
+| `just_audio`                   | Cross-platform audio streaming                  |
+| `just_audio_media_kit`         | Windows/Linux audio backend (replaces WMF)      |
+| `media_kit_libs_windows_audio` | Native MPV audio libraries for Windows          |
+| `audio_service`                | Background playback + media controls            |
+| `provider`                     | State management                                |
+| `crypto`                       | MD5 hashing for Subsonic auth tokens            |
+| `shared_preferences`           | Local credential storage                        |
+| `http`                         | HTTP client for Subsonic API calls              |
+| `permission_handler`           | Android notification permission                 |
+| `smtc_windows`                 | Windows system media transport controls (SMTC)  |
+| `window_manager`               | Windows title bar and window management         |
+| `flutter_dotenv`               | Runtime `.env` configuration                    |
 
 ## Authentication
 

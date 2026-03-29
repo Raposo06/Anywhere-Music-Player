@@ -22,7 +22,14 @@ void main() async {
   // Initialize media_kit backend for just_audio on desktop (replaces
   // just_audio_windows which had WMF threading deadlocks on startup).
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
-    JustAudioMediaKit.ensureInitialized();
+    JustAudioMediaKit.ensureInitialized(
+      mpvOptions: {
+        'cache': 'yes',
+        'cache-secs': '30',
+        'demuxer-max-bytes': '32MiB',
+        'osc': 'no', // suppress "property not found osc" warning
+      },
+    );
   }
 
   // Initialize window manager early — must happen right after Flutter binding
