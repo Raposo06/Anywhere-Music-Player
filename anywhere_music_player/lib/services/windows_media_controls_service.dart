@@ -110,10 +110,11 @@ class WindowsMediaControlsService {
       final iconsExist = await _checkIconsExist();
       if (!iconsExist) return;
 
-      await _updateTaskbarButtons();
       _taskbarButtonsInitialized = true;
+      await _updateTaskbarButtons();
     } catch (e) {
       debugPrint('Failed to initialize taskbar buttons: $e');
+      _taskbarButtonsInitialized = false;
     }
   }
 

@@ -5,7 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../services/audio_player_service.dart';
 import '../services/library_scanner.dart';
 import '../models/track.dart';
-import '../widgets/tv_player_controls.dart';
+import 'tv_player_screen.dart';
 
 /// Android TV optimized home screen — simple "All Tracks" view with shuffle.
 class TvHomeScreen extends StatefulWidget {
@@ -17,9 +17,7 @@ class TvHomeScreen extends StatefulWidget {
 
 class _TvHomeScreenState extends State<TvHomeScreen> {
   List<Track> _tracks = [];
-
-  final _listScopeNode = FocusScopeNode(debugLabel: 'trackList');
-  final _controlsScopeNode = FocusScopeNode(debugLabel: 'controls');
+  final _trackListScopeNode = FocusScopeNode(debugLabel: 'trackList');
 
   @override
   void initState() {
@@ -56,14 +54,14 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
 
   @override
   void dispose() {
-    _listScopeNode.dispose();
-    _controlsScopeNode.dispose();
+    _trackListScopeNode.dispose();
     super.dispose();
   }
 
   void _playTrack(int index) {
     final audioPlayer = context.read<AudioPlayerService>();
     audioPlayer.playPlaylist(_tracks, index);
+    _openPlayer();
   }
 
   void _shuffleAll() {
@@ -73,6 +71,13 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
       audioPlayer.toggleShuffle();
     }
     audioPlayer.playPlaylist(_tracks, -1);
+    _openPlayer();
+  }
+
+  void _openPlayer() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const TvPlayerScreen()),
+    );
   }
 
   @override
@@ -84,31 +89,10 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
       },
       child: Scaffold(
         backgroundColor: const Color(0xFF0F0F0F),
-        body: Stack(
-          children: [
-            SafeArea(
-              child: FocusScope(
-                node: _listScopeNode,
-                child: FocusTraversalGroup(
-                  child: _buildBody(),
-                ),
-              ),
-            ),
-            // Player controls overlay at bottom
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: FocusScope(
-                node: _controlsScopeNode,
-                child: FocusTraversalGroup(
-                  child: TvPlayerControls(
-                    onNavigateUp: () => _listScopeNode.requestFocus(),
-                  ),
-                ),
-              ),
-            ),
-          ],
+        body: SafeArea(
+          child: FocusTraversalGroup(
+            child: _buildBody(),
+          ),
         ),
       ),
     );
@@ -146,9 +130,25 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                   ],
                 ),
               ),
+              // Now Playing button (only visible when a track is playing)
+              Selector<AudioPlayerService, bool>(
+                selector: (_, ps) => ps.currentTrack != null,
+                builder: (context, hasTrack, _) {
+                  if (!hasTrack) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 16),
+                    child: _TvHeaderButton(
+                      icon: Icons.music_note,
+                      label: 'Now Playing',
+                      onPressed: _openPlayer,
+                      onNavigateDown: () => _trackListScopeNode.requestFocus(),
+                    ),
+                  );
+                },
+              ),
               _TvShuffleButton(
                 onPressed: _shuffleAll,
-                onNavigateDown: () => _controlsScopeNode.requestFocus(),
+                onNavigateDown: () => _trackListScopeNode.requestFocus(),
                 autofocus: _tracks.isNotEmpty,
               ),
             ],
@@ -161,26 +161,19 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
               ? const Center(
                   child: CircularProgressIndicator(color: Colors.white),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(32, 0, 32, 220),
-                  itemCount: _tracks.length,
-                  itemBuilder: (context, index) {
-                    final track = _tracks[index];
-                    return _TvTrackRow(
-                      track: track,
-                      onTap: () => _playTrack(index),
-                      onNavigateDown: () {
-                        // Jump to controls if at bottom of visible list
-                        final didMove = Actions.invoke(
-                          context,
-                          DirectionalFocusIntent(TraversalDirection.down),
-                        );
-                        if (didMove == null) {
-                          _controlsScopeNode.requestFocus();
-                        }
-                      },
-                    );
-                  },
+              : FocusScope(
+                  node: _trackListScopeNode,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(32, 0, 32, 32),
+                    itemCount: _tracks.length,
+                    itemBuilder: (context, index) {
+                      final track = _tracks[index];
+                      return _TvTrackRow(
+                        track: track,
+                        onTap: () => _playTrack(index),
+                      );
+                    },
+                  ),
                 ),
         ),
       ],
@@ -191,12 +184,12 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
 /// Large shuffle button for the TV header
 class _TvShuffleButton extends StatefulWidget {
   final VoidCallback onPressed;
-  final VoidCallback onNavigateDown;
+  final VoidCallback? onNavigateDown;
   final bool autofocus;
 
   const _TvShuffleButton({
     required this.onPressed,
-    required this.onNavigateDown,
+    this.onNavigateDown,
     this.autofocus = false,
   });
 
@@ -220,8 +213,9 @@ class _TvShuffleButtonState extends State<_TvShuffleButton> {
             widget.onPressed();
             return KeyEventResult.handled;
           }
-          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-            widget.onNavigateDown();
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown &&
+              widget.onNavigateDown != null) {
+            widget.onNavigateDown!();
             return KeyEventResult.handled;
           }
         }
@@ -263,16 +257,91 @@ class _TvShuffleButtonState extends State<_TvShuffleButton> {
   }
 }
 
+/// Generic TV header button (used for "Now Playing" etc.)
+class _TvHeaderButton extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+  final VoidCallback? onNavigateDown;
+
+  const _TvHeaderButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.onNavigateDown,
+  });
+
+  @override
+  State<_TvHeaderButton> createState() => _TvHeaderButtonState();
+}
+
+class _TvHeaderButtonState extends State<_TvHeaderButton> {
+  bool _isFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      onFocusChange: (focused) => setState(() => _isFocused = focused),
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.select ||
+              event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.space) {
+            widget.onPressed();
+            return KeyEventResult.handled;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown &&
+              widget.onNavigateDown != null) {
+            widget.onNavigateDown!();
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: GestureDetector(
+        onTap: widget.onPressed,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+          decoration: BoxDecoration(
+            color: _isFocused ? Colors.white : const Color(0xFF2A2A2A),
+            borderRadius: BorderRadius.circular(32),
+            border: _isFocused
+                ? Border.all(color: Colors.white, width: 3)
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                widget.icon,
+                size: 28,
+                color: _isFocused ? Colors.black : Colors.white,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                widget.label,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: _isFocused ? Colors.black : Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// TV-optimized track row with focus support
 class _TvTrackRow extends StatefulWidget {
   final Track track;
   final VoidCallback onTap;
-  final VoidCallback onNavigateDown;
 
   const _TvTrackRow({
     required this.track,
     required this.onTap,
-    required this.onNavigateDown,
   });
 
   @override
@@ -327,7 +396,8 @@ class _TvTrackRowState extends State<_TvTrackRow> {
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: isPlaying
-                    ? const Icon(Icons.equalizer, color: Color(0xFF2D5F9F), size: 28)
+                    ? const Icon(Icons.equalizer,
+                        color: Color(0xFF2D5F9F), size: 28)
                     : widget.track.coverArtUrl != null
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(4),

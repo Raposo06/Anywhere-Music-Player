@@ -161,20 +161,34 @@ The app uses Subsonic token authentication: for every request it generates a ran
 
 ## Android TV
 
-The app automatically detects Android TV (via `UiModeManager`) and switches to a TV-optimized two-pane UI with large elements for 10-foot viewing.
+The app automatically detects Android TV (via `UiModeManager`) and switches to a TV-optimized UI with large elements for 10-foot viewing.
+
+### Screens
+
+**Track list screen** — shows all tracks alphabetically with a "Shuffle All" button in the header.
+
+**Full-screen player** — opens when a track starts playing. Shows large cover art, track title, progress bar, and playback controls. Press Back to return to the track list.
 
 ### Remote Control Navigation
 
+**Track list screen**
+
 | Button | Action |
 |--------|--------|
-| D-pad up/down | Navigate within the folder list or track grid |
-| D-pad right (from folder list) | Jump to track grid |
-| D-pad left (from track grid) | Return to folder list |
-| D-pad down (from last grid row) | Jump to player controls |
-| D-pad up (from player controls) | Return to track grid |
-| D-pad left/right (on player controls) | Move between Shuffle / Prev / Play / Next / Repeat |
-| Select / Enter | Open folder, play track, or activate button |
-| Back | Deselect folder (first press) → exit app (second press) |
+| D-pad up/down | Move between tracks |
+| D-pad down (from Shuffle All button) | Jump to first track |
+| Select / Enter | Play selected track |
+| Back | Exit app |
+
+**Full-screen player**
+
+| Button | Action |
+|--------|--------|
+| D-pad left/right | Move between Prev / Play-Pause / Next |
+| Select / Enter | Activate focused button |
+| Media Play/Pause | Toggle playback |
+| Media Next/Previous | Skip tracks |
+| Back | Return to track list |
 
 The Android manifest includes `LEANBACK_LAUNCHER` for TV launcher integration.
 
