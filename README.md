@@ -84,17 +84,6 @@ flutter build apk
 flutter build windows
 ```
 
-> **Windows note:** If the build fails with a MAX_PATH error, enable long path support:
-> ```powershell
-> reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f
-> ```
-> Restart your terminal and retry.
-
-**Web:**
-```bash
-flutter build web
-```
-
 ## Features
 
 - Folder-based music browsing (mirrors your server's filesystem structure)
