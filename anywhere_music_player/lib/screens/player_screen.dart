@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import '../utils/responsive.dart';
+import 'folder_detail_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -33,6 +34,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _previousFocusNode.dispose();
     _nextFocusNode.dispose();
     super.dispose();
+  }
+
+  void _openFolder(Track track) {
+    if (track.folderPath.isEmpty) return;
+    // Use folderName if available, otherwise extract the last path segment
+    final displayName = track.folderName.isNotEmpty
+        ? track.folderName
+        : track.folderPath.contains('/')
+            ? track.folderPath.substring(track.folderPath.lastIndexOf('/') + 1)
+            : track.folderPath;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FolderDetailScreen(
+          folderId: track.folderPath,
+          folderName: displayName,
+        ),
+      ),
+    );
   }
 
   @override
@@ -121,13 +140,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ),
               if (track.folderPath.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                Text(
-                  track.folderPath,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Colors.grey[600],
-                      ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => _openFolder(track),
+                    child: Text(
+                      track.folderPath,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Theme.of(context).colorScheme.primary,
+                          ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ),
               ],
               const SizedBox(height: 32),
@@ -172,14 +199,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ),
         if (track.folderPath.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Text(
-            track.folderPath,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.grey[600],
-                ),
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () => _openFolder(track),
+              child: Text(
+                track.folderPath,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      decoration: TextDecoration.underline,
+                      decorationColor: Theme.of(context).colorScheme.primary,
+                    ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ),
         ],
         const SizedBox(height: 32),
