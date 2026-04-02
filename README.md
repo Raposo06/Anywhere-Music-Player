@@ -108,9 +108,10 @@ anywhere_music_player/lib/
     home_screen.dart             # Folder browsing
     folder_detail_screen.dart    # Folder contents
     all_tracks_screen.dart       # All tracks list with search
-    player_screen.dart           # Now playing
+    player_screen.dart           # Now playing (mobile/desktop)
     main_screen.dart             # Main navigation shell
-    tv_home_screen.dart          # Android TV interface
+    tv_home_screen.dart          # Android TV track list
+    tv_player_screen.dart        # Android TV full-screen player
   services/
     subsonic_api_service.dart    # Subsonic API client
     auth_service.dart            # Auth (Subsonic token auth)
@@ -123,7 +124,6 @@ anywhere_music_player/lib/
     responsive.dart              # Responsive layout helpers
   widgets/
     mini_player.dart             # Mini player bar
-    tv_player_controls.dart      # TV player overlay
   main.dart                      # App entry point
 ```
 
