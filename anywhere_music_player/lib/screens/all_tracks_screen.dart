@@ -281,7 +281,40 @@ class _AllTracksTile extends StatelessWidget {
       builder: (context, currentTrackId, _) {
         final isCurrentTrack = currentTrackId == track.id;
 
-        return ListTile(
+        return Dismissible(
+          key: ValueKey('all-$index-${track.id}'),
+          direction: DismissDirection.startToEnd,
+          background: Container(
+            color: Colors.green.shade600,
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.queue_music, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Add to queue',
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+          confirmDismiss: (_) async {
+            final ps = context.read<AudioPlayerService>();
+            final messenger = ScaffoldMessenger.of(context);
+            final willQueue = ps.currentTrack != null;
+            await ps.addToQueue(track);
+            if (willQueue) {
+              messenger
+                ..hideCurrentSnackBar()
+                ..showSnackBar(SnackBar(
+                  content: Text('Added to queue: ${track.title}'),
+                  duration: const Duration(seconds: 2),
+                ));
+            }
+            return false;
+          },
+          child: ListTile(
           leading: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -329,6 +362,7 @@ class _AllTracksTile extends StatelessWidget {
               ? const Icon(Icons.equalizer, color: Colors.blue)
               : null,
           onTap: onTap,
+          ),
         );
       },
     );
