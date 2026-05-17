@@ -408,6 +408,18 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Seek the currently-loaded track to [position]. No-op if nothing is
+  /// loaded. Preserves the play/pause state — playback continues from the
+  /// new position if it was playing, stays paused otherwise.
+  Future<void> seek(Duration position) async {
+    if (_player == null || _currentTrack == null) return;
+    try {
+      await _player!.seek(position);
+    } catch (e) {
+      _handlePlaybackError(e);
+    }
+  }
+
   // -------- Queue API --------
 
   /// Append [track] to the end of the queue. No source mutation, no audio

@@ -135,4 +135,15 @@ class MusicAudioHandler extends BaseAudioHandler {
     await _player?.stop();
     await super.stop();
   }
+
+  /// Called by Android when the user swipes the app away from recents.
+  /// Default audio_service behaviour is to keep the foreground service alive
+  /// so audio can keep playing — we override that to fully tear down so the
+  /// notification disappears and the process can exit.
+  @override
+  Future<void> onTaskRemoved() async {
+    await _player?.stop();
+    await stop();
+    await super.onTaskRemoved();
+  }
 }

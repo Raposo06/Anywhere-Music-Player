@@ -48,7 +48,7 @@ void main() async {
           androidNotificationChannelId: 'com.anywhere_music_player.audio',
           androidNotificationChannelName: 'Music Playback',
           androidNotificationChannelDescription: 'Controls for music playback',
-          androidNotificationOngoing: true,
+          androidNotificationOngoing: false,
           androidStopForegroundOnPause: true,
           androidNotificationClickStartsActivity: true,
           androidNotificationIcon: 'mipmap/ic_launcher',

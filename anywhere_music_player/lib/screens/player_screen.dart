@@ -262,7 +262,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: track.coverArtUrl != null
             ? CachedNetworkImage(
                 imageUrl: track.coverArtUrl!,
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
                 errorWidget: (_, __, ___) => Container(
                   color: Colors.grey[800],
                   child: Icon(
@@ -299,6 +299,15 @@ class _ProgressBar extends StatefulWidget {
 }
 
 class _ProgressBarState extends State<_ProgressBar> {
+  // Drag state. While [_isDragging] is true the slider and time label
+  // follow [_dragValue] (a 0.0–1.0 fraction) instead of the position
+  // stream — this keeps the thumb glued to the user's finger and avoids
+  // stream-vs-gesture jitter. [_dragStartTrackId] is captured at drag
+  // start so we can discard the seek if the track auto-advanced mid-drag.
+  bool _isDragging = false;
+  double _dragValue = 0.0;
+  String? _dragStartTrackId;
+
   String _formatDuration(Duration? d) {
     if (d == null) return '0:00';
     String twoDigits(int n) => n.toString().padLeft(2, '0');
@@ -311,20 +320,53 @@ class _ProgressBarState extends State<_ProgressBar> {
     return '${twoDigits(minutes)}:${twoDigits(seconds)}';
   }
 
+  void _onChangeStart(double value) {
+    final ps = context.read<AudioPlayerService>();
+    setState(() {
+      _isDragging = true;
+      _dragValue = value;
+      _dragStartTrackId = ps.currentTrack?.id;
+    });
+  }
+
+  void _onChanged(double value) {
+    setState(() => _dragValue = value);
+  }
+
+  void _onChangeEnd(double value) {
+    final ps = context.read<AudioPlayerService>();
+    final stillSameTrack = ps.currentTrack?.id == _dragStartTrackId;
+    setState(() {
+      _isDragging = false;
+      _dragStartTrackId = null;
+    });
+    if (stillSameTrack && widget.duration > Duration.zero) {
+      final targetMs = (value * widget.duration.inMilliseconds).round();
+      ps.seek(Duration(milliseconds: targetMs));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final playerService = context.read<AudioPlayerService>();
+    final hasDuration = widget.duration > Duration.zero;
 
     return StreamBuilder<Duration>(
       stream: playerService.positionStream,
       builder: (context, snapshot) {
-        final position = snapshot.data ?? Duration.zero;
-        final streamProgress = widget.duration.inMilliseconds > 0
-            ? position.inMilliseconds / widget.duration.inMilliseconds
-            : 0.0;
+        final streamPosition = snapshot.data ?? Duration.zero;
 
-        final displayProgress = streamProgress.clamp(0.0, 1.0);
-        final displayPosition = position;
+        final displayFraction = _isDragging
+            ? _dragValue
+            : (hasDuration
+                ? streamPosition.inMilliseconds / widget.duration.inMilliseconds
+                : 0.0);
+
+        final displayPosition = _isDragging
+            ? Duration(
+                milliseconds:
+                    (_dragValue * widget.duration.inMilliseconds).round())
+            : streamPosition;
 
         return Column(
           children: [
@@ -336,8 +378,10 @@ class _ProgressBarState extends State<_ProgressBar> {
                 ),
               ),
               child: Slider(
-                value: displayProgress.clamp(0.0, 1.0),
-                onChanged: null,
+                value: displayFraction.clamp(0.0, 1.0),
+                onChanged: hasDuration ? _onChanged : null,
+                onChangeStart: hasDuration ? _onChangeStart : null,
+                onChangeEnd: hasDuration ? _onChangeEnd : null,
               ),
             ),
             Padding(
