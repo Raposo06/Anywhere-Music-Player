@@ -29,7 +29,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
 
   void _loadTracks() {
     final scanner = context.read<LibraryScanner>();
-    if (!scanner.hasScanned) {
+    if (!scanner.hasInitialData) {
       scanner.addListener(_onScannerChanged);
       scanner.scan();
       return;
@@ -42,7 +42,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
 
   void _onScannerChanged() {
     final scanner = context.read<LibraryScanner>();
-    if (scanner.hasScanned) {
+    if (scanner.hasInitialData) {
       scanner.removeListener(_onScannerChanged);
       setState(() {
         _tracks = List<Track>.from(scanner.allTracks)

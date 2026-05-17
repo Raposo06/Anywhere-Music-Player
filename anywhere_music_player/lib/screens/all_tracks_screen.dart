@@ -48,7 +48,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     if (!mounted) return;
     final scanner = context.read<LibraryScanner>();
 
-    if (!scanner.hasScanned) {
+    if (!scanner.hasInitialData) {
       // Scanner hasn't finished yet — wait for it
       setState(() => _isLoading = true);
       scanner.addListener(_onScannerUpdate);

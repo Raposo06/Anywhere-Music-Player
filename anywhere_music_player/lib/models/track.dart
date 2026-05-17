@@ -54,6 +54,24 @@ class Track {
     );
   }
 
+  /// Reconstruct a Track from its [toJson] representation (used by the
+  /// on-disk library cache). Inverse of [toJson].
+  factory Track.fromJson(Map<String, dynamic> json) => Track(
+    id:               json['id'] as String,
+    title:            json['title'] as String,
+    filename:         json['filename'] as String,
+    streamUrl:        json['stream_url'] as String,
+    coverArtUrl:      json['cover_art_url'] as String?,
+    folderPath:       json['folder_path'] as String,
+    folderName:      (json['folder_name'] as String?) ?? '',
+    durationSeconds:  json['duration_seconds'] as int?,
+    fileSizeBytes:    json['file_size_bytes'] as int?,
+    createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+        DateTime.now(),
+    artist:           json['artist'] as String?,
+    album:            json['album'] as String?,
+  );
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'title': title,

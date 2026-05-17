@@ -196,12 +196,15 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProxyProvider<AuthService, LibraryScanner>(
           create: (_) => LibraryScanner(null),
           update: (_, auth, previous) {
-            if (auth.isAuthenticated && auth.apiService != null) {
-              if (previous == null || !previous.hasApi) {
-                return LibraryScanner(auth.apiService!);
-              }
+            // Always reflect the current api reference. After logout the
+            // auth service disposes its api client, so we must drop our
+            // hold on it; on re-login a brand-new api is created and the
+            // scanner must rebind to it (otherwise we'd hit
+            // "Client is already closed" on the next request).
+            if (previous != null && identical(previous.api, auth.apiService)) {
+              return previous;
             }
-            return previous ?? LibraryScanner(null);
+            return LibraryScanner(auth.apiService);
           },
         ),
       ],

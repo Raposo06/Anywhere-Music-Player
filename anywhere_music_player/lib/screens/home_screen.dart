@@ -30,20 +30,44 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSearching = false;
   String? _searchError;
 
+  LibraryScanner? _scannerForListener;
+
   @override
   void initState() {
     super.initState();
-    // Trigger library scan on first load
+    // Trigger library scan on first load and watch for soft refresh errors.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<LibraryScanner>().scan();
+      if (!mounted) return;
+      final scanner = context.read<LibraryScanner>();
+      _scannerForListener = scanner;
+      scanner.addListener(_onScannerChanged);
+      scanner.scan();
     });
   }
 
   @override
   void dispose() {
+    _scannerForListener?.removeListener(_onScannerChanged);
     _searchController.dispose();
     _debounceTimer?.cancel();
     super.dispose();
+  }
+
+  /// Surface [LibraryScanner.refreshError] as a snackbar when a background
+  /// refresh fails while cached data is on screen. Clears the error on the
+  /// scanner so it fires once per failure.
+  void _onScannerChanged() {
+    if (!mounted) return;
+    final scanner = _scannerForListener;
+    final message = scanner?.refreshError;
+    if (message == null) return;
+    scanner!.clearRefreshError();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 3),
+      ));
   }
 
   SubsonicApiService? get _api => context.read<AuthService>().apiService;
@@ -101,6 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _handleLogout() async {
     await context.read<AudioPlayerService>().stop();
+    await context.read<LibraryScanner>().resetAndClearCache();
     await context.read<AuthService>().logout();
   }
 
@@ -223,17 +248,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
-                    if (scanner.isScanning)
+                    if (scanner.hasInitialData)
+                      Text(
+                        '${scanner.allTracks.length} tracks',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                      ),
+                    if (scanner.isScanning) ...[
+                      if (scanner.hasInitialData) const SizedBox(width: 8),
                       const SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                    if (scanner.hasScanned && !scanner.isScanning)
-                      Text(
-                        '${scanner.allTracks.length} tracks',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                      ),
+                    ],
                   ],
                 ),
               ),
@@ -257,7 +284,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final horizontalPadding = Responsive.getHorizontalPadding(context);
     final isDesktop = Responsive.isDesktopOrLarger(context);
 
-    if (scanner.isScanning && !scanner.hasScanned) {
+    if (scanner.isScanning && !scanner.hasInitialData) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

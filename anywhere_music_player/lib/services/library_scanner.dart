@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
 import 'subsonic_api_service.dart';
+import 'library_cache.dart';
 
 /// Scans the entire Navidrome library and builds a virtual folder tree
 /// from the file paths of each track (e.g., "Anime/Naruto/song.mp3").
@@ -14,46 +16,80 @@ class LibraryScanner with ChangeNotifier {
   List<Track> _allTracks = [];
   Map<String, _FolderNode> _rootNodes = {};
   bool _isScanning = false;
-  bool _hasScanned = false;
+  bool _hasInitialData = false;
   String? _error;
+  String? _refreshError;
 
   LibraryScanner(this._api);
 
   /// Whether this scanner has a valid API connection.
   bool get hasApi => _api != null;
 
+  /// The api client this scanner was constructed with. Exposed so the
+  /// provider layer can detect identity changes after logout/login and
+  /// rebuild the scanner with the fresh client.
+  SubsonicApiService? get api => _api;
+
   bool get isScanning => _isScanning;
-  bool get hasScanned => _hasScanned;
+
+  /// True once we have *any* library data to display — either from the
+  /// on-disk cache or from a fresh scan. The UI uses this to decide whether
+  /// to show the full-screen "Scanning library..." spinner.
+  bool get hasInitialData => _hasInitialData;
+
+  /// Fatal error from the initial load (no cache + scan failed). Blocks UI.
   String? get error => _error;
+
+  /// Soft error from a background refresh when cached data is already shown.
+  /// UI should surface this as a snackbar then clear it via
+  /// [clearRefreshError]. Doesn't block browsing.
+  String? get refreshError => _refreshError;
+
   List<Track> get allTracks => _allTracks;
 
-  /// Scan the entire library using Navidrome's native REST API.
-  /// This fetches all songs with their real filesystem paths, then builds
-  /// the folder tree from those paths.
+  void clearRefreshError() {
+    if (_refreshError == null) return;
+    _refreshError = null;
+    notifyListeners();
+  }
+
+  /// Cache-first scan. On cold start:
+  ///   1. Load the on-disk cache (if any) and render it immediately.
+  ///   2. Always kick off a fresh network scan in the background.
+  ///   3. On success, overwrite both in-memory state and the cache.
+  ///   4. On background failure with cache already shown, surface a soft
+  ///      [refreshError] (snackbar) — keep showing the cached data.
   Future<void> scan() async {
     if (_isScanning) return;
-    if (_hasScanned) return; // Already scanned this session
 
     _isScanning = true;
     _error = null;
+    _refreshError = null;
     notifyListeners();
 
+    // ── Phase 1: hydrate from cache if we have no data yet ────────────────
+    if (!_hasInitialData) {
+      final cached = await LibraryCache.load();
+      if (cached != null && cached.isNotEmpty) {
+        debugPrint('LibraryScanner: hydrated ${cached.length} tracks from cache');
+        _allTracks = cached;
+        _buildFolderTree();
+        _hasInitialData = true;
+        notifyListeners();
+      }
+    }
+
+    // ── Phase 2: always refetch from the network ──────────────────────────
     try {
       if (_api == null) {
-        _error = 'Not connected to server';
+        if (!_hasInitialData) _error = 'Not connected to server';
         return;
       }
 
-      debugPrint('LibraryScanner: Fetching all songs via Navidrome native API...');
+      debugPrint('LibraryScanner: fetching all songs via Navidrome native API...');
       final rawSongs = await _api!.getAllSongsNativeApi();
-      debugPrint('LibraryScanner: Got ${rawSongs.length} songs from native API');
+      debugPrint('LibraryScanner: got ${rawSongs.length} songs from native API');
 
-      // Debug: log a few paths to verify they're real filesystem paths
-      for (final song in rawSongs.take(10)) {
-        debugPrint('LibraryScanner: native path="${song['path']}" title="${song['title']}"');
-      }
-
-      // Convert native API songs to Track objects
       final tracks = <Track>[];
       for (final song in rawSongs) {
         final songId = song['id']?.toString() ?? '';
@@ -77,29 +113,48 @@ class LibraryScanner with ChangeNotifier {
         ));
       }
 
-      debugPrint('LibraryScanner: Converted ${tracks.length} tracks');
-
       _allTracks = tracks;
       _buildFolderTree();
-      final topFolders = getTopLevelFolders();
-      debugPrint('LibraryScanner: Built ${topFolders.length} top-level folders: ${topFolders.map((f) => f.folderPath).join(', ')}');
-      _hasScanned = true;
+      _hasInitialData = true;
+
+      // Persist for the next cold start. Fire-and-forget; failures don't
+      // affect the user-visible state.
+      unawaited(LibraryCache.save(tracks));
     } catch (e) {
-      debugPrint('LibraryScanner: Error scanning library: $e');
-      _error = 'Failed to scan library: $e';
+      debugPrint('LibraryScanner: error scanning library: $e');
+      if (_hasInitialData) {
+        // We already rendered cached data; degrade gracefully.
+        _refreshError = "Couldn't refresh library — showing offline data";
+      } else {
+        _error = 'Failed to scan library: $e';
+      }
     } finally {
       _isScanning = false;
       notifyListeners();
     }
   }
 
-  /// Force a rescan (clears cache).
+  /// Force a rescan (network-only, ignores existing cache contents).
+  /// Still updates the on-disk cache on success.
   Future<void> rescan() async {
-    _hasScanned = false;
     _allTracks = [];
     _rootNodes = {};
+    _hasInitialData = false;
     _api?.clearCache();
     await scan();
+  }
+
+  /// Reset all in-memory state and delete the on-disk cache. Called from
+  /// logout flows so the next login starts with a clean library.
+  Future<void> resetAndClearCache() async {
+    _allTracks = [];
+    _rootNodes = {};
+    _hasInitialData = false;
+    _isScanning = false;
+    _error = null;
+    _refreshError = null;
+    await LibraryCache.clear();
+    notifyListeners();
   }
 
   /// Build the virtual folder tree from track file paths.
