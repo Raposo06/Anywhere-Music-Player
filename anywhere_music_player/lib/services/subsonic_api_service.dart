@@ -89,7 +89,11 @@ class SubsonicApiService {
   /// Build a stream URL for a song (with auth params baked in).
   String buildStreamUrl(String songId) {
     final baseUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
-    return '$baseUrl/rest/stream?id=$songId&estimateContentLength=true&${_authQueryString()}';
+    // format=raw → Navidrome serves the original file untouched (no transcoding).
+    // Required for ExoPlayer (Android) to honor HTTP Range requests and
+    // therefore for mid-track seeking to actually work. Without it, seeks
+    // restart the stream from the beginning.
+    return '$baseUrl/rest/stream?id=$songId&format=raw&estimateContentLength=true&${_authQueryString()}';
   }
 
   /// Build a cover art URL (with auth params baked in).
