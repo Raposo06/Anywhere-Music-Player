@@ -293,9 +293,9 @@ class AudioPlayerService with ChangeNotifier {
       await _player!.setShuffleModeEnabled(_isShuffleEnabled);
       await _player!.setAudioSource(source, initialIndex: resolvedStart);
       if (_isShuffleEnabled) {
-        // Regenerate the shuffle order so the chosen track plays first and
-        // seekToNext follows a fresh random sequence.
-        await source.shuffle(initialIndex: resolvedStart);
+        // Regenerate the shuffle order so seekToNext follows a fresh random
+        // sequence with the chosen track anchored first.
+        await _player!.shuffle();
       }
 
       _player!.play();
@@ -310,6 +310,95 @@ class AudioPlayerService with ChangeNotifier {
         _isLoading = false;
         notifyListeners();
       }
+    }
+  }
+
+  /// Insert [track] into the queue immediately after the current track.
+  /// If nothing is playing, falls back to starting playback with [track].
+  Future<void> addToQueue(Track track) async {
+    if (_currentTrack == null || _player == null) {
+      await playTrack(track);
+      return;
+    }
+
+    final source = _player!.audioSource;
+    if (source is! ConcatenatingAudioSource) return;
+
+    final insertIndex = _currentIndex + 1;
+    _playlist.insert(insertIndex, track);
+
+    final newSource = AudioSource.uri(
+      Uri.parse(track.streamUrl),
+      tag: MediaItem(
+        id: track.id,
+        title: track.title,
+        artist: '',
+        duration: track.durationSeconds != null
+            ? Duration(seconds: track.durationSeconds!)
+            : null,
+        artUri:
+            track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
+      ),
+    );
+
+    try {
+      await source.insert(insertIndex, newSource);
+    } catch (e) {
+      debugPrint('Error inserting track into queue: $e');
+      _playlist.removeAt(insertIndex);
+      return;
+    }
+
+    notifyListeners();
+  }
+
+  /// Remove a track from the queue by its playlist index. The currently
+  /// playing track cannot be removed.
+  Future<void> removeFromQueue(int playlistIndex) async {
+    if (_player == null) return;
+    if (playlistIndex < 0 || playlistIndex >= _playlist.length) return;
+    if (playlistIndex == _currentIndex) return;
+
+    final source = _player!.audioSource;
+    if (source is! ConcatenatingAudioSource) return;
+
+    try {
+      await source.removeAt(playlistIndex);
+      _playlist.removeAt(playlistIndex);
+      if (playlistIndex < _currentIndex) {
+        _currentIndex--;
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error removing from queue: $e');
+    }
+  }
+
+  /// Reorder a track in the queue. Cannot move the currently playing track
+  /// and cannot move other tracks into the current track's slot.
+  Future<void> moveInQueue(int oldIndex, int newIndex) async {
+    if (_player == null) return;
+    if (oldIndex < 0 || oldIndex >= _playlist.length) return;
+    if (newIndex < 0 || newIndex >= _playlist.length) return;
+    if (oldIndex == newIndex) return;
+    if (oldIndex == _currentIndex || newIndex == _currentIndex) return;
+
+    final source = _player!.audioSource;
+    if (source is! ConcatenatingAudioSource) return;
+
+    try {
+      await source.move(oldIndex, newIndex);
+      final track = _playlist.removeAt(oldIndex);
+      _playlist.insert(newIndex, track);
+
+      if (oldIndex < _currentIndex && newIndex >= _currentIndex) {
+        _currentIndex--;
+      } else if (oldIndex > _currentIndex && newIndex <= _currentIndex) {
+        _currentIndex++;
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error moving in queue: $e');
     }
   }
 
@@ -370,12 +459,9 @@ class AudioPlayerService with ChangeNotifier {
     if (_player != null) {
       try {
         await _player!.setShuffleModeEnabled(_isShuffleEnabled);
-        if (_isShuffleEnabled) {
-          final source = _player!.audioSource;
-          if (source is ConcatenatingAudioSource && _currentIndex >= 0) {
-            // Regenerate the shuffle order so the current track plays first.
-            await source.shuffle(initialIndex: _currentIndex);
-          }
+        if (_isShuffleEnabled && _currentIndex >= 0) {
+          // Regenerate the shuffle order so the current track plays first.
+          await _player!.shuffle();
         }
       } catch (e) {
         debugPrint('Error toggling shuffle: $e');

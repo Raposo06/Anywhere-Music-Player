@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import '../utils/responsive.dart';
+import '../widgets/queue_sheet.dart';
 import 'folder_detail_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -86,6 +87,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
         return Scaffold(
           appBar: AppBar(
             title: const Text('Now Playing'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.queue_music),
+                tooltip: 'Queue',
+                onPressed: () => QueueSheet.show(context),
+              ),
+            ],
           ),
           body: Center(
             child: SingleChildScrollView(
