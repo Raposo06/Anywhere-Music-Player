@@ -100,8 +100,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleLogout() async {
-    final authService = context.read<AuthService>();
-    await authService.logout();
+    await context.read<AudioPlayerService>().stop();
+    await context.read<AuthService>().logout();
   }
 
   void _playTrack(Track track, List<Track> playlist) {
@@ -311,7 +311,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const Spacer(),
-                TextButton.icon(
+                ElevatedButton.icon(
                   onPressed: () {
                     final playerService = context.read<AudioPlayerService>();
                     if (!playerService.isShuffleEnabled) {
@@ -488,7 +488,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       subtitle: folder.subtitle.isNotEmpty ? Text(folder.subtitle) : null,
       trailing: IconButton(
-        icon: const Icon(Icons.play_circle_fill, size: 36, color: Colors.green),
+        icon: const Icon(Icons.play_circle_fill, size: 36, color: Color(0xFFF7C000)),
         onPressed: () => _playFolder(folder),
         tooltip: 'Play all tracks in this folder',
       ),
@@ -547,10 +547,8 @@ class _HomeScreenState extends State<HomeScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.play_circle_fill, color: Colors.green),
-                  iconSize: 28,
-                  padding: const EdgeInsets.all(4),
-                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.play_circle_fill, color: Color(0xFFF7C000)),
+                  iconSize: 36,
                   onPressed: () => _playFolder(folder),
                   tooltip: 'Play all',
                 ),

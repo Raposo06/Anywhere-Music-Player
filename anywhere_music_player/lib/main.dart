@@ -65,6 +65,112 @@ void main() async {
   runApp(MyApp(audioHandler: audioHandler));
 }
 
+// ── PS1 Classic theme: deep navy background with PlayStation button colours ───
+ThemeData _retroTheme() {
+  // PlayStation button colours
+  const psBlue   = Color(0xFF003791); // primary
+  const psRed    = Color(0xFFE8112D); // secondary / error
+  const psYellow = Color(0xFFF7C000); // tertiary
+  const psGreen  = Color(0xFF00973B); // accents
+
+  // Navy background tones (inspired by the PS1 boot screen)
+  const bgDeep    = Color(0xFF0A1628); // scaffold
+  const bgSurface = Color(0xFF142040); // app bar, bottom nav, sheets
+  const bgCard    = Color(0xFF1C2E55); // cards, list tiles
+  const outline   = Color(0xFF2A3F6F); // borders, dividers
+
+  const scheme = ColorScheme.dark(
+    primary:            psBlue,
+    onPrimary:          Colors.white,
+    primaryContainer:   Color(0xFF001A5C),
+    onPrimaryContainer: Colors.white,
+    secondary:          psRed,
+    onSecondary:        Colors.white,
+    tertiary:           psYellow,
+    onTertiary:         Colors.black,
+    surface:            bgSurface,
+    onSurface:          Colors.white,
+    // ignore: deprecated_member_use
+    background:         bgDeep,
+    // ignore: deprecated_member_use
+    onBackground:       Colors.white,
+    error:              psRed,
+    onError:            Colors.white,
+    surfaceContainerHighest: bgCard,
+    onSurfaceVariant:   Color(0xFFB8C8E8),
+    outline:            outline,
+  );
+
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: scheme,
+    scaffoldBackgroundColor: bgDeep,
+
+    appBarTheme: const AppBarTheme(
+      backgroundColor: bgSurface,
+      foregroundColor: Colors.white,
+      elevation: 0,
+      surfaceTintColor: Colors.transparent,
+    ),
+
+    cardTheme: const CardThemeData(
+      color: bgCard,
+      surfaceTintColor: Colors.transparent,
+      elevation: 4,
+    ),
+
+    dividerTheme: const DividerThemeData(color: outline),
+
+    listTileTheme: const ListTileThemeData(
+      iconColor: Color(0xFFB8C8E8),
+      textColor: Colors.white,
+    ),
+
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: psBlue,
+        foregroundColor: Colors.white,
+      ),
+    ),
+
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(foregroundColor: psGreen),
+    ),
+
+    inputDecorationTheme: const InputDecorationTheme(
+      border: OutlineInputBorder(),
+      enabledBorder: OutlineInputBorder(
+        borderSide: BorderSide(color: outline),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderSide: BorderSide(color: psBlue, width: 2),
+      ),
+      labelStyle: TextStyle(color: Color(0xFFB8C8E8)),
+      hintStyle: TextStyle(color: Color(0xFF6080A8)),
+      prefixIconColor: Color(0xFFB8C8E8),
+    ),
+
+    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      backgroundColor: bgSurface,
+      selectedItemColor: psYellow,
+      unselectedItemColor: Color(0xFF6080A8),
+    ),
+
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: bgSurface,
+      indicatorColor: const Color(0xFF001A5C),
+      iconTheme: WidgetStateProperty.all(
+        const IconThemeData(color: Colors.white),
+      ),
+    ),
+
+    snackBarTheme: const SnackBarThemeData(
+      backgroundColor: bgCard,
+      contentTextStyle: TextStyle(color: Colors.white),
+    ),
+  );
+}
+
 class MyApp extends StatelessWidget {
   final MusicAudioHandler? audioHandler;
 
@@ -102,21 +208,8 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Anywhere Music Player',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.blue,
-            brightness: Brightness.light,
-          ),
-          useMaterial3: true,
-        ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.blue,
-            brightness: Brightness.dark,
-          ),
-          useMaterial3: true,
-        ),
-        themeMode: ThemeMode.system,
+        theme: _retroTheme(),
+        themeMode: ThemeMode.dark,
         home: const AuthWrapper(),
       ),
     );

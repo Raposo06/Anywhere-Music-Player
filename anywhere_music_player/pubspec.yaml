@@ -74,3 +74,5 @@ flutter_launcher_icons:
     image_path: "assets/icons/psx.png"
   image_path: "assets/icons/psx.png"
   min_sdk_android: 21
+
+
