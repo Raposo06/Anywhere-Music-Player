@@ -121,10 +121,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Logo/Title
-                  const Icon(
-                    Icons.music_note,
-                    size: 80,
-                    color: Colors.blue,
+                  Image.asset(
+                    'assets/icons/ps1.png',
+                    width: 120,
+                    height: 120,
                   ),
                   const SizedBox(height: 16),
                   const Text(
@@ -137,7 +137,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Connect to your Navidrome server',
+                    'All your tracks, one place.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 16,

@@ -256,7 +256,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildFolderBrowser(LibraryScanner scanner) {
     final horizontalPadding = Responsive.getHorizontalPadding(context);
     final isDesktop = Responsive.isDesktopOrLarger(context);
-    final gridColumns = Responsive.getGridColumns(context);
 
     if (scanner.isScanning && !scanner.hasScanned) {
       return const Center(
@@ -357,8 +356,8 @@ class _HomeScreenState extends State<HomeScreen> {
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: gridColumns,
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 250,
                 crossAxisSpacing: 16,
                 mainAxisSpacing: 16,
                 childAspectRatio: 0.85,
