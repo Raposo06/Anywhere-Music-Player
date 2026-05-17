@@ -263,7 +263,9 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                   index: _isSearching ? _tracks.indexOf(track) : index,
                   onTap: () {
                     final playerService = context.read<AudioPlayerService>();
-                    playerService.playPlaylist(visibleTracks, index);
+                    // Always play from the full folder list so playback
+                    // continues through tracks not matched by the search.
+                    playerService.playPlaylist(_tracks, _tracks.indexOf(track));
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const PlayerScreen()),
                     );

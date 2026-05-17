@@ -17,6 +17,10 @@ class AllTracksScreen extends StatefulWidget {
 
 class _AllTracksScreenState extends State<AllTracksScreen> {
   final _searchController = TextEditingController();
+  // Full sorted library — always the source for playback so the queue keeps
+  // playing beyond the search results.
+  List<Track> _allTracks = [];
+  // What the user currently sees (either _allTracks or a filtered subset).
   List<Track> _tracks = [];
   bool _isLoading = false;
   String? _errorMessage;
@@ -55,6 +59,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
       ..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
 
     setState(() {
+      _allTracks = tracks;
       _tracks = tracks;
       _isLoading = false;
       _errorMessage = scanner.error;
@@ -103,8 +108,9 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
 
   void _playTrack(Track track) {
     final playerService = context.read<AudioPlayerService>();
-    final trackIndex = _tracks.indexOf(track);
-    playerService.playPlaylist(_tracks, trackIndex);
+    // Always play from the full library so playback continues past tracks
+    // that didn't match the current search.
+    playerService.playPlaylist(_allTracks, _allTracks.indexOf(track));
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
