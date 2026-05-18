@@ -97,6 +97,105 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     );
   }
 
+  /// Open a folder by its full virtual path. Used by the breadcrumb — always
+  /// pushes a fresh screen rather than trying to pop back to an existing one
+  /// in the stack, because the user may have arrived at the current folder
+  /// via a path that doesn't include the breadcrumb target (e.g. from search
+  /// or a deep-link). The back button will still unwind through real history.
+  ///
+  /// Exception: if [fullPath] is the auto-flattened root (e.g. the lone
+  /// top-level "Animes" folder whose children are surfaced directly on the
+  /// home screen), we pop the navigator back to home — opening a folder
+  /// screen for that path would just duplicate the home screen.
+  void _openFolderByPath(String fullPath, String displayName) {
+    final scanner = context.read<LibraryScanner>();
+    if (scanner.isFlattenedRoot(fullPath)) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FolderDetailScreen(
+          folderId: fullPath,
+          folderName: displayName,
+        ),
+      ),
+    );
+  }
+
+  void _goHome() {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  /// Build a clickable breadcrumb for the current folder path. Always shows
+  /// a home shortcut on the left; the path segments follow when the folder
+  /// has parents. Returns null only when there's nothing useful to show
+  /// (single-segment top-level folder — back button already does the job).
+  Widget? _buildBreadcrumb() {
+    final segments = widget.folderId.split('/').where((s) => s.isNotEmpty).toList();
+    if (segments.length <= 1) return null;
+
+    final theme = Theme.of(context);
+    final scanner = context.read<LibraryScanner>();
+    final linkColor = theme.colorScheme.primary;
+    final mutedColor = theme.colorScheme.onSurface.withValues(alpha: 0.5);
+    final children = <Widget>[
+      _BreadcrumbCrumb(
+        icon: Icons.home_rounded,
+        color: linkColor,
+        onTap: _goHome,
+        tooltip: 'Home',
+      ),
+    ];
+
+    var accumulated = '';
+    for (var i = 0; i < segments.length; i++) {
+      final segment = segments[i];
+      accumulated = accumulated.isEmpty ? segment : '$accumulated/$segment';
+      final isLast = i == segments.length - 1;
+      final pathForSegment = accumulated;
+
+      // The auto-flattened root (e.g. "Animes") is already represented by
+      // the home icon — rendering it again as a separate crumb would just
+      // be two buttons pointing at the same destination.
+      if (scanner.isFlattenedRoot(pathForSegment)) continue;
+
+      children.add(_BreadcrumbSeparator(color: mutedColor));
+
+      if (isLast) {
+        children.add(_BreadcrumbCrumb(
+          label: segment,
+          color: theme.colorScheme.onSurface,
+          bold: true,
+          onTap: null, // current folder — non-interactive
+        ));
+      } else {
+        children.add(_BreadcrumbCrumb(
+          label: segment,
+          color: linkColor,
+          onTap: () => _openFolderByPath(pathForSegment, segment),
+        ));
+      }
+    }
+
+    final horizontalPadding = Responsive.getHorizontalPadding(context);
+    return Container(
+      width: double.infinity,
+      color: theme.colorScheme.surface.withValues(alpha: 0.4),
+      padding: EdgeInsets.symmetric(
+        horizontal: horizontalPadding,
+        vertical: 6,
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: children,
+        ),
+      ),
+    );
+  }
+
   void _toggleSearch() {
     setState(() {
       _isSearching = !_isSearching;
@@ -181,8 +280,11 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
       return const Center(child: Text('No tracks match your search'));
     }
 
+    final breadcrumb = _isSearching ? null : _buildBreadcrumb();
+
     return Column(
       children: [
+        if (breadcrumb != null) breadcrumb,
         // Header with play buttons
         if (!_isSearching && _totalTrackCount > 0)
           Container(
@@ -382,6 +484,83 @@ class _FolderTrackTile extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// One segment of the breadcrumb — either a clickable parent link or the
+/// non-interactive current-folder label. Renders as a tappable chip with
+/// ripple feedback, matching the app's interaction style.
+class _BreadcrumbCrumb extends StatelessWidget {
+  final String? label;
+  final IconData? icon;
+  final Color color;
+  final bool bold;
+  final VoidCallback? onTap;
+  final String? tooltip;
+
+  const _BreadcrumbCrumb({
+    this.label,
+    this.icon,
+    required this.color,
+    this.bold = false,
+    this.onTap,
+    this.tooltip,
+  }) : assert(label != null || icon != null,
+            'Crumb must have either a label or an icon');
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: icon != null
+          ? Icon(icon, size: 18, color: color)
+          : Text(
+              label!,
+              style: TextStyle(
+                color: color,
+                fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+                fontSize: 14,
+              ),
+            ),
+    );
+
+    if (onTap == null) {
+      // Current folder — flat, no hover, no ripple, just typography.
+      return content;
+    }
+
+    final clickable = Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        hoverColor: color.withValues(alpha: 0.08),
+        splashColor: color.withValues(alpha: 0.16),
+        child: content,
+      ),
+    );
+
+    if (tooltip != null) {
+      return Tooltip(message: tooltip!, child: clickable);
+    }
+    return clickable;
+  }
+}
+
+/// Visual separator between breadcrumb crumbs. Pulled out so the styling
+/// stays consistent and the build method above stays compact.
+class _BreadcrumbSeparator extends StatelessWidget {
+  final Color color;
+
+  const _BreadcrumbSeparator({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Icon(Icons.chevron_right_rounded, size: 16, color: color),
     );
   }
 }

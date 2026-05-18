@@ -73,32 +73,42 @@ class SubsonicApiService {
   /// Build a full URL string with auth params (for embedding in stream/cover URLs).
   String _authQueryString() {
     final params = _authParams();
-    return params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
+    return params.entries
+        .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
+        .join('&');
   }
 
   /// Build the full URI for a Subsonic API endpoint.
   Uri _buildUri(String endpoint, [Map<String, String>? extraParams]) {
-    final baseUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
+    final baseUrl = serverUrl.endsWith('/')
+        ? serverUrl.substring(0, serverUrl.length - 1)
+        : serverUrl;
     final params = _authParams();
     if (extraParams != null) {
       params.addAll(extraParams);
     }
-    return Uri.parse('$baseUrl/rest/$endpoint').replace(queryParameters: params);
+    return Uri.parse(
+      '$baseUrl/rest/$endpoint',
+    ).replace(queryParameters: params);
   }
 
   /// Build a stream URL for a song (with auth params baked in).
+  ///
+  /// Always requests the original file. Android wraps this URL in
+  /// [LockCachingAudioSource] so ExoPlayer seeks against a local byte-range
+  /// cache instead of Navidrome's live transcoder output.
   String buildStreamUrl(String songId) {
-    final baseUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
-    // format=raw → Navidrome serves the original file untouched (no transcoding).
-    // Required for ExoPlayer (Android) to honor HTTP Range requests and
-    // therefore for mid-track seeking to actually work. Without it, seeks
-    // restart the stream from the beginning.
+    final baseUrl = serverUrl.endsWith('/')
+        ? serverUrl.substring(0, serverUrl.length - 1)
+        : serverUrl;
     return '$baseUrl/rest/stream?id=$songId&format=raw&estimateContentLength=true&${_authQueryString()}';
   }
 
   /// Build a cover art URL (with auth params baked in).
   String buildCoverArtUrl(String coverArtId, {int? size}) {
-    final baseUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
+    final baseUrl = serverUrl.endsWith('/')
+        ? serverUrl.substring(0, serverUrl.length - 1)
+        : serverUrl;
     final sizeParam = size != null ? '&size=$size' : '';
     return '$baseUrl/rest/getCoverArt?id=$coverArtId$sizeParam&${_authQueryString()}';
   }
@@ -156,7 +166,9 @@ class SubsonicApiService {
     if (_cache.length >= _maxCacheSize) {
       // Remove oldest entry
       final oldestKey = _cache.entries
-          .reduce((a, b) => a.value.timestamp.isBefore(b.value.timestamp) ? a : b)
+          .reduce(
+            (a, b) => a.value.timestamp.isBefore(b.value.timestamp) ? a : b,
+          )
           .key;
       _cache.remove(oldestKey);
     }
@@ -302,7 +314,9 @@ class SubsonicApiService {
 
   /// Get the children of a directory as folders and tracks.
   /// Returns ({folders: [...], tracks: [...]}).
-  Future<({List<Folder> folders, List<Track> tracks})> getDirectoryContents(String directoryId) async {
+  Future<({List<Folder> folders, List<Track> tracks})> getDirectoryContents(
+    String directoryId,
+  ) async {
     final data = await getMusicDirectory(directoryId);
 
     final directory = data['directory'] as Map<String, dynamic>?;
@@ -357,9 +371,7 @@ class SubsonicApiService {
   /// Useful for showing tracks immediately without requiring a search query.
   Future<List<Track>> getRandomSongs({int size = 100}) async {
     try {
-      final uri = _buildUri('getRandomSongs', {
-        'size': size.toString(),
-      });
+      final uri = _buildUri('getRandomSongs', {'size': size.toString()});
 
       final response = await _get(uri);
       final data = _parseResponse(response);
@@ -409,7 +421,10 @@ class SubsonicApiService {
 
       final items = albums is List ? albums : [albums];
       final result = items
-          .map((item) => Folder.fromSubsonic(item as Map<String, dynamic>, api: this))
+          .map(
+            (item) =>
+                Folder.fromSubsonic(item as Map<String, dynamic>, api: this),
+          )
           .toList();
 
       _putInCache(cacheKey, result);
@@ -459,7 +474,9 @@ class SubsonicApiService {
       if (albumList != null) {
         final items = albumList is List ? albumList : [albumList];
         for (final item in items) {
-          albums.add(Folder.fromSubsonic(item as Map<String, dynamic>, api: this));
+          albums.add(
+            Folder.fromSubsonic(item as Map<String, dynamic>, api: this),
+          );
         }
       }
 
@@ -472,18 +489,24 @@ class SubsonicApiService {
 
   /// Authenticate with Navidrome's native REST API and get a JWT token.
   Future<String> _getNativeApiToken() async {
-    final baseUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
+    final baseUrl = serverUrl.endsWith('/')
+        ? serverUrl.substring(0, serverUrl.length - 1)
+        : serverUrl;
     final uri = Uri.parse('$baseUrl/auth/login');
 
     try {
-      final response = await _httpClient.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'username': username, 'password': password}),
-      ).timeout(_httpTimeout);
+      final response = await _httpClient
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'username': username, 'password': password}),
+          )
+          .timeout(_httpTimeout);
 
       if (response.statusCode != 200) {
-        throw SubsonicApiException('Native API login failed: HTTP ${response.statusCode}');
+        throw SubsonicApiException(
+          'Native API login failed: HTTP ${response.statusCode}',
+        );
       }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -503,21 +526,27 @@ class SubsonicApiService {
   /// which is the real filesystem path (unlike the Subsonic API which returns
   /// tag-based virtual paths).
   Future<List<Map<String, dynamic>>> getAllSongsNativeApi() async {
-    final baseUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
+    final baseUrl = serverUrl.endsWith('/')
+        ? serverUrl.substring(0, serverUrl.length - 1)
+        : serverUrl;
     final token = await _getNativeApiToken();
     final allSongs = <Map<String, dynamic>>[];
     const pageSize = 500;
     var offset = 0;
 
     while (true) {
-      final uri = Uri.parse('$baseUrl/api/song?_start=$offset&_end=${offset + pageSize}&_order=ASC&_sort=path');
+      final uri = Uri.parse(
+        '$baseUrl/api/song?_start=$offset&_end=${offset + pageSize}&_order=ASC&_sort=path',
+      );
       try {
-        final response = await _httpClient.get(uri, headers: {
-          'x-nd-authorization': 'Bearer $token',
-        }).timeout(const Duration(seconds: 30));
+        final response = await _httpClient
+            .get(uri, headers: {'x-nd-authorization': 'Bearer $token'})
+            .timeout(const Duration(seconds: 30));
 
         if (response.statusCode != 200) {
-          throw SubsonicApiException('Native API error: HTTP ${response.statusCode}');
+          throw SubsonicApiException(
+            'Native API error: HTTP ${response.statusCode}',
+          );
         }
 
         final List<dynamic> songs = jsonDecode(response.body);
@@ -527,7 +556,9 @@ class SubsonicApiService {
           allSongs.add(song as Map<String, dynamic>);
         }
 
-        debugPrint('SubsonicApi: Fetched ${songs.length} songs (offset=$offset, total so far=${allSongs.length})');
+        debugPrint(
+          'SubsonicApi: Fetched ${songs.length} songs (offset=$offset, total so far=${allSongs.length})',
+        );
 
         if (songs.length < pageSize) break;
         offset += pageSize;

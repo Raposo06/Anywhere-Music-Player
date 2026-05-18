@@ -17,7 +17,8 @@
     <application
         android:label="Anywhere Music Player"
         android:icon="@mipmap/launcher_icon"
-        android:banner="@drawable/tv_banner">
+        android:banner="@drawable/tv_banner"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"

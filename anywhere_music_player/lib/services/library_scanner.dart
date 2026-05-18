@@ -68,8 +68,11 @@ class LibraryScanner with ChangeNotifier {
     notifyListeners();
 
     // ── Phase 1: hydrate from cache if we have no data yet ────────────────
-    if (!_hasInitialData) {
-      final cached = await LibraryCache.load();
+    // Requires an api client to recompute stream URLs from cached track ids.
+    // If we're logged out, skip the cache entirely — we have nothing to play
+    // anyway, and the api == null branch below will set the error state.
+    if (!_hasInitialData && _api != null) {
+      final cached = await LibraryCache.load(api: _api!);
       if (cached != null && cached.isNotEmpty) {
         debugPrint('LibraryScanner: hydrated ${cached.length} tracks from cache');
         _allTracks = cached;
@@ -213,6 +216,18 @@ class LibraryScanner with ChangeNotifier {
       }
     }
     return _rootNodes;
+  }
+
+  /// True iff [folderPath] is the single top-level folder that got
+  /// auto-flattened away by [_effectiveRoot]. The home screen already shows
+  /// its children directly, so UI surfaces (e.g. the folder breadcrumb)
+  /// should treat a tap on it as "go to home" rather than push a redundant
+  /// folder screen that duplicates the home screen's content.
+  bool isFlattenedRoot(String folderPath) {
+    final nonEmpty = _rootNodes.entries.where((e) => e.key.isNotEmpty).toList();
+    if (nonEmpty.length != 1) return false;
+    final only = nonEmpty.first;
+    return only.value.children.isNotEmpty && only.key == folderPath;
   }
 
   /// Get the top-level folders from the virtual folder tree.

@@ -61,8 +61,7 @@ class AudioPlayerService with ChangeNotifier {
       _player?.durationStream ?? _emptyNullDurationStream;
   Stream<Duration> get bufferedPositionStream =>
       _player?.bufferedPositionStream ?? _emptyDurationStream;
-  Stream<bool> get playingStream =>
-      _player?.playingStream ?? _emptyBoolStream;
+  Stream<bool> get playingStream => _player?.playingStream ?? _emptyBoolStream;
 
   AudioPlayer? get player => _player;
   Track? get currentTrack => _currentTrack;
@@ -96,7 +95,8 @@ class AudioPlayerService with ChangeNotifier {
         _initializeWindowsMediaControls().then((_) {
           _windowsMediaControls.updateMetadata(track);
           _windowsMediaControls.updatePlaybackStatus(
-              isPlaying: _player?.playing ?? false);
+            isPlaying: _player?.playing ?? false,
+          );
         });
       } else {
         _windowsMediaControls.updateMetadata(track);
@@ -107,7 +107,7 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   AudioPlayerService({MusicAudioHandler? audioHandler})
-      : _audioHandler = audioHandler;
+    : _audioHandler = audioHandler;
 
   /// Lazily initialize the AudioPlayer and stream listeners.
   void _ensurePlayerInitialized() {
@@ -174,20 +174,38 @@ class AudioPlayerService with ChangeNotifier {
 
   // -------- Source helpers --------
 
-  AudioSource _buildSource(Track track) => AudioSource.uri(
-        Uri.parse(track.streamUrl),
-        tag: MediaItem(
-          id: track.id,
-          title: track.title,
-          artist: '',
-          duration: track.durationSeconds != null
-              ? Duration(seconds: track.durationSeconds!)
-              : null,
-          artUri: track.coverArtUrl != null
-              ? Uri.parse(track.coverArtUrl!)
-              : null,
-        ),
-      );
+  MediaItem _buildMediaItem(Track track) => MediaItem(
+    id: track.id,
+    title: track.title,
+    artist: track.artist ?? '',
+    album: track.album ?? '',
+    duration: track.durationSeconds != null
+        ? Duration(seconds: track.durationSeconds!)
+        : null,
+    artUri: track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
+  );
+
+  AudioSource _buildSource(Track track) =>
+      AudioSource.uri(Uri.parse(track.streamUrl), tag: _buildMediaItem(track));
+
+  void _logStreamParams(Track track) {
+    final uri = Uri.tryParse(track.streamUrl);
+    final params = uri?.queryParameters ?? const <String, String>{};
+    final platform = kIsWeb
+        ? 'web'
+        : Platform.isAndroid
+        ? 'android'
+        : Platform.operatingSystem;
+
+    debugPrint(
+      'AudioPlayerService: loading stream '
+      'platform=$platform '
+      'format=${params['format'] ?? '(none)'} '
+      'maxBitRate=${params['maxBitRate'] ?? '(none)'} '
+      'estimateContentLength=${params['estimateContentLength'] ?? '(none)'} '
+      'trackId=${track.id}',
+    );
+  }
 
   /// Load [track] as the single audio source and start playback. Race-safe
   /// against rapid successive calls via [_loadToken].
@@ -199,6 +217,7 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
 
     try {
+      _logStreamParams(track);
       await _player!.setAudioSource(_buildSource(track));
       if (token != _loadToken) return;
       _player!.play();

@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -6,6 +8,13 @@ import '../services/audio_player_service.dart';
 import '../utils/responsive.dart';
 import '../widgets/queue_sheet.dart';
 import 'folder_detail_screen.dart';
+
+/// Whether mid-track seeking is supported on the current platform. Disabled
+/// on Android because ExoPlayer can't seek into Navidrome's HTTP stream for
+/// most file formats (VBR MP3, FLAC, OGG) — drags would silently fail or
+/// restart the song. The slider stays visible as a progress indicator but
+/// rejects user input.
+bool get _seekSupported => kIsWeb || !Platform.isAndroid;
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -244,7 +253,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Widget _buildAlbumArt(Track track, double size) {
-    return Container(
+    final art = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
@@ -280,6 +289,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   color: Colors.white54,
                 ),
               ),
+      ),
+    );
+
+    // Only wire up tap navigation when the track actually belongs to a
+    // folder (singletons / root-level tracks shouldn't pretend to be
+    // clickable).
+    if (track.folderPath.isEmpty) return art;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => _openFolder(track),
+        child: art,
       ),
     );
   }
@@ -350,6 +372,7 @@ class _ProgressBarState extends State<_ProgressBar> {
   Widget build(BuildContext context) {
     final playerService = context.read<AudioPlayerService>();
     final hasDuration = widget.duration > Duration.zero;
+    final canSeek = hasDuration && _seekSupported;
 
     return StreamBuilder<Duration>(
       stream: playerService.positionStream,
@@ -379,9 +402,9 @@ class _ProgressBarState extends State<_ProgressBar> {
               ),
               child: Slider(
                 value: displayFraction.clamp(0.0, 1.0),
-                onChanged: hasDuration ? _onChanged : null,
-                onChangeStart: hasDuration ? _onChangeStart : null,
-                onChangeEnd: hasDuration ? _onChangeEnd : null,
+                onChanged: canSeek ? _onChanged : null,
+                onChangeStart: canSeek ? _onChangeStart : null,
+                onChangeEnd: canSeek ? _onChangeEnd : null,
               ),
             ),
             Padding(

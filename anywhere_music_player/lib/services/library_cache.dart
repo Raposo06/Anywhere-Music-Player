@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/track.dart';
+import 'subsonic_api_service.dart';
 
 /// On-disk cache of the user's library. Stores a flat list of [Track]s as
 /// JSON so the home screen can render instantly on cold start while a fresh
@@ -18,13 +19,16 @@ import '../models/track.dart';
 class LibraryCache {
   static const _fileName  = 'library_cache.json';
   static const _tmpName   = 'library_cache.tmp';
-  static const _version   = 1;
+  // Bumped to 2 when stream_url was dropped from the serialized schema. Old
+  // v1 caches are discarded on load (they have a redundant stream_url field
+  // that's now ignored, but version mismatch keeps the path clean).
+  static const _version   = 2;
 
   /// Load the cached track list. Returns null when:
   ///   - the cache file doesn't exist (first launch / post-logout)
   ///   - the file is corrupt (parse error → file is deleted)
   ///   - the schema version doesn't match (file is deleted)
-  static Future<List<Track>?> load() async {
+  static Future<List<Track>?> load({required SubsonicApiService api}) async {
     try {
       final file = await _cacheFile();
       if (!await file.exists()) return null;
@@ -40,7 +44,7 @@ class LibraryCache {
 
       final rawTracks = decoded['tracks'] as List<dynamic>;
       return rawTracks
-          .map((e) => Track.fromJson(e as Map<String, dynamic>))
+          .map((e) => Track.fromJson(e as Map<String, dynamic>, api: api))
           .toList(growable: false);
     } catch (e) {
       debugPrint('LibraryCache: failed to load, discarding cache: $e');

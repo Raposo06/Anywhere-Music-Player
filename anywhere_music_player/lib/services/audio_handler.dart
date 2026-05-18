@@ -12,6 +12,12 @@ class MusicAudioHandler extends BaseAudioHandler {
   Function()? onNext;
   Function()? onPrevious;
 
+  // Monotonic counter bumped on every track change. Used as the playbackState
+  // queueIndex so Bluetooth AVRCP (car head units) sees a new queue position
+  // and fires TRACK_CHANGED. Without this, the car shows a stale title even
+  // though the lock screen updates correctly.
+  int _trackCounter = 0;
+
   MusicAudioHandler() {
     // Initialize with stopped state
     playbackState.add(PlaybackState(
@@ -86,7 +92,9 @@ class MusicAudioHandler extends BaseAudioHandler {
       updatePosition: _player!.position,
       bufferedPosition: _player!.bufferedPosition,
       speed: _player!.speed,
-      queueIndex: event.currentIndex,
+      // Intentionally not setting queueIndex here — it's managed by
+      // updateTrackInfo (synthetic counter for AVRCP). event.currentIndex is
+      // always 0 in single-source mode and would clobber our value.
     ));
   }
 
@@ -95,7 +103,8 @@ class MusicAudioHandler extends BaseAudioHandler {
     final item = MediaItem(
       id: track.id,
       title: track.title,
-      artist: '',
+      artist: track.artist ?? '',
+      album: track.album ?? '',
       duration: track.durationSeconds != null
           ? Duration(seconds: track.durationSeconds!)
           : null,
@@ -103,6 +112,12 @@ class MusicAudioHandler extends BaseAudioHandler {
     );
 
     mediaItem.add(item);
+
+    // Bump the synthetic queue index. The car's Bluetooth stack uses this
+    // change as the trigger to refresh the displayed title.
+    _trackCounter++;
+    queue.add([item]);
+    playbackState.add(playbackState.value.copyWith(queueIndex: _trackCounter));
   }
 
   @override
