@@ -179,18 +179,31 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     }
 
     final horizontalPadding = Responsive.getHorizontalPadding(context);
+    final maxWidth = Responsive.getContentMaxWidth(context);
+
+    // Background banner spans the full window width; the row of crumbs
+    // inside is centered/constrained to align with the rest of the
+    // page content (so the home icon sits flush under the AppBar title
+    // rather than floating in the left margin on wide screens).
     return Container(
       width: double.infinity,
       color: theme.colorScheme.surface.withValues(alpha: 0.4),
       padding: EdgeInsets.symmetric(
         horizontal: horizontalPadding,
-        vertical: 6,
+        vertical: 10,
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: children,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: maxWidth ?? double.infinity,
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: children,
+            ),
+          ),
         ),
       ),
     );
@@ -255,20 +268,14 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
           ),
         ],
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: Responsive.getContentMaxWidth(context) ?? double.infinity,
-          ),
-          child: _buildBody(),
-        ),
-      ),
+      body: _buildBody(),
       bottomNavigationBar: const MiniPlayer(),
     );
   }
 
   Widget _buildBody() {
     final horizontalPadding = Responsive.getHorizontalPadding(context);
+    final maxWidth = Responsive.getContentMaxWidth(context);
     final visibleTracks = _filteredTracks;
     final showSubfolders = !_isSearching && _subfolders.isNotEmpty;
 
@@ -282,9 +289,36 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
 
     final breadcrumb = _isSearching ? null : _buildBreadcrumb();
 
+    // Breadcrumb spans the full window width (background banner-style),
+    // while the rest of the content remains centered + constrained.
     return Column(
       children: [
         if (breadcrumb != null) breadcrumb,
+        Expanded(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: maxWidth ?? double.infinity,
+              ),
+              child: _buildScrollableContent(
+                horizontalPadding: horizontalPadding,
+                visibleTracks: visibleTracks,
+                showSubfolders: showSubfolders,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScrollableContent({
+    required double horizontalPadding,
+    required List<Track> visibleTracks,
+    required bool showSubfolders,
+  }) {
+    return Column(
+      children: [
         // Header with play buttons
         if (!_isSearching && _totalTrackCount > 0)
           Container(
@@ -512,15 +546,15 @@ class _BreadcrumbCrumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       child: icon != null
-          ? Icon(icon, size: 18, color: color)
+          ? Icon(icon, size: 22, color: color)
           : Text(
               label!,
               style: TextStyle(
                 color: color,
                 fontWeight: bold ? FontWeight.bold : FontWeight.w500,
-                fontSize: 14,
+                fontSize: 17,
               ),
             ),
     );
@@ -560,7 +594,7 @@ class _BreadcrumbSeparator extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: Icon(Icons.chevron_right_rounded, size: 16, color: color),
+      child: Icon(Icons.chevron_right_rounded, size: 20, color: color),
     );
   }
 }

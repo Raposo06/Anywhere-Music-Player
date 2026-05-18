@@ -34,8 +34,9 @@ class _TvPlayerScreenState extends State<TvPlayerScreen> {
               }
 
               final screenHeight = MediaQuery.of(context).size.height;
-              // Use ~32% of available height for art so everything fits
-              final artSize = (screenHeight * 0.32).clamp(150.0, 320.0);
+              // Give the cover more breathing room so it's the focal point
+              // of the screen — controls below were dialed down to compensate.
+              final artSize = (screenHeight * 0.42).clamp(180.0, 420.0);
 
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 64, vertical: 16),
@@ -125,7 +126,9 @@ class _TvPlayerScreenState extends State<TvPlayerScreen> {
         child: track.coverArtUrl != null
             ? CachedNetworkImage(
                 imageUrl: track.coverArtUrl!,
-                fit: BoxFit.cover,
+                // contain (not cover) so non-square art shows in full
+                // instead of getting cropped to the square frame.
+                fit: BoxFit.contain,
                 errorWidget: (_, __, ___) => _placeholderArt(size),
               )
             : _placeholderArt(size),
@@ -230,22 +233,22 @@ class _TvPlaybackControls extends StatelessWidget {
                     icon: Icons.skip_previous,
                     onPressed:
                         playlistLen > 1 ? player.playPrevious : () {},
-                    size: 64,
+                    size: 52,
                   ),
-                  const SizedBox(width: 32),
+                  const SizedBox(width: 28),
                   _TvControlButton(
                     icon: isPlaying ? Icons.pause : Icons.play_arrow,
                     onPressed: player.togglePlayPause,
-                    size: 80,
+                    size: 64,
                     isPrimary: true,
                     autofocus: true,
                   ),
-                  const SizedBox(width: 32),
+                  const SizedBox(width: 28),
                   _TvControlButton(
                     icon: Icons.skip_next,
                     onPressed:
                         playlistLen > 1 ? player.playNext : () {},
-                    size: 64,
+                    size: 52,
                   ),
                 ],
               ),
@@ -285,7 +288,7 @@ class _TvShuffleRepeatRow extends StatelessWidget {
                 icon: Icons.shuffle,
                 onPressed: () => player.toggleShuffle(),
                 isActive: s.shuffle,
-                size: 52,
+                size: 42,
               ),
               const SizedBox(width: 16),
               Text(
@@ -304,7 +307,7 @@ class _TvShuffleRepeatRow extends StatelessWidget {
                     : Icons.repeat,
                 onPressed: player.toggleRepeatMode,
                 isActive: s.repeat != RepeatMode.off,
-                size: 52,
+                size: 42,
               ),
               const SizedBox(width: 16),
               Text(
