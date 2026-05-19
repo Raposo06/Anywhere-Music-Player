@@ -49,13 +49,13 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; 1. The main .exe file
-Source: "C:\Users\David Raposo\Desktop\David\Personal Projects\Anywhere-Music-Player\anywhere_music_player\build\windows\x64\runner\Release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "build\windows\x64\runner\Release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 ; 2. The Flutter Engine and Plugin DLLs
-Source: "C:\Users\David Raposo\Desktop\David\Personal Projects\Anywhere-Music-Player\anywhere_music_player\build\windows\x64\runner\Release\*.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "build\windows\x64\runner\Release\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 
 ; 3. The Data folder (Contains compiled code, assets, and fonts)
-Source: "C:\Users\David Raposo\Desktop\David\Personal Projects\Anywhere-Music-Player\anywhere_music_player\build\windows\x64\runner\Release\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "build\windows\x64\runner\Release\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Registry]
 Root: HKA; Subkey: "Software\Classes\{#MyAppAssocExt}\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppAssocKey}"; ValueData: ""; Flags: uninsdeletevalue

@@ -5,6 +5,15 @@
 
 A private music streaming app that connects to a [Navidrome](https://www.navidrome.org/) server via the Subsonic API. Built with Flutter for Android TV, Android phones, Windows, and Web.
 
+## Downloads
+
+| Platform | Format | Link |
+|---|---|---|
+| Windows | Installer (`.exe`) | [Latest Release](https://github.com/Raposo06/Anywhere-Music-Player/releases/latest) |
+| Android (phone + TV) | APK | [Latest Release](https://github.com/Raposo06/Anywhere-Music-Player/releases/latest) |
+
+> **Note:** The Windows installer is built with [Inno Setup](https://jrsoftware.org/isinfo.php). No manual setup required — just run `AnywhereMusicPlayer_Setup.exe`.
+
 ## Architecture
 
 ```
