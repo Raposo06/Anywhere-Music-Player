@@ -273,6 +273,40 @@ class LibraryScanner with ChangeNotifier {
     return node?.allTracksRecursive() ?? [];
   }
 
+  /// Search the virtual folder tree for folders whose leaf name contains
+  /// [query] (case-insensitive). Empty query → empty list. Results are
+  /// sorted by depth (top-level first) then alphabetically.
+  List<Folder> searchFolders(String query) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return const [];
+    final needle = trimmed.toLowerCase();
+
+    final matches = <_FolderNode>[];
+    void walk(_FolderNode node) {
+      // Match on leaf segment only — matching the full path would surface
+      // every child of a matching parent, which clutters results.
+      if (node.fullPath.isNotEmpty && node.name.toLowerCase().contains(needle)) {
+        matches.add(node);
+      }
+      for (final child in node.children.values) {
+        walk(child);
+      }
+    }
+
+    for (final root in _rootNodes.values) {
+      walk(root);
+    }
+
+    matches.sort((a, b) {
+      final depthA = '/'.allMatches(a.fullPath).length;
+      final depthB = '/'.allMatches(b.fullPath).length;
+      if (depthA != depthB) return depthA - depthB;
+      return a.fullPath.toLowerCase().compareTo(b.fullPath.toLowerCase());
+    });
+
+    return matches.map((n) => n.toFolder()).toList();
+  }
+
   /// Navigate to a node by its full path, walking from _rootNodes.
   _FolderNode? _findNode(String folderPath) {
     final segments = folderPath.split('/');

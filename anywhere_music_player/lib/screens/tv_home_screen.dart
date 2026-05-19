@@ -351,13 +351,32 @@ class _TvTrackRow extends StatefulWidget {
 class _TvTrackRowState extends State<_TvTrackRow> {
   bool _isFocused = false;
 
+  /// When focus lands on this row, ensure it scrolls into the visible area
+  /// of the parent ListView. Without this, holding D-pad down marches focus
+  /// off-screen and the user loses track of where they are. Aligned at 0.5
+  /// (vertical center) so subsequent navigations have breathing room above
+  /// and below.
+  void _handleFocusChange(bool focused) {
+    setState(() => _isFocused = focused);
+    if (!focused) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Scrollable.ensureVisible(
+        context,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final audioPlayer = context.watch<AudioPlayerService>();
     final isPlaying = audioPlayer.currentTrack?.id == widget.track.id;
 
     return Focus(
-      onFocusChange: (focused) => setState(() => _isFocused = focused),
+      onFocusChange: _handleFocusChange,
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
           if (event.logicalKey == LogicalKeyboardKey.select ||
@@ -371,7 +390,11 @@ class _TvTrackRowState extends State<_TvTrackRow> {
       },
       child: GestureDetector(
         onTap: widget.onTap,
-        child: Container(
+        // AnimatedContainer makes the focus highlight feel smooth instead
+        // of snapping instantly — small detail, big perceptual win on TV.
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           decoration: BoxDecoration(
@@ -383,7 +406,7 @@ class _TvTrackRowState extends State<_TvTrackRow> {
             borderRadius: BorderRadius.circular(8),
             border: _isFocused
                 ? Border.all(color: Colors.white, width: 3)
-                : null,
+                : Border.all(color: Colors.transparent, width: 3),
           ),
           child: Row(
             children: [

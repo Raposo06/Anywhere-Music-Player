@@ -402,24 +402,34 @@ class _TvControlButtonState extends State<_TvControlButton> {
       },
       child: GestureDetector(
         onTap: widget.onPressed,
-        child: Container(
-          width: widget.size,
-          height: widget.size,
-          decoration: BoxDecoration(
-            color: widget.isPrimary
-                ? Colors.white
-                : widget.isActive
-                    ? const Color(0xFF2D5F9F)
-                    : const Color(0xFF2A2A2A),
-            shape: BoxShape.circle,
-            border: _isFocused
-                ? Border.all(color: Colors.white, width: 3)
-                : null,
-          ),
-          child: Icon(
-            widget.icon,
-            size: widget.size * 0.5,
-            color: widget.isPrimary ? Colors.black : Colors.white,
+        // AnimatedContainer + AnimatedScale smooth out the focus change so
+        // D-pad navigation feels responsive instead of snapping in/out.
+        child: AnimatedScale(
+          scale: _isFocused ? 1.08 : 1.0,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOut,
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(
+              color: widget.isPrimary
+                  ? Colors.white
+                  : widget.isActive
+                      ? const Color(0xFF2D5F9F)
+                      : const Color(0xFF2A2A2A),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: _isFocused ? Colors.white : Colors.transparent,
+                width: 3,
+              ),
+            ),
+            child: Icon(
+              widget.icon,
+              size: widget.size * 0.5,
+              color: widget.isPrimary ? Colors.black : Colors.white,
+            ),
           ),
         ),
       ),

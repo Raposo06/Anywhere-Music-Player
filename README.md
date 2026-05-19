@@ -11,8 +11,13 @@ A private music streaming app that connects to a [Navidrome](https://www.navidro
 |---|---|---|
 | Windows | Installer (`.exe`) | [Latest Release](https://github.com/Raposo06/Anywhere-Music-Player/releases/latest) |
 | Android (phone + TV) | APK | [Latest Release](https://github.com/Raposo06/Anywhere-Music-Player/releases/latest) |
+| iOS | App Store | [Coming Soon](#) |
 
-> **Note:** The Windows installer is built with [Inno Setup](https://jrsoftware.org/isinfo.php). No manual setup required — just run `AnywhereMusicPlayer_Setup.exe`.
+> **Windows:** Built with [Inno Setup](https://jrsoftware.org/isinfo.php) — just run `AnywhereMusicPlayer_Setup.exe`, no manual setup needed.
+>
+> **Android:** Enable *Install unknown apps* in device settings before installing the APK.
+>
+> **iOS:** Requires an Apple Developer account for distribution. Available via TestFlight or the App Store.
 
 ## Architecture
 

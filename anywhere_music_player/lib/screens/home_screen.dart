@@ -109,9 +109,25 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       if (_searchQuery != query) return;
 
+      // Subsonic's search3 returns tracks with tag-based virtual paths
+      // ("Artist/Album/..."), not real filesystem paths. Map each search
+      // result to its canonical Track from the library scanner (by id) so
+      // folderPath, folderName etc. match what the rest of the app uses —
+      // otherwise tapping a result and opening its folder lands on a
+      // non-existent virtual path.
+      //
+      // Folders come from the local virtual tree (not search3's tag-based
+      // "albums") so tapping a result opens a real folder, and the user
+      // doesn't see album entries that don't map to anything browsable.
+      final scanner = context.read<LibraryScanner>();
+      final canonicalById = {for (final t in scanner.allTracks) t.id: t};
+      final canonicalSongs = result.songs
+          .map((t) => canonicalById[t.id] ?? t)
+          .toList();
+
       setState(() {
-        _searchFolders = result.albums;
-        _searchTracks = result.songs;
+        _searchFolders = scanner.searchFolders(query);
+        _searchTracks = canonicalSongs;
         _isSearching = false;
       });
     } on SubsonicApiException catch (e) {
@@ -431,6 +447,25 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListView(
       padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
       children: [
+        if (_searchFolders.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              children: [
+                const Icon(Icons.folder, color: Colors.blue),
+                const SizedBox(width: 8),
+                Text(
+                  'Folders (${_searchFolders.length})',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ..._searchFolders.map((folder) => _buildFolderTile(folder)),
+          const Divider(height: 32),
+        ],
         if (_searchTracks.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -466,25 +501,6 @@ class _HomeScreenState extends State<HomeScreen> {
             track: track,
             onTap: () => _playTrack(track, _searchTracks),
           )),
-          const Divider(height: 32),
-        ],
-        if (_searchFolders.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Row(
-              children: [
-                const Icon(Icons.folder, color: Colors.blue),
-                const SizedBox(width: 8),
-                Text(
-                  'Albums (${_searchFolders.length})',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ..._searchFolders.map((folder) => _buildFolderTile(folder)),
         ],
         const SizedBox(height: 16),
       ],
