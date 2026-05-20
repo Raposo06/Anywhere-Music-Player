@@ -8,6 +8,7 @@
 .idea/caches/
 *.iml
 .idea/modules.xml
+.idea/libraries/
 
 ### Python ###
 __pycache__/
