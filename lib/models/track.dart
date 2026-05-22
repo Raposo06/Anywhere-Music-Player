@@ -13,6 +13,9 @@ class Track {
   final DateTime createdAt;
   final String? artist;
   final String? album;
+  /// Track-level ReplayGain in dB from the server's loudness analysis, or null
+  /// if the file hasn't been analyzed. Used to normalize playback volume.
+  final double? replayGainDb;
 
   Track({
     required this.id,
@@ -27,6 +30,7 @@ class Track {
     required this.createdAt,
     this.artist,
     this.album,
+    this.replayGainDb,
   });
 
   /// Create a Track from a Subsonic API song response.
@@ -51,6 +55,9 @@ class Track {
           : DateTime.now(),
       artist: json['artist'] as String?,
       album: json['album'] as String?,
+      replayGainDb:
+          ((json['replayGain'] as Map<String, dynamic>?)?['trackGain'] as num?)
+              ?.toDouble(),
     );
   }
 
@@ -76,6 +83,7 @@ class Track {
           DateTime.now(),
       artist:           json['artist'] as String?,
       album:            json['album'] as String?,
+      replayGainDb:     (json['replay_gain_db'] as num?)?.toDouble(),
     );
   }
 
@@ -92,6 +100,7 @@ class Track {
     'created_at': createdAt.toIso8601String(),
     'artist': artist,
     'album': album,
+    'replay_gain_db': replayGainDb,
   };
 
   static String _lastSegment(String path) {

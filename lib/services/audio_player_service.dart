@@ -220,6 +220,7 @@ class AudioPlayerService with ChangeNotifier {
       _logStreamParams(track);
       await _player!.setAudioSource(_buildSource(track));
       if (token != _loadToken) return;
+      await _player!.setVolume(_volume * _replayGainFactor(track));
       _player!.play();
       if (_audioHandler != null) _audioHandler!.updateTrackInfo(track);
       _updateWindowsMetadata(track);
@@ -492,9 +493,22 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Linear playback multiplier derived from a track's ReplayGain (dB).
+  /// Attenuate-only: tracks louder than the reference are turned down toward it;
+  /// quieter tracks are never boosted (clamped at 1.0), so clipping is
+  /// impossible. Tracks with no loudness data play unchanged.
+  double _replayGainFactor(Track? track) {
+    final db = track?.replayGainDb;
+    if (db == null) return 1.0;
+    final factor = pow(10, db / 20).toDouble();
+    return factor.clamp(0.0, 1.0).toDouble();
+  }
+
   Future<void> setVolume(double volume) async {
     _volume = volume.clamp(0.0, 1.0);
-    if (_player != null) await _player!.setVolume(_volume);
+    if (_player != null) {
+      await _player!.setVolume(_volume * _replayGainFactor(_currentTrack));
+    }
     notifyListeners();
   }
 

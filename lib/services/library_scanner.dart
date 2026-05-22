@@ -113,6 +113,7 @@ class LibraryScanner with ChangeNotifier {
               : DateTime.now(),
           artist: song['artist'] as String?,
           album: song['album'] as String?,
+          replayGainDb: (song['rgTrackGain'] as num?)?.toDouble(),
         ));
       }
 
