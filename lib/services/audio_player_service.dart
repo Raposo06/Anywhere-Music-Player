@@ -493,14 +493,21 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
   }
 
+  /// ReplayGain pre-amp in dB. Most masters carry a negative track gain (they
+  /// are louder than the ReplayGain reference), so applying gain verbatim
+  /// attenuates almost everything and the whole library sounds quiet. This
+  /// positive offset raises the target loudness so typical tracks play at full
+  /// volume and only the genuinely loudest get pulled down.
+  static const double _replayGainPreAmpDb = 6.0;
+
   /// Linear playback multiplier derived from a track's ReplayGain (dB).
-  /// Attenuate-only: tracks louder than the reference are turned down toward it;
-  /// quieter tracks are never boosted (clamped at 1.0), so clipping is
-  /// impossible. Tracks with no loudness data play unchanged.
+  /// Attenuate-only: after the pre-amp, tracks still louder than the target are
+  /// turned down toward it; quieter tracks are never boosted (clamped at 1.0),
+  /// so clipping is impossible. Tracks with no loudness data play unchanged.
   double _replayGainFactor(Track? track) {
     final db = track?.replayGainDb;
     if (db == null) return 1.0;
-    final factor = pow(10, db / 20).toDouble();
+    final factor = pow(10, (db + _replayGainPreAmpDb) / 20).toDouble();
     return factor.clamp(0.0, 1.0).toDouble();
   }
 
