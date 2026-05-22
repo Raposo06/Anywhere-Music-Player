@@ -309,19 +309,21 @@ class AudioPlayerService with ChangeNotifier {
 
   // -------- Playback entry points --------
 
-  /// Play a single track. Clears any playlist context and the queue.
+  /// Play a single track. Replaces the playlist context but preserves the
+  /// user-built queue — switching the current song should not discard songs
+  /// the user has explicitly lined up to play next.
   Future<void> playTrack(Track track) async {
     _ensurePlayerInitialized();
     _playlist = [track];
     _currentIndex = 0;
-    _queue.clear();
     _playingFromQueue = false;
     if (_isShuffleEnabled) _regenerateShuffleOrder(anchorAt: 0);
     await _loadAndPlay(track);
   }
 
   /// Play a playlist. Pass [startIndex] = -1 to let shuffle pick the first
-  /// track at random, or use a specific index otherwise. Clears the queue.
+  /// track at random, or use a specific index otherwise. Preserves the
+  /// user-built queue so switching songs doesn't discard queued tracks.
   Future<void> playPlaylist(List<Track> tracks, int startIndex) async {
     if (tracks.isEmpty) return;
     if (startIndex != -1 && (startIndex < 0 || startIndex >= tracks.length)) {
@@ -330,7 +332,6 @@ class AudioPlayerService with ChangeNotifier {
 
     _ensurePlayerInitialized();
     _playlist = List.from(tracks);
-    _queue.clear();
     _playingFromQueue = false;
 
     final int resolvedStart;
