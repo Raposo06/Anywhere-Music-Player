@@ -7,6 +7,22 @@
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
+  // Enforce a single running instance. If another instance already holds the
+  // named mutex, bring its window to the foreground and exit instead of
+  // opening a second copy. The mutex handle is intentionally left open for the
+  // process lifetime; Windows releases it on exit.
+  ::CreateMutex(nullptr, TRUE, L"AnywhereMusicPlayer_SingleInstance");
+  if (::GetLastError() == ERROR_ALREADY_EXISTS) {
+    HWND existing = ::FindWindow(L"ANYWHERE_MUSIC_PLAYER_WINDOW", nullptr);
+    if (existing != nullptr) {
+      if (::IsIconic(existing)) {
+        ::ShowWindow(existing, SW_RESTORE);
+      }
+      ::SetForegroundWindow(existing);
+    }
+    return EXIT_SUCCESS;
+  }
+
   // Attach to console when present (e.g., 'flutter run') or create a
   // new console when running with a debugger.
   if (!::AttachConsole(ATTACH_PARENT_PROCESS) && ::IsDebuggerPresent()) {

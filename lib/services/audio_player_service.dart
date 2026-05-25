@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 import '../models/track.dart';
 import 'audio_handler.dart';
 import 'windows_media_controls_service.dart';
+import 'windows_wakelock.dart';
 
 enum RepeatMode { off, all, one }
 
@@ -127,8 +128,16 @@ class AudioPlayerService with ChangeNotifier {
     }
 
     _playingSubscription = _player!.playingStream.listen((playing) {
-      if (_isWindows && _currentTrack != null) {
-        _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
+      if (_isWindows) {
+        // Keep the PC awake while playing; release it when paused/stopped.
+        if (playing) {
+          WindowsWakelock.enable();
+        } else {
+          WindowsWakelock.disable();
+        }
+        if (_currentTrack != null) {
+          _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
+        }
       }
       notifyListeners();
     });
@@ -526,7 +535,10 @@ class AudioPlayerService with ChangeNotifier {
     _playingSubscription?.cancel();
     _playbackEventSubscription?.cancel();
     _player?.dispose();
-    if (_isWindows) _windowsMediaControls.dispose();
+    if (_isWindows) {
+      WindowsWakelock.disable();
+      _windowsMediaControls.dispose();
+    }
     super.dispose();
   }
 }
