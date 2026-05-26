@@ -3,7 +3,7 @@
 ; Non-commercial use only
 
 #define MyAppName "Anywhere Music Player"
-#define MyAppVersion "1.2"
+#define MyAppVersion "1.3"
 #define MyAppPublisher "FoxCore"
 #define MyAppURL "https://foxcore.dev/"
 #define MyAppExeName "anywhere_music_player.exe"

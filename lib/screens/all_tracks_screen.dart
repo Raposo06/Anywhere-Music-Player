@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import '../services/library_scanner.dart';
@@ -27,10 +28,16 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
   String _searchQuery = '';
   Timer? _debounceTimer;
 
+  // Drives "follow the playing track": scroll the list to the current song.
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  // Last track id we scrolled to, so we only follow on an actual change.
+  String? _followedTrackId;
+
   @override
   void initState() {
     super.initState();
     _loadInitialTracks();
+    context.read<AudioPlayerService>().addListener(_followCurrentTrack);
   }
 
   @override
@@ -39,8 +46,32 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     _debounceTimer?.cancel();
     try {
       context.read<LibraryScanner>().removeListener(_onScannerUpdate);
+      context.read<AudioPlayerService>().removeListener(_followCurrentTrack);
     } catch (_) {}
     super.dispose();
+  }
+
+  /// Scroll the list so the currently-playing track is visible. Only acts when
+  /// the playing track id changes (and on open), so manual scrolling between
+  /// songs is never interrupted. No-op if the track isn't in the current list.
+  void _followCurrentTrack() {
+    if (!mounted) return;
+    final id = context.read<AudioPlayerService>().currentTrack?.id;
+    if (id == null) {
+      _followedTrackId = null;
+      return;
+    }
+    if (id == _followedTrackId) return;
+    final index = _tracks.indexWhere((t) => t.id == id);
+    if (index < 0) return; // not in this list — leave _followedTrackId unset
+    if (!_itemScrollController.isAttached) return; // retried on next change/open
+    _followedTrackId = id;
+    _itemScrollController.scrollTo(
+      index: index,
+      alignment: 0.3,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+    );
   }
 
   /// Load all songs from the library scanner's cached data.
@@ -64,6 +95,8 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
       _isLoading = false;
       _errorMessage = scanner.error;
     });
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _followCurrentTrack());
   }
 
   void _onScannerUpdate() {
@@ -108,9 +141,13 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
 
   void _playTrack(Track track) {
     final playerService = context.read<AudioPlayerService>();
-    // Always play from the full library so playback continues past tracks
-    // that didn't match the current search.
-    playerService.playPlaylist(_allTracks, _allTracks.indexOf(track));
+    // If this track is already the current one, don't restart it — just open
+    // the player and let it keep playing from where it is.
+    if (playerService.currentTrack?.id != track.id) {
+      // Always play from the full library so playback continues past tracks
+      // that didn't match the current search.
+      playerService.playPlaylist(_allTracks, _allTracks.indexOf(track));
+    }
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -258,7 +295,8 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
       );
     }
 
-    return ListView.builder(
+    return ScrollablePositionedList.builder(
+      itemScrollController: _itemScrollController,
       itemCount: _tracks.length,
       itemBuilder: (context, index) {
         final track = _tracks[index];

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
 import '../services/library_scanner.dart';
@@ -32,15 +33,24 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
 
+  // Drives "follow the playing track": scroll the list to the current song.
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  // Last track id we scrolled to, so we only follow on an actual change.
+  String? _followedTrackId;
+
   @override
   void initState() {
     super.initState();
     _loadContents();
+    context.read<AudioPlayerService>().addListener(_followCurrentTrack);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    try {
+      context.read<AudioPlayerService>().removeListener(_followCurrentTrack);
+    } catch (_) {}
     super.dispose();
   }
 
@@ -53,6 +63,40 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
       _tracks = contents.tracks;
       _totalTrackCount = allTracks.length;
     });
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _followCurrentTrack());
+  }
+
+  /// Number of non-track rows that precede the track rows in the list
+  /// (subfolders + the divider between them and the tracks). Used to map a
+  /// track's index to its row position for scroll-to.
+  int get _leadingRowCount {
+    final showSubfolders = !_isSearching && _subfolders.isNotEmpty;
+    if (!showSubfolders) return 0;
+    return _subfolders.length + (_tracks.isNotEmpty ? 1 : 0);
+  }
+
+  /// Scroll the list so the currently-playing track is visible. Only acts when
+  /// the playing track id changes (and on open), so manual scrolling between
+  /// songs is never interrupted. No-op if the track isn't in the current list.
+  void _followCurrentTrack() {
+    if (!mounted) return;
+    final id = context.read<AudioPlayerService>().currentTrack?.id;
+    if (id == null) {
+      _followedTrackId = null;
+      return;
+    }
+    if (id == _followedTrackId) return;
+    final trackIndex = _filteredTracks.indexWhere((t) => t.id == id);
+    if (trackIndex < 0) return; // not in this list — leave _followedTrackId unset
+    if (!_itemScrollController.isAttached) return; // retried on next change/open
+    _followedTrackId = id;
+    _itemScrollController.scrollTo(
+      index: _leadingRowCount + trackIndex,
+      alignment: 0.3,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+    );
   }
 
   void _playAll() {
@@ -361,14 +405,19 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
             ),
           ),
         const Divider(height: 1),
-        // Content list
+        // Content list. ScrollablePositionedList (instead of a plain ListView)
+        // so we can scroll to the playing track by index — see
+        // _followCurrentTrack. Rows are: [subfolders][divider][tracks].
         Expanded(
-          child: ListView(
+          child: ScrollablePositionedList.builder(
+            itemScrollController: _itemScrollController,
             padding: EdgeInsets.symmetric(horizontal: horizontalPadding - 16),
-            children: [
-              // Subfolders (hidden during search)
-              if (showSubfolders)
-                ..._subfolders.map((folder) => ListTile(
+            itemCount: _leadingRowCount + visibleTracks.length,
+            itemBuilder: (context, i) {
+              // Subfolders (hidden during search).
+              if (showSubfolders && i < _subfolders.length) {
+                final folder = _subfolders[i];
+                return ListTile(
                   leading: folder.coverArtUrl != null
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(4),
@@ -388,27 +437,33 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                   ),
                   subtitle: folder.subtitle.isNotEmpty ? Text(folder.subtitle) : null,
                   onTap: () => _openSubfolder(folder),
-                )),
-              if (showSubfolders && _tracks.isNotEmpty)
-                const Divider(),
-              // Tracks
-              ...List.generate(visibleTracks.length, (index) {
-                final track = visibleTracks[index];
-                return _FolderTrackTile(
-                  track: track,
-                  index: _isSearching ? _tracks.indexOf(track) : index,
-                  onTap: () {
-                    final playerService = context.read<AudioPlayerService>();
+                );
+              }
+              // Divider between subfolders and tracks.
+              if (showSubfolders && _tracks.isNotEmpty && i == _subfolders.length) {
+                return const Divider();
+              }
+              // Tracks.
+              final index = i - _leadingRowCount;
+              final track = visibleTracks[index];
+              return _FolderTrackTile(
+                track: track,
+                index: _isSearching ? _tracks.indexOf(track) : index,
+                onTap: () {
+                  final playerService = context.read<AudioPlayerService>();
+                  // If this track is already the current one, don't restart it
+                  // — just open the player and let it keep playing.
+                  if (playerService.currentTrack?.id != track.id) {
                     // Always play from the full folder list so playback
                     // continues through tracks not matched by the search.
                     playerService.playPlaylist(_tracks, _tracks.indexOf(track));
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                    );
-                  },
-                );
-              }),
-            ],
+                  }
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                  );
+                },
+              );
+            },
           ),
         ),
       ],

@@ -46,6 +46,9 @@ dependencies:
   # Cached network images
   cached_network_image: ^3.3.0
 
+  # Scroll-to-index for "follow the playing track" in track lists
+  scrollable_positioned_list: ^0.3.8
+
   # Environment variables
   flutter_dotenv: ^5.2.1
 
