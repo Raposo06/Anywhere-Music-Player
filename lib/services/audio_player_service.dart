@@ -70,6 +70,24 @@ class AudioPlayerService with ChangeNotifier {
   int get currentIndex => _currentIndex;
   List<Track> get queue => List.unmodifiable(_queue);
   int get queueLength => _queue.length;
+
+  /// The upcoming tracks from the browsing context (playlist), in play order
+  /// and shuffle-aware, starting after the current playback position. Does not
+  /// wrap around on repeat-all. Independent of the manual [queue].
+  List<Track> get upcomingFromContext {
+    if (_playlist.isEmpty) return const [];
+    final result = <Track>[];
+    if (_isShuffleEnabled && _shuffleOrder.length == _playlist.length) {
+      for (var p = _shufflePos + 1; p < _shuffleOrder.length; p++) {
+        result.add(_playlist[_shuffleOrder[p]]);
+      }
+    } else {
+      for (var i = _currentIndex + 1; i < _playlist.length; i++) {
+        result.add(_playlist[i]);
+      }
+    }
+    return List.unmodifiable(result);
+  }
   bool get isLoading => _isLoading;
   bool get isShuffleEnabled => _isShuffleEnabled;
   RepeatMode get repeatMode => _repeatMode;
@@ -475,6 +493,60 @@ class AudioPlayerService with ChangeNotifier {
     if (newIndex < 0 || newIndex >= _queue.length) return;
     final t = _queue.removeAt(oldIndex);
     _queue.insert(newIndex, t);
+    notifyListeners();
+  }
+
+  /// Play the manual-queue track at [queueIndex] now, discarding the queued
+  /// tracks ahead of it (the ones that would have played first).
+  Future<void> jumpToQueued(int queueIndex) async {
+    if (queueIndex < 0 || queueIndex >= _queue.length) return;
+    _ensurePlayerInitialized();
+    final track = _queue[queueIndex];
+    _queue.removeRange(0, queueIndex + 1);
+    _playingFromQueue = true;
+    await _loadAndPlay(track);
+  }
+
+  /// Jump forward to the [autoIndex]-th track of [upcomingFromContext]. The
+  /// cursor simply moves; skipped tracks are not removed and remain reachable
+  /// via Previous.
+  Future<void> jumpToUpcoming(int autoIndex) async {
+    if (autoIndex < 0 || _playlist.isEmpty) return;
+    _ensurePlayerInitialized();
+    if (_isShuffleEnabled && _shuffleOrder.length == _playlist.length) {
+      final pos = _shufflePos + 1 + autoIndex;
+      if (pos >= _shuffleOrder.length) return;
+      _shufflePos = pos;
+      _currentIndex = _shuffleOrder[pos];
+    } else {
+      final idx = _currentIndex + 1 + autoIndex;
+      if (idx >= _playlist.length) return;
+      _currentIndex = idx;
+    }
+    _playingFromQueue = false;
+    await _loadAndPlay(_playlist[_currentIndex]);
+  }
+
+  /// Reorder a track within the auto-upcoming section. In shuffle mode this
+  /// reorders the upcoming shuffle sequence (until the next reshuffle); in
+  /// sequential mode it reorders the playlist tail. Indices are relative to
+  /// [upcomingFromContext].
+  Future<void> reorderUpcoming(int oldAuto, int newAuto) async {
+    if (oldAuto == newAuto) return;
+    final shuffle = _isShuffleEnabled && _shuffleOrder.length == _playlist.length;
+    final base = shuffle ? _shufflePos + 1 : _currentIndex + 1;
+    final list = shuffle ? _shuffleOrder : _playlist;
+    final oldPos = base + oldAuto;
+    final newPos = base + newAuto;
+    if (oldPos < base || oldPos >= list.length) return;
+    if (newPos < base || newPos >= list.length) return;
+    if (shuffle) {
+      final v = _shuffleOrder.removeAt(oldPos);
+      _shuffleOrder.insert(newPos, v);
+    } else {
+      final v = _playlist.removeAt(oldPos);
+      _playlist.insert(newPos, v);
+    }
     notifyListeners();
   }
 
