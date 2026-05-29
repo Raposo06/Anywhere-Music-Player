@@ -215,6 +215,21 @@ class AudioPlayerService with ChangeNotifier {
   AudioSource _buildSource(Track track) =>
       AudioSource.uri(Uri.parse(track.streamUrl), tag: _buildMediaItem(track));
 
+  /// Load the source, retrying once if it stalls. A single setAudioSource on
+  /// the streaming backend (media_kit on Windows / the Android backend) can
+  /// occasionally hang and never complete, which wedges playback ("freezes and
+  /// never plays" on Next). Re-issuing the load recovers it — the same thing a
+  /// manual Next press does, but automatic and on the same track.
+  Future<void> _setSourceWithRetry(Track track) async {
+    const loadTimeout = Duration(seconds: 12);
+    try {
+      await _player!.setAudioSource(_buildSource(track)).timeout(loadTimeout);
+    } on TimeoutException {
+      debugPrint('AudioPlayerService: load stalled, retrying trackId=${track.id}');
+      await _player!.setAudioSource(_buildSource(track)).timeout(loadTimeout);
+    }
+  }
+
   void _logStreamParams(Track track) {
     final uri = Uri.tryParse(track.streamUrl);
     final params = uri?.queryParameters ?? const <String, String>{};
@@ -245,7 +260,7 @@ class AudioPlayerService with ChangeNotifier {
 
     try {
       _logStreamParams(track);
-      await _player!.setAudioSource(_buildSource(track));
+      await _setSourceWithRetry(track);
       if (token != _loadToken) return;
       await _player!.setVolume(_volume * _replayGainFactor(track));
       _player!.play();

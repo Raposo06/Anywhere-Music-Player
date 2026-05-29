@@ -202,19 +202,23 @@ class _TrackRow extends StatelessWidget {
       onTap: onTap,
     );
 
-    if (onDismissed == null) return tile;
+    // The reorder drag proxy lifts this row out of the tree, so it needs its
+    // own Material ancestor or ListTile throws "No Material widget found".
+    final content = onDismissed == null
+        ? tile
+        : Dismissible(
+            key: ValueKey('dismiss-${track.id}-$reorderIndex'),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              color: Colors.red.shade600,
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: const Icon(Icons.delete, color: Colors.white),
+            ),
+            onDismissed: (_) => onDismissed!(),
+            child: tile,
+          );
 
-    return Dismissible(
-      key: ValueKey('dismiss-${track.id}-$reorderIndex'),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        color: Colors.red.shade600,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: const Icon(Icons.delete, color: Colors.white),
-      ),
-      onDismissed: (_) => onDismissed!(),
-      child: tile,
-    );
+    return Material(type: MaterialType.transparency, child: content);
   }
 }
