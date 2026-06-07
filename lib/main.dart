@@ -19,6 +19,14 @@ import 'utils/platform_detector.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Bound the Flutter image cache. Default is 1000 entries / 100 MB, which a
+  // music library with thousands of covers can blow through during long
+  // scrolls — leading to OOM kills on lower-RAM Android devices. We render
+  // each cover at a server-sized URL (small thumbnails + a larger player
+  // cover), so 50 MB / 300 entries comfortably holds the working set.
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 50 << 20; // 50 MB
+  PaintingBinding.instance.imageCache.maximumSize = 300;
+
   // Initialize media_kit backend for just_audio on desktop (replaces
   // just_audio_windows which had WMF threading deadlocks on startup).
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {

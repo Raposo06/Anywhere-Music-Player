@@ -422,7 +422,10 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(4),
                           child: CachedNetworkImage(
-                            imageUrl: folder.coverArtUrl!,
+                            imageUrl: folder.coverUrl(
+                                size: (48 *
+                                        MediaQuery.devicePixelRatioOf(context))
+                                    .round())!,
                             width: 48,
                             height: 48,
                             fit: BoxFit.cover,
@@ -541,7 +544,9 @@ class _FolderTrackTile extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: CachedNetworkImage(
-                    imageUrl: track.coverArtUrl!,
+                    imageUrl: track.coverUrl(
+                        size: (48 * MediaQuery.devicePixelRatioOf(context))
+                            .round())!,
                     width: 48,
                     height: 48,
                     fit: BoxFit.cover,

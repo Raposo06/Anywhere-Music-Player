@@ -46,6 +46,12 @@ class AudioPlayerService with ChangeNotifier {
   bool _isLoading = false;
   int _loadToken = 0;
 
+  // Mid-stream drop recovery: bounded auto-resume of the current track when the
+  // network/server closes a connection mid-playback.
+  int _resumeAttempts = 0;
+  String? _resumeTrackId;
+  DateTime? _lastResumeAt;
+
   StreamSubscription<PlayerState>? _playerStateSubscription;
   StreamSubscription<bool>? _playingSubscription;
   StreamSubscription<PlaybackEvent>? _playbackEventSubscription;
@@ -169,7 +175,7 @@ class AudioPlayerService with ChangeNotifier {
 
     _playbackEventSubscription = _player!.playbackEventStream.listen(
       (event) {},
-      onError: (Object e, StackTrace st) => _handlePlaybackError(e),
+      onError: (Object e, StackTrace st) => _handleStreamError(e),
     );
   }
 
@@ -192,6 +198,61 @@ class AudioPlayerService with ChangeNotifier {
     _lastError = 'Playback error: $error';
     debugPrint('Playback error: $error');
     notifyListeners();
+  }
+
+  /// Recover from a mid-playback stream drop (e.g. the server/proxy closed a
+  /// long-lived connection): re-open the current track and seek back to where
+  /// it stopped, then resume. Only acts on steady-state playback — not during a
+  /// deliberate load, and not while paused (an idle connection often drops when
+  /// paused; we must not auto-start it). Bounded to 3 *rapid* attempts; the
+  /// counter resets after 30s of successful playback so a long track that drops
+  /// occasionally keeps recovering, while a dead source won't loop forever.
+  Future<void> _handleStreamError(Object error) async {
+    final track = _currentTrack;
+    final wasPlaying = _player?.playing ?? false;
+    if (track == null || _isLoading || !wasPlaying) {
+      _handlePlaybackError(error);
+      return;
+    }
+
+    final now = DateTime.now();
+    if (_resumeTrackId != track.id ||
+        (_lastResumeAt != null &&
+            now.difference(_lastResumeAt!) > const Duration(seconds: 30))) {
+      _resumeAttempts = 0;
+    }
+    if (_resumeAttempts >= 3) {
+      _handlePlaybackError(error);
+      return;
+    }
+    _resumeTrackId = track.id;
+    _lastResumeAt = now;
+    _resumeAttempts++;
+
+    final resumeFrom = _player?.position ?? Duration.zero;
+    debugPrint(
+      'AudioPlayerService: stream dropped, resume attempt #$_resumeAttempts '
+      'at ${resumeFrom.inSeconds}s trackId=${track.id}',
+    );
+
+    final token = ++_loadToken;
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await _setSourceWithRetry(track);
+      if (token != _loadToken) return;
+      await _player!.setVolume(_volume * _replayGainFactor(track));
+      if (resumeFrom > Duration.zero) await _player!.seek(resumeFrom);
+      _player!.play();
+    } catch (e) {
+      if (token != _loadToken) return;
+      _handlePlaybackError(e);
+    } finally {
+      if (token == _loadToken) {
+        _isLoading = false;
+        notifyListeners();
+      }
+    }
   }
 
   void clearError() {
@@ -322,6 +383,31 @@ class AudioPlayerService with ChangeNotifier {
       }
     }
     return next;
+  }
+
+  /// What [playNext] would play right now — without mutating shuffle state.
+  /// Used by the player screen to precache the next track's cover art so the
+  /// transition between tracks doesn't flash an empty/loading frame. Returns
+  /// null when end-of-playlist (repeat off) would stop playback.
+  Track? peekNextTrack() {
+    if (_queue.isNotEmpty) return _queue.first;
+    if (_playlist.isEmpty || _currentIndex < 0) return null;
+
+    if (_isShuffleEnabled && _shuffleOrder.length == _playlist.length) {
+      var next = _shufflePos + 1;
+      if (next >= _shuffleOrder.length) {
+        if (_repeatMode != RepeatMode.all) return null;
+        next = 0;
+      }
+      return _playlist[_shuffleOrder[next]];
+    }
+
+    var next = _currentIndex + 1;
+    if (next >= _playlist.length) {
+      if (_repeatMode != RepeatMode.all) return null;
+      next = 0;
+    }
+    return _playlist[next];
   }
 
   int? _prevPlaylistIndex() {
@@ -590,12 +676,20 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
   }
 
-  /// ReplayGain pre-amp in dB. Most masters carry a negative track gain (they
-  /// are louder than the ReplayGain reference), so applying gain verbatim
-  /// attenuates almost everything and the whole library sounds quiet. This
-  /// positive offset raises the target loudness so typical tracks play at full
-  /// volume and only the genuinely loudest get pulled down.
-  static const double _replayGainPreAmpDb = 6.0;
+  /// ReplayGain pre-amp in dB. Middle-ground value picked to balance two
+  /// competing goals:
+  ///
+  ///   • Equal loudness across tracks (low values → loud masters fully
+  ///     attenuated to the ReplayGain reference)
+  ///   • Acceptable overall volume (high values → less attenuation, library
+  ///     plays louder, but the variance between tracks widens)
+  ///
+  /// Reference table for a track with rgTrackGain = -7 dB (typical pop
+  /// master), since clamp(0..1) caps amplification at unity:
+  ///   preamp 0 → factor 0.45  (-7 dB attenuation, full normalization)
+  ///   preamp 3 → factor 0.63  (-4 dB attenuation, current setting)
+  ///   preamp 6 → factor 0.89  (-1 dB attenuation, mostly untouched)
+  static const double _replayGainPreAmpDb = 3.0;
 
   /// Linear playback multiplier derived from a track's ReplayGain (dB).
   /// Attenuate-only: after the pre-amp, tracks still louder than the target are

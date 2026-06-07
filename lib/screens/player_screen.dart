@@ -29,12 +29,39 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final _previousFocusNode = FocusNode();
   final _nextFocusNode = FocusNode();
 
+  // Track id we most recently kicked off a next-cover precache for. Prevents
+  // re-precaching on every rebuild while the same track plays.
+  String? _precachedForTrackId;
+
   @override
   void initState() {
     super.initState();
     // Auto-focus play/pause button for TV remote
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _playPauseFocusNode.requestFocus();
+    });
+  }
+
+  /// Kick off a download for the *next* track's cover at the player-screen
+  /// size so by the time we transition we don't briefly flash an empty
+  /// frame. Cheap (CachedNetworkImage de-dupes), fire-and-forget.
+  void _precacheNextCover(double size) {
+    final ps = context.read<AudioPlayerService>();
+    final current = ps.currentTrack;
+    if (current == null) return;
+    if (_precachedForTrackId == current.id) return;
+    _precachedForTrackId = current.id;
+
+    final next = ps.peekNextTrack();
+    if (next == null) return;
+    final pixelSize =
+        (size * MediaQuery.devicePixelRatioOf(context)).round();
+    final url = next.coverUrl(size: pixelSize);
+    if (url == null) return;
+
+    precacheImage(CachedNetworkImageProvider(url), context).catchError((_) {
+      // Cache miss / network blip — not actionable. The real fetch will
+      // happen when the player screen tries to render the next track.
     });
   }
 
@@ -90,6 +117,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
         final albumArtSize = isWideScreen
             ? (screenHeight * 0.5).clamp(250.0, 400.0)
             : (screenWidth * 0.6).clamp(200.0, 350.0);
+
+        // Defer to the next frame so we don't call precacheImage during a
+        // build phase. The post-frame callback also rate-limits via
+        // _precachedForTrackId so repeated rebuilds for the same track are
+        // a no-op.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _precacheNextCover(albumArtSize.toDouble());
+        });
 
         final horizontalPadding = Responsive.getHorizontalPadding(context);
 
@@ -253,6 +288,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Widget _buildAlbumArt(Track track, double size) {
+    // Server-side resize: ask Navidrome for an image at the actual pixel
+    // size we render. Without this the screen downloads the full-res master
+    // (often 1500–2000px / 1–2 MB) just to display a 350-px square, which
+    // both wastes bandwidth and balloons the in-memory image cache.
+    final pixelSize =
+        (size * MediaQuery.devicePixelRatioOf(context)).round();
+    final sizedUrl = track.coverUrl(size: pixelSize);
+
     final art = Container(
       width: size,
       height: size,
@@ -268,9 +311,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: track.coverArtUrl != null
+        child: sizedUrl != null
             ? CachedNetworkImage(
-                imageUrl: track.coverArtUrl!,
+                imageUrl: sizedUrl,
                 fit: BoxFit.contain,
                 errorWidget: (_, __, ___) => Container(
                   color: Colors.grey[800],

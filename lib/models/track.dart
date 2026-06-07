@@ -134,4 +134,14 @@ class Track {
     final mb = fileSizeBytes! / (1024 * 1024);
     return '${mb.toStringAsFixed(1)} MB';
   }
+
+  /// Cover art URL for a given square pixel [size] (typically the rendered
+  /// logical size × devicePixelRatio). Pass null for full resolution. Returns
+  /// null when there's no cover. The stored [coverArtUrl] carries no size, so
+  /// each caller requests exactly what it renders rather than one fixed size.
+  String? coverUrl({int? size}) {
+    final base = coverArtUrl;
+    if (base == null) return null;
+    return size == null ? base : '$base&size=$size';
+  }
 }

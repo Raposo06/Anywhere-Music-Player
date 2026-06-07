@@ -513,7 +513,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ? ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: CachedNetworkImage(
-                imageUrl: folder.coverArtUrl!,
+                imageUrl: folder.coverUrl(
+                    size: (48 * MediaQuery.devicePixelRatioOf(context))
+                        .round())!,
                 width: 48,
                 height: 48,
                 fit: BoxFit.cover,
@@ -551,7 +553,12 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: folder.coverArtUrl != null
                   ? CachedNetworkImage(
-                      imageUrl: folder.coverArtUrl!,
+                      // Stable card-sized request (DPI-aware but NOT tied to the
+                      // live card width) so resizing the window doesn't change
+                      // the URL and force a re-download.
+                      imageUrl: folder.coverUrl(
+                          size: (384 * MediaQuery.devicePixelRatioOf(context))
+                              .round())!,
                       fit: BoxFit.cover,
                       errorWidget: (_, __, ___) => const Center(
                         child: Icon(Icons.folder, size: 64, color: Colors.blue),
@@ -625,7 +632,9 @@ class _TrackTile extends StatelessWidget {
               ? ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: CachedNetworkImage(
-                    imageUrl: track.coverArtUrl!,
+                    imageUrl: track.coverUrl(
+                        size: (48 * MediaQuery.devicePixelRatioOf(context))
+                            .round())!,
                     width: 48,
                     height: 48,
                     fit: BoxFit.cover,

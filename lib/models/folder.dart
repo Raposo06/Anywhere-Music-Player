@@ -34,7 +34,8 @@ class Folder {
     final coverArtId = json['coverArt']?.toString() ?? json['artistImageUrl']?.toString();
     String? coverArtUrl;
     if (coverArtId != null && api != null) {
-      coverArtUrl = api.buildCoverArtUrl(coverArtId, size: 256);
+      // Size-less base URL; callers append the size they render via [coverUrl].
+      coverArtUrl = api.buildCoverArtUrl(coverArtId);
     }
 
     return Folder(
@@ -44,6 +45,15 @@ class Folder {
       coverArtUrl: coverArtUrl,
       albumCount: albumCnt,
     );
+  }
+
+  /// Cover art URL for a given square pixel [size] (typically the rendered
+  /// logical size × devicePixelRatio). Pass null for full resolution. Returns
+  /// null when there's no cover. The stored [coverArtUrl] carries no size.
+  String? coverUrl({int? size}) {
+    final base = coverArtUrl;
+    if (base == null) return null;
+    return size == null ? base : '$base&size=$size';
   }
 
   /// Get the display name (last segment of path)

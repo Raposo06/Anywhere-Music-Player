@@ -45,7 +45,7 @@ class _TvPlayerScreenState extends State<TvPlayerScreen> {
                     const Spacer(flex: 2),
 
                     // Album art
-                    _buildAlbumArt(track, artSize),
+                    _buildAlbumArt(context, track, artSize),
                     const Spacer(flex: 1),
 
                     // Track title
@@ -107,7 +107,14 @@ class _TvPlayerScreenState extends State<TvPlayerScreen> {
     );
   }
 
-  Widget _buildAlbumArt(Track track, double size) {
+  Widget _buildAlbumArt(BuildContext context, Track track, double size) {
+    // Server-side resize: request exactly the pixel size we'll render so we
+    // don't pull the full-res master (and explode the image cache) for a
+    // 420-px square.
+    final pixelSize =
+        (size * MediaQuery.devicePixelRatioOf(context)).round();
+    final sizedUrl = track.coverUrl(size: pixelSize);
+
     return Container(
       width: size,
       height: size,
@@ -123,9 +130,9 @@ class _TvPlayerScreenState extends State<TvPlayerScreen> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: track.coverArtUrl != null
+        child: sizedUrl != null
             ? CachedNetworkImage(
-                imageUrl: track.coverArtUrl!,
+                imageUrl: sizedUrl,
                 // contain (not cover) so non-square art shows in full
                 // instead of getting cropped to the square frame.
                 fit: BoxFit.contain,

@@ -425,7 +425,10 @@ class _TvTrackRowState extends State<_TvTrackRow> {
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(4),
                             child: CachedNetworkImage(
-                              imageUrl: widget.track.coverArtUrl!,
+                              imageUrl: widget.track.coverUrl(
+                                  size: (48 *
+                                          MediaQuery.devicePixelRatioOf(context))
+                                      .round())!,
                               fit: BoxFit.cover,
                               errorWidget: (_, __, ___) => const Icon(
                                 Icons.music_note,
