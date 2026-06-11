@@ -40,7 +40,20 @@ class _MiniPlayerContent extends StatelessWidget {
             top: BorderSide(
               color: Theme.of(context).dividerColor.withAlpha(50),
             ),
+            // Visible divider toward the nav bar below, so the mini player
+            // reads as its own bar instead of blending into the tabs.
+            bottom: BorderSide(
+              color: Theme.of(context).colorScheme.outline,
+            ),
           ),
+          // Soft lift above the content so the bar stands out as a layer.
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 8,
+              offset: const Offset(0, -2),
+            ),
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

@@ -14,6 +14,19 @@ import 'folder_detail_screen.dart';
 /// MP3 / FLAC / OGG) no longer applies. Desktop and web seek natively.
 bool get _seekSupported => true;
 
+/// The artist to display on the player, or null when there's nothing
+/// meaningful — an empty tag or Navidrome's '[Unknown Artist]' placeholder is
+/// treated as "no artist" so the line is hidden entirely.
+String? _displayArtist(Track track) {
+  final artist = track.artist?.trim();
+  if (artist == null ||
+      artist.isEmpty ||
+      artist.toLowerCase() == '[unknown artist]') {
+    return null;
+  }
+  return artist;
+}
+
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
 
@@ -213,6 +226,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+              // Artist — shown only when meaningful (skips empty tags and the
+              // '[Unknown Artist]' placeholder). Album is omitted: it's almost
+              // always the same as the folder shown just below.
+              if (_displayArtist(track) case final artist?) ...[
+                const SizedBox(height: 8),
+                Text(
+                  artist,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+
               if (track.folderPath.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 MouseRegion(
@@ -272,6 +300,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
+        // Artist — shown only when meaningful (skips empty tags and the
+        // '[Unknown Artist]' placeholder). Album is omitted: it's almost
+        // always the same as the folder shown just below.
+        if (_displayArtist(track) case final artist?) ...[
+          const SizedBox(height: 8),
+          Text(
+            artist,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
         if (track.folderPath.isNotEmpty) ...[
           const SizedBox(height: 8),
           MouseRegion(
