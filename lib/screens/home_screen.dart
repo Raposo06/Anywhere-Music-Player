@@ -59,9 +59,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onScannerChanged() {
     if (!mounted) return;
     final scanner = _scannerForListener;
-    final message = scanner?.refreshError;
+    if (scanner == null) return;
+
+    final message = scanner.refreshError;
     if (message == null) return;
-    scanner!.clearRefreshError();
+    scanner.clearRefreshError();
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
@@ -519,6 +521,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: 48,
                 height: 48,
                 fit: BoxFit.cover,
+                placeholder: (_, __) =>
+                    const Icon(Icons.folder, size: 48, color: Colors.blue),
                 errorWidget: (_, __, ___) =>
                     const Icon(Icons.folder, size: 48, color: Colors.blue),
               ),
@@ -560,6 +564,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           size: (384 * MediaQuery.devicePixelRatioOf(context))
                               .round())!,
                       fit: BoxFit.cover,
+                      placeholder: (_, __) => const Center(
+                        child: Icon(Icons.folder, size: 64, color: Colors.blue),
+                      ),
                       errorWidget: (_, __, ___) => const Center(
                         child: Icon(Icons.folder, size: 64, color: Colors.blue),
                       ),

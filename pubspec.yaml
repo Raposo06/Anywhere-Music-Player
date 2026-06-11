@@ -46,6 +46,10 @@ dependencies:
   # Cached network images
   cached_network_image: ^3.3.0
 
+  # Direct access to the image disk cache (used to pre-warm covers without
+  # decoding them into the in-memory image cache)
+  flutter_cache_manager: any
+
   # Scroll-to-index for "follow the playing track" in track lists
   scrollable_positioned_list: ^0.3.8
 

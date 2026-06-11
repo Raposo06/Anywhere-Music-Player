@@ -1,5 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../models/track.dart';
 
 /// Audio handler for system media controls (notifications, lock screen, etc.)
@@ -17,6 +18,10 @@ class MusicAudioHandler extends BaseAudioHandler {
   // and fires TRACK_CHANGED. Without this, the car shows a stale title even
   // though the lock screen updates correctly.
   int _trackCounter = 0;
+
+  // Cover size requested for system/car media metadata. Sized (not the full
+  // master) so it downloads fast and stays small enough for head-unit displays.
+  static const int _carArtSize = 512;
 
   MusicAudioHandler() {
     // Initialize with stopped state
@@ -98,8 +103,28 @@ class MusicAudioHandler extends BaseAudioHandler {
     ));
   }
 
-  /// Update metadata when track changes
-  void updateTrackInfo(Track track) {
+  /// Update metadata when the track changes.
+  ///
+  /// Resolves the cover to a LOCAL file *before* publishing so the artwork is
+  /// embedded in the very first metadata push — and in the AVRCP TRACK_CHANGED
+  /// that follows it. Car head units only re-read artwork on a track/state
+  /// change, so a cover that finishes downloading *after* the push otherwise
+  /// doesn't appear until the user pauses and resumes. Falls back to the remote
+  /// URL if the file can't be fetched (e.g. offline).
+  Future<void> updateTrackInfo(Track track) async {
+    final artUrl = track.coverUrl(size: _carArtSize);
+
+    Uri? artUri;
+    if (artUrl != null) {
+      try {
+        // Returns instantly if already cached, otherwise downloads once.
+        final file = await DefaultCacheManager().getSingleFile(artUrl);
+        artUri = Uri.file(file.path);
+      } catch (_) {
+        artUri = Uri.tryParse(artUrl);
+      }
+    }
+
     final item = MediaItem(
       id: track.id,
       title: track.title,
@@ -108,13 +133,13 @@ class MusicAudioHandler extends BaseAudioHandler {
       duration: track.durationSeconds != null
           ? Duration(seconds: track.durationSeconds!)
           : null,
-      artUri: track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
+      artUri: artUri,
     );
 
     mediaItem.add(item);
 
     // Bump the synthetic queue index. The car's Bluetooth stack uses this
-    // change as the trigger to refresh the displayed title.
+    // change as the trigger to refresh the displayed title (and now art).
     _trackCounter++;
     queue.add([item]);
     playbackState.add(playbackState.value.copyWith(queueIndex: _trackCounter));

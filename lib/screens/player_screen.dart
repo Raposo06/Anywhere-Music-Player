@@ -1,20 +1,18 @@
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import '../utils/responsive.dart';
 import '../widgets/queue_sheet.dart';
 import 'folder_detail_screen.dart';
 
-/// Whether mid-track seeking is supported on the current platform. Disabled
-/// on Android because ExoPlayer can't seek into Navidrome's HTTP stream for
-/// most file formats (VBR MP3, FLAC, OGG) — drags would silently fail or
-/// restart the song. The slider stays visible as a progress indicator but
-/// rejects user input.
-bool get _seekSupported => kIsWeb || !Platform.isAndroid;
+/// Mid-track seeking is supported on all platforms. On Android, playback is
+/// backed by a LockCachingAudioSource — a seekable local cache file — so the
+/// old limitation (ExoPlayer can't seek Navidrome's live HTTP stream for VBR
+/// MP3 / FLAC / OGG) no longer applies. Desktop and web seek natively.
+bool get _seekSupported => true;
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -29,9 +27,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final _previousFocusNode = FocusNode();
   final _nextFocusNode = FocusNode();
 
-  // Track id we most recently kicked off a next-cover precache for. Prevents
-  // re-precaching on every rebuild while the same track plays.
+  // Track id we most recently kicked off an upcoming-cover precache for.
+  // Prevents re-precaching on every rebuild while the same track plays.
   String? _precachedForTrackId;
+
+  // How many upcoming covers to prefetch at player size. Covers are KB, so a
+  // wide window is cheap and means rapid skip-forward lands on art that's
+  // already been fetched instead of loading it on arrival.
+  static const int _coverPrefetchAhead = 10;
 
   @override
   void initState() {
@@ -42,27 +45,47 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
-  /// Kick off a download for the *next* track's cover at the player-screen
-  /// size so by the time we transition we don't briefly flash an empty
-  /// frame. Cheap (CachedNetworkImage de-dupes), fire-and-forget.
-  void _precacheNextCover(double size) {
+  /// Prefetch the covers of the upcoming tracks at the player-screen size so a
+  /// rapid skip-forward lands on already-fetched art instead of flashing an
+  /// empty frame. The immediate next is fully decoded (instant on the next
+  /// skip); the rest of the window is only downloaded to the image disk cache
+  /// (no decode, so no pressure on the bounded in-memory cache). Fire-and-
+  /// forget; rate-limited to once per track via [_precachedForTrackId].
+  void _precacheUpcomingCovers(double size) {
     final ps = context.read<AudioPlayerService>();
     final current = ps.currentTrack;
     if (current == null) return;
     if (_precachedForTrackId == current.id) return;
     _precachedForTrackId = current.id;
 
-    final next = ps.peekNextTrack();
-    if (next == null) return;
     final pixelSize =
         (size * MediaQuery.devicePixelRatioOf(context)).round();
-    final url = next.coverUrl(size: pixelSize);
-    if (url == null) return;
 
-    precacheImage(CachedNetworkImageProvider(url), context).catchError((_) {
-      // Cache miss / network blip — not actionable. The real fetch will
-      // happen when the player screen tries to render the next track.
-    });
+    // Immediate next (wrap-aware): decode it so the very next skip is instant.
+    final nextUrl = ps.peekNextTrack()?.coverUrl(size: pixelSize);
+    if (nextUrl != null) {
+      precacheImage(CachedNetworkImageProvider(nextUrl), context)
+          .catchError((_) {
+        // Cache miss / network blip — the real fetch happens on render.
+      });
+    }
+
+    // Window ahead (queued tracks first, then play-order context): download to
+    // the disk cache so skipping several forward finds covers already fetched.
+    final window = <Track>[...ps.queue, ...ps.upcomingFromContext]
+        .take(_coverPrefetchAhead);
+    for (final track in window) {
+      final url = track.coverUrl(size: pixelSize);
+      if (url != null) _warmCoverToDisk(url);
+    }
+  }
+
+  Future<void> _warmCoverToDisk(String url) async {
+    try {
+      await DefaultCacheManager().downloadFile(url);
+    } catch (_) {
+      // Best-effort; the on-demand fetch covers a miss.
+    }
   }
 
   @override
@@ -123,7 +146,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         // _precachedForTrackId so repeated rebuilds for the same track are
         // a no-op.
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _precacheNextCover(albumArtSize.toDouble());
+          if (mounted) _precacheUpcomingCovers(albumArtSize.toDouble());
         });
 
         final horizontalPadding = Responsive.getHorizontalPadding(context);

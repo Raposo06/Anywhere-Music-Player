@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File, Directory;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../models/track.dart';
 import 'audio_handler.dart';
@@ -45,6 +46,21 @@ class AudioPlayerService with ChangeNotifier {
   String? _lastError;
   bool _isLoading = false;
   int _loadToken = 0;
+
+  // Debounce for user-initiated skips: a burst of Next/Previous presses
+  // updates the shown track instantly but coalesces into a single stream
+  // load, so we open only the track the user lands on — not every one passed
+  // through. Natural end-of-track advance bypasses this (loads immediately) to
+  // stay gapless.
+  static const _skipDebounce = Duration(milliseconds: 280);
+  Timer? _loadDebounce;
+
+  // Android-only on-disk stream cache (LockCachingAudioSource). Lets the player
+  // seek within a local file (Navidrome's live HTTP stream isn't seekable for
+  // VBR/FLAC/OGG) and avoids re-streaming on replay. Bounded by
+  // [_audioCacheCapBytes]; oldest songs are evicted after each load.
+  Directory? _audioCacheDir;
+  static const int _audioCacheCapBytes = 2 * 1024 * 1024 * 1024; // 2 GB
 
   // Mid-stream drop recovery: bounded auto-resume of the current track when the
   // network/server closes a connection mid-playback.
@@ -106,6 +122,7 @@ class AudioPlayerService with ChangeNotifier {
   Duration? get bufferedPosition => _player?.bufferedPosition;
 
   bool get _isWindows => !kIsWeb && Platform.isWindows;
+  bool get _isAndroid => !kIsWeb && Platform.isAndroid;
 
   static const _appName = 'Anywhere Music Player';
 
@@ -239,7 +256,7 @@ class AudioPlayerService with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      await _setSourceWithRetry(track);
+      await _setSourceWithRetry(track, token);
       if (token != _loadToken) return;
       await _player!.setVolume(_volume * _replayGainFactor(track));
       if (resumeFrom > Duration.zero) await _player!.seek(resumeFrom);
@@ -273,19 +290,84 @@ class AudioPlayerService with ChangeNotifier {
     artUri: track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
   );
 
-  AudioSource _buildSource(Track track) =>
-      AudioSource.uri(Uri.parse(track.streamUrl), tag: _buildMediaItem(track));
+  AudioSource _buildSource(Track track) {
+    final uri = Uri.parse(track.streamUrl);
+    final tag = _buildMediaItem(track);
+    // On Android, cache the stream to a per-song file so playback is seekable
+    // (the live HTTP stream isn't) and replays don't re-fetch from the server.
+    // Keyed by track id — NOT the URL, whose auth salt rotates on every build
+    // and would otherwise defeat the cache. Desktop (media_kit) streams direct.
+    if (_isAndroid && _audioCacheDir != null) {
+      return LockCachingAudioSource(
+        uri,
+        tag: tag,
+        cacheFile: File('${_audioCacheDir!.path}/${track.id}'),
+      );
+    }
+    return AudioSource.uri(uri, tag: tag);
+  }
+
+  /// Resolve the Android stream-cache directory once. No-op off Android.
+  Future<void> _ensureAudioCacheDir() async {
+    if (!_isAndroid || _audioCacheDir != null) return;
+    try {
+      final base = await getTemporaryDirectory();
+      final dir = Directory('${base.path}/audio_cache');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      _audioCacheDir = dir;
+    } catch (e) {
+      debugPrint('AudioPlayerService: could not init audio cache dir: $e');
+    }
+  }
+
+  /// Keep the Android stream cache under [_audioCacheCapBytes] by deleting the
+  /// oldest cached songs. Never evicts the track currently loaded. Fire-and-
+  /// forget; cache integrity is best-effort.
+  Future<void> _evictAudioCacheIfNeeded() async {
+    final dir = _audioCacheDir;
+    if (dir == null) return;
+    try {
+      final entries = <({File file, int size, DateTime modified})>[];
+      var total = 0;
+      await for (final e in dir.list()) {
+        if (e is! File) continue;
+        final st = await e.stat();
+        total += st.size;
+        entries.add((file: e, size: st.size, modified: st.modified));
+      }
+      if (total <= _audioCacheCapBytes) return;
+      entries.sort((a, b) => a.modified.compareTo(b.modified)); // oldest first
+      final currentId = _currentTrack?.id;
+      for (final entry in entries) {
+        if (total <= _audioCacheCapBytes) break;
+        if (currentId != null && entry.file.path.endsWith('/$currentId')) {
+          continue; // don't delete the song that's playing
+        }
+        try {
+          await entry.file.delete();
+          total -= entry.size;
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('AudioPlayerService: audio cache eviction failed: $e');
+    }
+  }
 
   /// Load the source, retrying once if it stalls. A single setAudioSource on
   /// the streaming backend (media_kit on Windows / the Android backend) can
   /// occasionally hang and never complete, which wedges playback ("freezes and
   /// never plays" on Next). Re-issuing the load recovers it — the same thing a
   /// manual Next press does, but automatic and on the same track.
-  Future<void> _setSourceWithRetry(Track track) async {
+  Future<void> _setSourceWithRetry(Track track, int token) async {
+    await _ensureAudioCacheDir();
     const loadTimeout = Duration(seconds: 12);
     try {
       await _player!.setAudioSource(_buildSource(track)).timeout(loadTimeout);
     } on TimeoutException {
+      // If a newer load superseded us while we were stalled, don't reissue —
+      // retrying here would clobber the current track's source with this
+      // stale one.
+      if (token != _loadToken) return;
       debugPrint('AudioPlayerService: load stalled, retrying trackId=${track.id}');
       await _player!.setAudioSource(_buildSource(track)).timeout(loadTimeout);
     }
@@ -310,23 +392,43 @@ class AudioPlayerService with ChangeNotifier {
     );
   }
 
-  /// Load [track] as the single audio source and start playback. Race-safe
-  /// against rapid successive calls via [_loadToken].
-  Future<void> _loadAndPlay(Track track) async {
+  /// Show [track] immediately (instant UI) and load it. A burst of user skips
+  /// each calls this with [immediate] = false: the displayed track updates per
+  /// press, but the stream open is debounced so only the track the user lands
+  /// on is opened. Natural end-of-track advance passes [immediate] = true to
+  /// load with no gap. Bumping [_loadToken] here invalidates any in-flight load
+  /// at once, so a superseded track never reaches play().
+  void _selectAndPlay(Track track, {required bool immediate}) {
     final token = ++_loadToken;
     _currentTrack = track;
     _isLoading = true;
     _lastError = null;
+    _loadDebounce?.cancel();
     notifyListeners();
 
+    if (immediate) {
+      _loadDebounce = null;
+      _loadAndPlay(track, token);
+    } else {
+      _loadDebounce = Timer(_skipDebounce, () {
+        _loadDebounce = null;
+        _loadAndPlay(track, token);
+      });
+    }
+  }
+
+  /// Load [track] as the single audio source and start playback, guarded by
+  /// [token] (assigned in [_selectAndPlay]) against rapid successive calls.
+  Future<void> _loadAndPlay(Track track, int token) async {
     try {
       _logStreamParams(track);
-      await _setSourceWithRetry(track);
+      await _setSourceWithRetry(track, token);
       if (token != _loadToken) return;
       await _player!.setVolume(_volume * _replayGainFactor(track));
       _player!.play();
-      if (_audioHandler != null) _audioHandler!.updateTrackInfo(track);
+      if (_audioHandler != null) unawaited(_audioHandler!.updateTrackInfo(track));
       _updateWindowsMetadata(track);
+      unawaited(_evictAudioCacheIfNeeded());
     } catch (e) {
       if (token != _loadToken) return;
       _handlePlaybackError(e);
@@ -446,7 +548,7 @@ class AudioPlayerService with ChangeNotifier {
     _currentIndex = 0;
     _playingFromQueue = false;
     if (_isShuffleEnabled) _regenerateShuffleOrder(anchorAt: 0);
-    await _loadAndPlay(track);
+    _selectAndPlay(track, immediate: true);
   }
 
   /// Play a playlist. Pass [startIndex] = -1 to let shuffle pick the first
@@ -476,27 +578,31 @@ class AudioPlayerService with ChangeNotifier {
       _regenerateShuffleOrder(anchorAt: resolvedStart);
     }
 
-    await _loadAndPlay(_playlist[resolvedStart]);
+    _selectAndPlay(_playlist[resolvedStart], immediate: true);
   }
 
   Future<void> _onTrackCompleted() async {
     if (_repeatMode == RepeatMode.one && _currentTrack != null) {
-      await _loadAndPlay(_currentTrack!);
+      _selectAndPlay(_currentTrack!, immediate: true);
       return;
     }
-    await playNext();
+    await _advance(immediate: true);
   }
 
-  /// Pick the next track to play. Queue takes priority over playlist
-  /// advancement, regardless of shuffle. Called for both natural end-of-track
-  /// and explicit "next" button.
-  Future<void> playNext() async {
+  /// User-pressed "next". Debounced: a rapid burst advances the cursor (and
+  /// the shown track) per press but opens only the final track's stream.
+  Future<void> playNext() => _advance(immediate: false);
+
+  /// Advance to the next track. Queue takes priority over playlist
+  /// advancement, regardless of shuffle. [immediate] = true is used for
+  /// natural end-of-track advance (gapless); user skips pass false to debounce.
+  Future<void> _advance({required bool immediate}) async {
     _ensurePlayerInitialized();
 
     if (_queue.isNotEmpty) {
       final next = _queue.removeAt(0);
       _playingFromQueue = true;
-      await _loadAndPlay(next);
+      _selectAndPlay(next, immediate: immediate);
       return;
     }
 
@@ -512,7 +618,7 @@ class AudioPlayerService with ChangeNotifier {
     }
     _currentIndex = next;
     _playingFromQueue = false;
-    await _loadAndPlay(_playlist[_currentIndex]);
+    _selectAndPlay(_playlist[_currentIndex], immediate: immediate);
   }
 
   /// Previous from a queue item returns to the playlist track that was
@@ -525,7 +631,7 @@ class AudioPlayerService with ChangeNotifier {
         _currentIndex >= 0 &&
         _currentIndex < _playlist.length) {
       _playingFromQueue = false;
-      await _loadAndPlay(_playlist[_currentIndex]);
+      _selectAndPlay(_playlist[_currentIndex], immediate: false);
       return;
     }
 
@@ -535,7 +641,7 @@ class AudioPlayerService with ChangeNotifier {
     if (prev == null) return;
     _currentIndex = prev;
     _playingFromQueue = false;
-    await _loadAndPlay(_playlist[_currentIndex]);
+    _selectAndPlay(_playlist[_currentIndex], immediate: false);
   }
 
   Future<void> togglePlayPause() async {
@@ -605,7 +711,7 @@ class AudioPlayerService with ChangeNotifier {
     final track = _queue[queueIndex];
     _queue.removeRange(0, queueIndex + 1);
     _playingFromQueue = true;
-    await _loadAndPlay(track);
+    _selectAndPlay(track, immediate: true);
   }
 
   /// Jump forward to the [autoIndex]-th track of [upcomingFromContext]. The
@@ -625,7 +731,7 @@ class AudioPlayerService with ChangeNotifier {
       _currentIndex = idx;
     }
     _playingFromQueue = false;
-    await _loadAndPlay(_playlist[_currentIndex]);
+    _selectAndPlay(_playlist[_currentIndex], immediate: true);
   }
 
   /// Reorder a track within the auto-upcoming section. In shuffle mode this
@@ -712,6 +818,7 @@ class AudioPlayerService with ChangeNotifier {
 
   @override
   void dispose() {
+    _loadDebounce?.cancel();
     _playerStateSubscription?.cancel();
     _playingSubscription?.cancel();
     _playbackEventSubscription?.cancel();
