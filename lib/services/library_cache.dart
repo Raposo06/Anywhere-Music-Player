@@ -19,10 +19,13 @@ import 'subsonic_api_service.dart';
 class LibraryCache {
   static const _fileName  = 'library_cache.json';
   static const _tmpName   = 'library_cache.tmp';
-  // Bumped to 2 when stream_url was dropped from the serialized schema. Old
-  // v1 caches are discarded on load (they have a redundant stream_url field
-  // that's now ignored, but version mismatch keeps the path clean).
-  static const _version   = 2;
+  // Bumped to 2 when stream_url was dropped from the serialized schema, and
+  // to 3 when cover_art_url (a full URL with a live auth token+salt baked
+  // in) was replaced by the bare cover_art_id — storing the resolved URL
+  // meant a password-equivalent credential sat in this plaintext file until
+  // the next scan overwrote it. Old caches are discarded on load (version
+  // mismatch) and rebuilt from a fresh scan.
+  static const _version   = 3;
 
   /// Load the cached track list. Returns null when:
   ///   - the cache file doesn't exist (first launch / post-logout)
@@ -83,9 +86,14 @@ class LibraryCache {
         'tracks': tracks.map((t) => t.toJson()).toList(growable: false),
       };
 
+      // JSON-encode on a background isolate — for a large library this
+      // payload is several MB, and a synchronous encode on the main thread
+      // stalls the UI right after every scan completes.
+      final json = await compute(_encodeCacheJson, payload);
+
       // Write to tmp, then rename. If the app dies between these calls, the
       // existing (stale-but-valid) cache remains.
-      await tmp.writeAsString(jsonEncode(payload), flush: true);
+      await tmp.writeAsString(json, flush: true);
       if (await target.exists()) await target.delete();
       await tmp.rename(target.path);
     } catch (e) {
@@ -121,3 +129,7 @@ Map<String, dynamic>? _decodeCacheJson(String raw) {
     return null;
   }
 }
+
+/// Isolate entry-point for the cache JSON encode. Top-level so [compute] can
+/// send it across isolates.
+String _encodeCacheJson(Map<String, dynamic> payload) => jsonEncode(payload);

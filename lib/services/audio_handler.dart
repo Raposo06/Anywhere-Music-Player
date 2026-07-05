@@ -118,7 +118,12 @@ class MusicAudioHandler extends BaseAudioHandler {
     if (artUrl != null) {
       try {
         // Returns instantly if already cached, otherwise downloads once.
-        final file = await DefaultCacheManager().getSingleFile(artUrl);
+        // Keyed by the stable coverArtId (not the URL, whose auth salt
+        // rotates every rebuild) so re-scans don't force a re-download.
+        final file = await DefaultCacheManager().getSingleFile(
+          artUrl,
+          key: track.coverCacheKey(size: _carArtSize),
+        );
         artUri = Uri.file(file.path);
       } catch (_) {
         artUri = Uri.tryParse(artUrl);

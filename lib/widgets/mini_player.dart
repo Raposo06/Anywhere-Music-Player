@@ -76,6 +76,10 @@ class _MiniPlayerContent extends StatelessWidget {
                                   size:
                                       (44 * MediaQuery.devicePixelRatioOf(context))
                                           .round())!,
+                              cacheKey: track.coverCacheKey(
+                                  size:
+                                      (44 * MediaQuery.devicePixelRatioOf(context))
+                                          .round()),
                               fit: BoxFit.cover,
                               errorWidget: (_, __, ___) => Container(
                                 color: Colors.grey[800],

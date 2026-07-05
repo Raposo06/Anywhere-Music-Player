@@ -114,6 +114,7 @@ class _TvPlayerScreenState extends State<TvPlayerScreen> {
     final pixelSize =
         (size * MediaQuery.devicePixelRatioOf(context)).round();
     final sizedUrl = track.coverUrl(size: pixelSize);
+    final sizedCacheKey = track.coverCacheKey(size: pixelSize);
 
     return Container(
       width: size,
@@ -133,6 +134,7 @@ class _TvPlayerScreenState extends State<TvPlayerScreen> {
         child: sizedUrl != null
             ? CachedNetworkImage(
                 imageUrl: sizedUrl,
+                cacheKey: sizedCacheKey,
                 // contain (not cover) so non-square art shows in full
                 // instead of getting cropped to the square frame.
                 fit: BoxFit.contain,

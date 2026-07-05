@@ -518,6 +518,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 imageUrl: folder.coverUrl(
                     size: (48 * MediaQuery.devicePixelRatioOf(context))
                         .round())!,
+                cacheKey: folder.coverCacheKey(
+                    size: (48 * MediaQuery.devicePixelRatioOf(context))
+                        .round()),
                 width: 48,
                 height: 48,
                 fit: BoxFit.cover,
@@ -563,6 +566,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       imageUrl: folder.coverUrl(
                           size: (384 * MediaQuery.devicePixelRatioOf(context))
                               .round())!,
+                      cacheKey: folder.coverCacheKey(
+                          size: (384 * MediaQuery.devicePixelRatioOf(context))
+                              .round()),
                       fit: BoxFit.cover,
                       placeholder: (_, __) => const Center(
                         child: Icon(Icons.folder, size: 64, color: Colors.blue),
@@ -642,6 +648,9 @@ class _TrackTile extends StatelessWidget {
                     imageUrl: track.coverUrl(
                         size: (48 * MediaQuery.devicePixelRatioOf(context))
                             .round())!,
+                    cacheKey: track.coverCacheKey(
+                        size: (48 * MediaQuery.devicePixelRatioOf(context))
+                            .round()),
                     width: 48,
                     height: 48,
                     fit: BoxFit.cover,

@@ -5,6 +5,9 @@ class Folder {
   final String folderPath;
   final int trackCount;
   final String? coverArtUrl;
+  /// Raw Subsonic cover art id — see [Track.coverArtId] for why this is
+  /// kept separately from the (salt-rotating) [coverArtUrl].
+  final String? coverArtId;
   final int albumCount;
 
   Folder({
@@ -12,6 +15,7 @@ class Folder {
     required this.folderPath,
     required this.trackCount,
     this.coverArtUrl,
+    this.coverArtId,
     this.albumCount = 0,
   });
 
@@ -43,6 +47,7 @@ class Folder {
       folderPath: json['name'] as String? ?? json['title'] as String? ?? 'Unknown',
       trackCount: displayCount,
       coverArtUrl: coverArtUrl,
+      coverArtId: coverArtId,
       albumCount: albumCnt,
     );
   }
@@ -54,6 +59,14 @@ class Folder {
     final base = coverArtUrl;
     if (base == null) return null;
     return size == null ? base : '$base&size=$size';
+  }
+
+  /// Stable cache key for the cover at a given [size] — see
+  /// [Track.coverCacheKey] for rationale.
+  String? coverCacheKey({int? size}) {
+    final id = coverArtId;
+    if (id == null) return null;
+    return 'cover_${id}_${size ?? 'full'}';
   }
 
   /// Get the display name (last segment of path)

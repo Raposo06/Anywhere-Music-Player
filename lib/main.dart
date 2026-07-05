@@ -236,6 +236,7 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> {
   bool _initialized = false;
+  bool _screenSizeDetected = false;
 
   @override
   void initState() {
@@ -266,9 +267,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
 
-    // Initialize platform detection with screen size (fallback heuristic)
-    final size = MediaQuery.of(context).size;
-    PlatformDetector.initializeWithScreenSize(size.width, size.height);
+    // Initialize platform detection with screen size (fallback heuristic).
+    // Only needs to run once — this build method re-runs on every auth
+    // state change, and the detection result never changes at runtime.
+    if (!_screenSizeDetected) {
+      _screenSizeDetected = true;
+      final size = MediaQuery.of(context).size;
+      PlatformDetector.initializeWithScreenSize(size.width, size.height);
+    }
 
     // Show loading screen only during initial auth check (not during login)
     if (!_initialized) {

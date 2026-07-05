@@ -6,6 +6,10 @@ class Track {
   final String filename;
   final String streamUrl;
   final String? coverArtUrl;
+  /// Raw Subsonic cover art id (stable, unlike [coverArtUrl] whose auth salt
+  /// rotates on every request). Used to build a stable cache key for image
+  /// caching instead of keying on the ever-changing URL.
+  final String? coverArtId;
   final String folderPath;
   final String folderName;
   final int? durationSeconds;
@@ -23,6 +27,7 @@ class Track {
     required this.filename,
     required this.streamUrl,
     this.coverArtUrl,
+    this.coverArtId,
     required this.folderPath,
     this.folderName = '',
     this.durationSeconds,
@@ -46,6 +51,7 @@ class Track {
       filename: filePath ?? '${json['title'] ?? 'unknown'}.${json['suffix'] ?? 'mp3'}',
       streamUrl: api.buildStreamUrl(songId),
       coverArtUrl: coverArtId != null ? api.buildCoverArtUrl(coverArtId) : null,
+      coverArtId: coverArtId,
       folderPath: extractedFolderPath,
       folderName: parentFolderName ?? _lastSegment(extractedFolderPath),
       durationSeconds: json['duration'] as int?,
@@ -62,19 +68,25 @@ class Track {
   }
 
   /// Reconstruct a Track from its [toJson] representation (used by the
-  /// on-disk library cache). The streamUrl is intentionally NOT persisted —
-  /// it's derived data (function of the server URL + auth + URL flags like
-  /// `format=raw`). Recomputing it at load time means any future change to
-  /// [SubsonicApiService.buildStreamUrl] propagates immediately without
-  /// needing a cache version bump.
+  /// on-disk library cache). Neither streamUrl nor coverArtUrl are
+  /// persisted — both are derived data (server URL + a freshly-generated
+  /// auth token/salt baked into the query string). A captured token+salt
+  /// pair is password-equivalent under the Subsonic protocol, so storing
+  /// the full URLs on disk would leave live credentials sitting in a plain
+  /// JSON file. Instead we persist only the raw `coverArtId` and recompute
+  /// both URLs at load time — mirroring how [SubsonicApiService.buildStreamUrl]
+  /// is already recomputed here, and propagating any future auth changes
+  /// automatically without needing a cache version bump.
   factory Track.fromJson(Map<String, dynamic> json, {required SubsonicApiService api}) {
     final id = json['id'] as String;
+    final coverArtId = json['cover_art_id'] as String?;
     return Track(
       id:               id,
       title:            json['title'] as String,
       filename:         json['filename'] as String,
       streamUrl:        api.buildStreamUrl(id),
-      coverArtUrl:      json['cover_art_url'] as String?,
+      coverArtUrl:      coverArtId != null ? api.buildCoverArtUrl(coverArtId) : null,
+      coverArtId:       coverArtId,
       folderPath:       json['folder_path'] as String,
       folderName:      (json['folder_name'] as String?) ?? '',
       durationSeconds:  json['duration_seconds'] as int?,
@@ -91,8 +103,10 @@ class Track {
     'id': id,
     'title': title,
     'filename': filename,
-    // stream_url deliberately omitted — recomputed from `id` in fromJson.
-    'cover_art_url': coverArtUrl,
+    // stream_url / cover_art_url deliberately omitted — both carry a live
+    // auth token+salt and are recomputed from `id` / `cover_art_id` in
+    // fromJson instead of being written to disk.
+    'cover_art_id': coverArtId,
     'folder_path': folderPath,
     'folder_name': folderName,
     'duration_seconds': durationSeconds,
@@ -143,5 +157,16 @@ class Track {
     final base = coverArtUrl;
     if (base == null) return null;
     return size == null ? base : '$base&size=$size';
+  }
+
+  /// Stable cache key for the cover at a given [size], derived from the
+  /// unchanging [coverArtId] rather than [coverArtUrl] (whose auth salt
+  /// rotates on every rebuild). Pass this as the `cacheKey`/`key` argument to
+  /// CachedNetworkImage / flutter_cache_manager so re-scans don't invalidate
+  /// already-downloaded art. Returns null when there's no cover.
+  String? coverCacheKey({int? size}) {
+    final id = coverArtId;
+    if (id == null) return null;
+    return 'cover_${id}_${size ?? 'full'}';
   }
 }

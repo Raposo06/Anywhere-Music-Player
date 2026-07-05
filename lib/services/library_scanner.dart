@@ -105,6 +105,7 @@ class LibraryScanner with ChangeNotifier {
           filename: path,
           streamUrl: _api!.buildStreamUrl(songId),
           coverArtUrl: coverArtId != null ? _api!.buildCoverArtUrl(coverArtId) : null,
+          coverArtId: coverArtId,
           folderPath: path.contains('/') ? path.substring(0, path.lastIndexOf('/')) : '',
           durationSeconds: (song['duration'] is num) ? (song['duration'] as num).round() : null,
           fileSizeBytes: (song['size'] is num) ? (song['size'] as num).round() : null,
@@ -195,8 +196,8 @@ class LibraryScanner with ChangeNotifier {
           // Last folder segment — this is where the track lives
           node.tracks.add(track);
           // Use the first track's cover art as the folder's cover
-          if (node.coverArtUrl == null && track.coverArtUrl != null) {
-            node.coverArtUrl = track.coverArtUrl;
+          if (node.coverArtId == null && track.coverArtId != null) {
+            node.coverArtId = track.coverArtId;
           }
         }
 
@@ -235,7 +236,7 @@ class LibraryScanner with ChangeNotifier {
   List<Folder> getTopLevelFolders() {
     return _effectiveRoot.entries
         .where((e) => e.key.isNotEmpty)
-        .map((e) => e.value.toFolder())
+        .map((e) => e.value.toFolder(_api))
         .toList()
       ..sort((a, b) => a.folderPath.toLowerCase().compareTo(b.folderPath.toLowerCase()));
   }
@@ -261,7 +262,7 @@ class LibraryScanner with ChangeNotifier {
 
     final subfolders = node.children.entries
         .where((e) => e.key.isNotEmpty)
-        .map((e) => e.value.toFolder())
+        .map((e) => e.value.toFolder(_api))
         .toList()
       ..sort((a, b) => a.folderPath.toLowerCase().compareTo(b.folderPath.toLowerCase()));
 
@@ -305,7 +306,7 @@ class LibraryScanner with ChangeNotifier {
       return a.fullPath.toLowerCase().compareTo(b.fullPath.toLowerCase());
     });
 
-    return matches.map((n) => n.toFolder()).toList();
+    return matches.map((n) => n.toFolder(_api)).toList();
   }
 
   /// Navigate to a node by its full path, walking from _rootNodes.
@@ -330,7 +331,7 @@ class _FolderNode {
   final String fullPath;
   final Map<String, _FolderNode> children = {};
   final List<Track> tracks = [];
-  String? coverArtUrl;
+  String? coverArtId;
 
   _FolderNode({required this.name, required this.fullPath});
 
@@ -355,25 +356,29 @@ class _FolderNode {
     return result;
   }
 
-  /// Convert to a Folder model for the UI.
-  Folder toFolder() {
+  /// Convert to a Folder model for the UI. [api] resolves the cover art id
+  /// into a full URL — pass the scanner's live api client so folders built
+  /// from a stale/logged-out client never happen.
+  Folder toFolder(SubsonicApiService? api) {
+    final id = coverArtId ?? _findFirstCoverArtId();
     return Folder(
       id: fullPath, // Use the path as ID for virtual folders
       folderPath: fullPath,
       trackCount: totalTrackCount,
-      coverArtUrl: coverArtUrl ?? _findFirstCoverArt(),
+      coverArtUrl: id != null && api != null ? api.buildCoverArtUrl(id) : null,
+      coverArtId: id,
       albumCount: subfolderCount,
     );
   }
 
-  /// Find the first cover art URL from any track in this folder or subfolders.
-  String? _findFirstCoverArt() {
+  /// Find the first cover art id from any track in this folder or subfolders.
+  String? _findFirstCoverArtId() {
     for (final track in tracks) {
-      if (track.coverArtUrl != null) return track.coverArtUrl;
+      if (track.coverArtId != null) return track.coverArtId;
     }
     for (final child in children.values) {
-      final url = child._findFirstCoverArt();
-      if (url != null) return url;
+      final id = child._findFirstCoverArtId();
+      if (id != null) return id;
     }
     return null;
   }

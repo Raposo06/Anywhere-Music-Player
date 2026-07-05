@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
@@ -32,7 +33,17 @@ class SubsonicApiService {
 
   /// In-memory LRU cache for directory contents and folder listings.
   /// Key: cache key string, Value: cached response with timestamp.
-  static final Map<String, _CacheEntry> _cache = {};
+  ///
+  /// Instance-scoped (not static): a fresh [SubsonicApiService] is created on
+  /// every login, so scoping the cache to the instance means switching
+  /// accounts (or servers) can never serve stale directory listings from a
+  /// previous session — the old cache is simply garbage collected with the
+  /// old instance.
+  ///
+  /// Uses [LinkedHashMap] for true LRU: [_getFromCache] re-inserts the entry
+  /// on hit (bumping it to most-recently-used) and [_putInCache] evicts the
+  /// map's first key (least-recently-used) once over capacity.
+  final LinkedHashMap<String, _CacheEntry> _cache = LinkedHashMap();
   static const int _maxCacheSize = 100;
   static const Duration _cacheTtl = Duration(minutes: 5);
 
@@ -150,7 +161,9 @@ class SubsonicApiService {
     return subsonicResponse;
   }
 
-  /// Get a cached value or null if expired/missing.
+  /// Get a cached value or null if expired/missing. Bumps the entry to
+  /// most-recently-used on a hit (LinkedHashMap iteration/eviction order is
+  /// insertion order, so remove+re-add moves it to the end).
   T? _getFromCache<T>(String key) {
     final entry = _cache[key];
     if (entry == null) return null;
@@ -158,19 +171,17 @@ class SubsonicApiService {
       _cache.remove(key);
       return null;
     }
+    _cache.remove(key);
+    _cache[key] = entry;
     return entry.data as T?;
   }
 
-  /// Store a value in the cache with LRU eviction.
+  /// Store a value in the cache with LRU eviction. [_cache] is a
+  /// [LinkedHashMap], so its first key is always the least-recently-used one.
   void _putInCache(String key, dynamic data) {
+    _cache.remove(key);
     if (_cache.length >= _maxCacheSize) {
-      // Remove oldest entry
-      final oldestKey = _cache.entries
-          .reduce(
-            (a, b) => a.value.timestamp.isBefore(b.value.timestamp) ? a : b,
-          )
-          .key;
-      _cache.remove(oldestKey);
+      _cache.remove(_cache.keys.first);
     }
     _cache[key] = _CacheEntry(data: data, timestamp: DateTime.now());
   }
@@ -185,7 +196,7 @@ class SubsonicApiService {
   Future<bool> ping() async {
     try {
       final uri = _buildUri('ping');
-      debugPrint('Subsonic ping: ${uri.host}${uri.path}');
+      if (kDebugMode) debugPrint('Subsonic ping: ${uri.host}${uri.path}');
       final response = await _get(uri);
       _parseResponse(response);
       return true;
@@ -346,18 +357,27 @@ class SubsonicApiService {
     return (folders: folders, tracks: tracks);
   }
 
-  /// Get all tracks (songs) within a directory, recursively fetching subdirectories
-  /// in parallel for efficiency.
+  /// Max number of sibling subdirectories fetched concurrently by
+  /// [getAllTracksInDirectory]. Unbounded fan-out on a deep/wide folder tree
+  /// would fire hundreds of simultaneous requests at the server; this caps it
+  /// while still overlapping requests instead of going fully sequential.
+  static const int _maxDirectoryFetchConcurrency = 6;
+
+  /// Get all tracks (songs) within a directory, recursively fetching
+  /// subdirectories with bounded concurrency for efficiency.
   Future<List<Track>> getAllTracksInDirectory(String directoryId) async {
     final contents = await getDirectoryContents(directoryId);
     final tracks = <Track>[...contents.tracks];
 
-    // Fetch subdirectories in parallel instead of sequentially
-    if (contents.folders.isNotEmpty) {
+    final subDirIds = contents.folders
+        .where((f) => f.id != null)
+        .map((f) => f.id!)
+        .toList(growable: false);
+
+    for (var i = 0; i < subDirIds.length; i += _maxDirectoryFetchConcurrency) {
+      final chunk = subDirIds.skip(i).take(_maxDirectoryFetchConcurrency);
       final subResults = await Future.wait(
-        contents.folders
-            .where((f) => f.id != null)
-            .map((f) => getAllTracksInDirectory(f.id!)),
+        chunk.map((id) => getAllTracksInDirectory(id)),
       );
       for (final subTracks in subResults) {
         tracks.addAll(subTracks);

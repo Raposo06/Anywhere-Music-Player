@@ -429,6 +429,10 @@ class _TvTrackRowState extends State<_TvTrackRow> {
                                   size: (48 *
                                           MediaQuery.devicePixelRatioOf(context))
                                       .round())!,
+                              cacheKey: widget.track.coverCacheKey(
+                                  size: (48 *
+                                          MediaQuery.devicePixelRatioOf(context))
+                                      .round()),
                               fit: BoxFit.cover,
                               errorWidget: (_, __, ___) => const Icon(
                                 Icons.music_note,

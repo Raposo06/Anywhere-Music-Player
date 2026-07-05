@@ -173,6 +173,9 @@ class _TrackRow extends StatelessWidget {
                 imageUrl: track.coverUrl(
                     size: (48 * MediaQuery.devicePixelRatioOf(context))
                         .round())!,
+                cacheKey: track.coverCacheKey(
+                    size: (48 * MediaQuery.devicePixelRatioOf(context))
+                        .round()),
                 width: 48,
                 height: 48,
                 fit: BoxFit.cover,

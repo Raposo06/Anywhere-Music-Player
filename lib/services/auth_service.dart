@@ -52,15 +52,30 @@ class AuthService with ChangeNotifier {
           password: password,
         );
 
-        // Verify credentials are still valid
+        // Verify credentials are still valid. Only clear stored credentials
+        // when the server actively rejects them (Subsonic error code 40 =
+        // wrong username/password); any other failure (offline, timeout,
+        // server down) is transient and must not log the user out — the
+        // library cache already supports fully offline browsing, so we keep
+        // the session and let the user retry once connectivity returns.
         try {
           await api.ping();
           _apiService = api;
           _currentUser = User(username: username);
-          debugPrint('AuthService: Restored session for $username');
+          if (kDebugMode) debugPrint('AuthService: Restored session for $username');
+        } on SubsonicApiException catch (e) {
+          if (e.code == 40) {
+            debugPrint('AuthService: Stored credentials rejected by server, clearing');
+            await _clearStorage();
+          } else {
+            debugPrint('AuthService: Ping failed ($e), continuing offline with cached session');
+            _apiService = api;
+            _currentUser = User(username: username);
+          }
         } catch (e) {
-          debugPrint('AuthService: Stored credentials invalid, clearing');
-          await _clearStorage();
+          debugPrint('AuthService: Ping failed ($e), continuing offline with cached session');
+          _apiService = api;
+          _currentUser = User(username: username);
         }
       }
     } catch (e) {
@@ -94,7 +109,7 @@ class AuthService with ChangeNotifier {
 
       _apiService = api;
       _currentUser = User(username: username);
-      debugPrint('AuthService: Logged in as $username');
+      if (kDebugMode) debugPrint('AuthService: Logged in as $username');
     } finally {
       _isLoading = false;
       notifyListeners();

@@ -75,10 +75,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
         (size * MediaQuery.devicePixelRatioOf(context)).round();
 
     // Immediate next (wrap-aware): decode it so the very next skip is instant.
-    final nextUrl = ps.peekNextTrack()?.coverUrl(size: pixelSize);
+    final next = ps.peekNextTrack();
+    final nextUrl = next?.coverUrl(size: pixelSize);
     if (nextUrl != null) {
-      precacheImage(CachedNetworkImageProvider(nextUrl), context)
-          .catchError((_) {
+      precacheImage(
+        CachedNetworkImageProvider(
+          nextUrl,
+          cacheKey: next!.coverCacheKey(size: pixelSize),
+        ),
+        context,
+      ).catchError((_) {
         // Cache miss / network blip — the real fetch happens on render.
       });
     }
@@ -89,13 +95,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
         .take(_coverPrefetchAhead);
     for (final track in window) {
       final url = track.coverUrl(size: pixelSize);
-      if (url != null) _warmCoverToDisk(url);
+      if (url != null) {
+        _warmCoverToDisk(url, track.coverCacheKey(size: pixelSize));
+      }
     }
   }
 
-  Future<void> _warmCoverToDisk(String url) async {
+  Future<void> _warmCoverToDisk(String url, String? cacheKey) async {
     try {
-      await DefaultCacheManager().downloadFile(url);
+      await DefaultCacheManager().downloadFile(url, key: cacheKey);
     } catch (_) {
       // Best-effort; the on-demand fetch covers a miss.
     }
@@ -361,6 +369,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final pixelSize =
         (size * MediaQuery.devicePixelRatioOf(context)).round();
     final sizedUrl = track.coverUrl(size: pixelSize);
+    final sizedCacheKey = track.coverCacheKey(size: pixelSize);
 
     final art = Container(
       width: size,
@@ -380,6 +389,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: sizedUrl != null
             ? CachedNetworkImage(
                 imageUrl: sizedUrl,
+                cacheKey: sizedCacheKey,
                 fit: BoxFit.contain,
                 errorWidget: (_, __, ___) => Container(
                   color: Colors.grey[800],
