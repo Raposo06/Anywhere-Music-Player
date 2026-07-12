@@ -793,9 +793,12 @@ class AudioPlayerService with ChangeNotifier {
   /// Reference table for a track with rgTrackGain = -7 dB (typical pop
   /// master), since clamp(0..1) caps amplification at unity:
   ///   preamp 0 → factor 0.45  (-7 dB attenuation, full normalization)
-  ///   preamp 3 → factor 0.63  (-4 dB attenuation, current setting)
-  ///   preamp 6 → factor 0.89  (-1 dB attenuation, mostly untouched)
-  static const double _replayGainPreAmpDb = 3.0;
+  ///   preamp 3 → factor 0.63  (-4 dB attenuation)
+  ///   preamp 6 → factor 0.89  (-1 dB attenuation, current setting — plays
+  ///                            louder, near the file's own level)
+  ///   preamp 9 → factor 1.00  (no attenuation; loudest, leveling effectively
+  ///                            off — bump here if you want it louder still)
+  static const double _replayGainPreAmpDb = 6.0;
 
   /// Linear playback multiplier derived from a track's ReplayGain (dB).
   /// Attenuate-only: after the pre-amp, tracks still louder than the target are
