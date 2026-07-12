@@ -44,6 +44,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // Prevents re-precaching on every rebuild while the same track plays.
   String? _precachedForTrackId;
 
+  // Last playback error shown in a SnackBar, so the same error isn't
+  // re-shown on every rebuild while it's still the current error.
+  String? _shownError;
+
   // How many upcoming covers to prefetch at player size. Covers are KB, so a
   // wide window is cheap and means rapid skip-forward lands on art that's
   // already been fetched instead of loading it on arrival.
@@ -171,6 +175,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
         });
 
         final horizontalPadding = Responsive.getHorizontalPadding(context);
+
+        final error = context.select<AudioPlayerService, String?>(
+          (ps) => ps.lastError,
+        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (error != null && error != _shownError) {
+            _shownError = error;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(error), duration: const Duration(seconds: 6)),
+            );
+          } else if (error == null) {
+            _shownError = null;
+          }
+        });
 
         return Scaffold(
           appBar: AppBar(

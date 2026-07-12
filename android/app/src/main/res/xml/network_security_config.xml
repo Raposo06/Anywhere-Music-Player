@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  LockCachingAudioSource (just_audio's Android stream cache) proxies ExoPlayer
+  through a local loopback HTTP server on 127.0.0.1 — cleartext, regardless of
+  whether the origin stream URL is HTTPS. Android blocks all cleartext traffic
+  by default, which breaks that loopback connection specifically. Scoping the
+  exemption to localhost only (instead of app-wide usesCleartextTraffic) keeps
+  cleartext blocked for every real network destination.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>
