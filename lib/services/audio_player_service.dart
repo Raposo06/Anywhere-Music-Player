@@ -811,6 +811,39 @@ class AudioPlayerService with ChangeNotifier {
     return factor.clamp(0.0, 1.0).toDouble();
   }
 
+  /// Test-only seam onto [_replayGainFactor] — the math is pure, but the
+  /// method itself is private (Dart privacy is per-library, so a test file
+  /// can't reach it directly).
+  @visibleForTesting
+  double replayGainFactorForTest(Track? track) => _replayGainFactor(track);
+
+  /// Test-only seam: seeds playback state directly instead of going through
+  /// [playTrack]/[playPlaylist], which lazily construct a real [AudioPlayer]
+  /// and therefore need a live platform audio backend. Lets widget tests
+  /// render UI driven by this service (mini player, queue sheet) against
+  /// realistic state without one. Never touches the player.
+  @visibleForTesting
+  void seedForTest({
+    List<Track>? playlist,
+    int? currentIndex,
+    List<Track>? queue,
+    Track? currentTrack,
+    bool? isShuffleEnabled,
+    RepeatMode? repeatMode,
+  }) {
+    if (playlist != null) _playlist = playlist;
+    if (currentIndex != null) _currentIndex = currentIndex;
+    if (queue != null) {
+      _queue
+        ..clear()
+        ..addAll(queue);
+    }
+    if (currentTrack != null) _currentTrack = currentTrack;
+    if (isShuffleEnabled != null) _isShuffleEnabled = isShuffleEnabled;
+    if (repeatMode != null) _repeatMode = repeatMode;
+    notifyListeners();
+  }
+
   Future<void> setVolume(double volume) async {
     _volume = volume.clamp(0.0, 1.0);
     if (_player != null) {

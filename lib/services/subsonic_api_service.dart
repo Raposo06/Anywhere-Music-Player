@@ -29,7 +29,7 @@ class SubsonicApiService {
   static const Duration _httpTimeout = Duration(seconds: 15);
 
   final _random = Random.secure();
-  final http.Client _httpClient = http.Client();
+  final http.Client _httpClient;
 
   /// In-memory LRU cache for directory contents and folder listings.
   /// Key: cache key string, Value: cached response with timestamp.
@@ -51,7 +51,10 @@ class SubsonicApiService {
     required this.serverUrl,
     required this.username,
     required this.password,
-  });
+    // Test-only seam: production call sites never pass this, so behavior is
+    // unchanged (a real http.Client is still created by default).
+    @visibleForTesting http.Client? httpClient,
+  }) : _httpClient = httpClient ?? http.Client();
 
   /// Generate a random salt string.
   String _generateSalt() {

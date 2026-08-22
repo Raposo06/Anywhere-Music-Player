@@ -1,5 +1,5 @@
 name: anywhere_music_player
-description: A self-hosted music streaming app for Web and Android TV
+description: A self-hosted music streaming app for Android TV, Android, and Windows
 publish_to: 'none'
 version: 1.1.0+2
 
@@ -66,6 +66,12 @@ dev_dependencies:
   build_runner: any
   json_serializable: any
   flutter_launcher_icons: ^0.14.4
+
+  # Testing: fakes package-boundary platform channels (path_provider,
+  # flutter_secure_storage) that `flutter test` doesn't provide a real
+  # implementation for.
+  path_provider_platform_interface: any
+  flutter_secure_storage_platform_interface: any
 
 flutter:
   uses-material-design: true

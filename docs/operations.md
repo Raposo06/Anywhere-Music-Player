@@ -76,6 +76,34 @@ that would unblock cleartext for every real network destination.
 - The manifest needs the `LEANBACK_LAUNCHER` intent filter (it's there — check
   it survived any manifest edit)
 
+### `flutter test` hangs forever on a widget that calls `LibraryScanner.scan()`
+
+**Symptom:** a `testWidgets()` test hangs indefinitely (real wall-clock
+minutes, not just simulated time) on any path that reaches `scan()` —
+directly, or indirectly via `HomeScreen`'s `initState`. `flutter test`'s
+per-test timeout (10 min) is what eventually kills it; no exception, no
+useful stack trace beyond `dart:isolate _RawReceivePort._handleMessage`.
+
+**Cause:** `LibraryScanner.scan()` calls `LibraryCache.load`/`save`, which use
+`compute()` (spawns a real isolate). `testWidgets()` runs the test body in a
+fake-async zone so animations/timers are deterministic — but a `Future`'s
+continuation stays bound to the zone it was *created* in, and a real
+isolate's response message never gets delivered inside that fake zone. Plain
+`test()` (no `testWidgets`) isn't affected — no fake-async zone involved.
+`pump()`/`pumpAndSettle()` can't fix it either: they only pump Flutter frames,
+not the isolate message queue.
+
+**Fix:** the call that *starts* the scan has to happen inside
+`tester.runAsync(...)` — Flutter's documented escape hatch back to the real
+zone. For a scan called directly in the test, wrap it:
+`await tester.runAsync(() => scanner.scan());`. For `HomeScreen`, where
+`initState`'s `WidgetsBinding.instance.addPostFrameCallback` fires the scan
+as a side effect of `pumpWidget()` itself, `pumpWidget()` has to be the thing
+running inside `runAsync` — a `pump()` called after `pumpWidget()` runs on
+the outside is too late, the callback (and its zone-bound `scan()`) has
+already fired. See `test/support/pump_helpers.dart`'s `waitForAsyncWork` /
+`pumpAndWaitForAsyncWork` and their usage in `test/screens/`.
+
 ## Server dependency
 
 Navidrome runs as a Docker service on the fox-core VPS (Coolify-managed) at

@@ -133,5 +133,5 @@ wakelock, Windows installer.
 ## Source
 
 - Repo: `https://github.com/Raposo06/Anywhere-Music-Player`
-- Related: [Foxcore Infrastructure](https://wiki.foxcore.dev/infrastructure) ·
-  [Docker & Coolify](https://wiki.foxcore.dev/infrastructure/coolify)
+- Related: [Foxcore Infrastructure](https://wikijs.foxcore.dev/infrastructure) ·
+  [Docker & Coolify](https://wikijs.foxcore.dev/infrastructure/coolify)

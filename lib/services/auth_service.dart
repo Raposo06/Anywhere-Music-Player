@@ -19,6 +19,25 @@ class AuthService with ChangeNotifier {
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
 
+  // Test-only seam: lets tests substitute a SubsonicApiService backed by a
+  // fake http.Client instead of one that hits the network. Production call
+  // sites never pass this, so behavior is unchanged.
+  final SubsonicApiService Function({
+    required String serverUrl,
+    required String username,
+    required String password,
+  }) _apiFactory;
+
+  AuthService({
+    @visibleForTesting
+    SubsonicApiService Function({
+      required String serverUrl,
+      required String username,
+      required String password,
+    })?
+    apiFactory,
+  }) : _apiFactory = apiFactory ?? SubsonicApiService.new;
+
   SubsonicApiService? get apiService => _apiService;
   User? get currentUser => _currentUser;
   bool get isAuthenticated => _apiService != null && _currentUser != null;
@@ -46,7 +65,7 @@ class AuthService with ChangeNotifier {
       }
 
       if (serverUrl != null && username != null && password != null) {
-        final api = SubsonicApiService(
+        final api = _apiFactory(
           serverUrl: serverUrl,
           username: username,
           password: password,
@@ -93,7 +112,7 @@ class AuthService with ChangeNotifier {
     notifyListeners();
 
     try {
-      final api = SubsonicApiService(
+      final api = _apiFactory(
         serverUrl: serverUrl,
         username: username,
         password: password,

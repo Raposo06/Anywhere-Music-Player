@@ -3,7 +3,7 @@
 > **Self-hosted, cross-platform music streaming powered by Navidrome.**
 > *Write Once (Flutter), Host Anywhere (Navidrome), Play Everywhere (TV, PC, Phone).*
 
-A private music streaming app that connects to a [Navidrome](https://www.navidrome.org/) server via the Subsonic API. Built with Flutter for Android TV, Android phones, Windows, and Web.
+A private music streaming app that connects to a [Navidrome](https://www.navidrome.org/) server via the Subsonic API. Built with Flutter for Android TV, Android phones, and Windows.
 
 ## Downloads
 
