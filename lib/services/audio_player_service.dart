@@ -830,6 +830,8 @@ class AudioPlayerService with ChangeNotifier {
     Track? currentTrack,
     bool? isShuffleEnabled,
     RepeatMode? repeatMode,
+    List<int>? shuffleOrder,
+    int? shufflePos,
   }) {
     if (playlist != null) _playlist = playlist;
     if (currentIndex != null) _currentIndex = currentIndex;
@@ -841,8 +843,32 @@ class AudioPlayerService with ChangeNotifier {
     if (currentTrack != null) _currentTrack = currentTrack;
     if (isShuffleEnabled != null) _isShuffleEnabled = isShuffleEnabled;
     if (repeatMode != null) _repeatMode = repeatMode;
+    if (shuffleOrder != null) _shuffleOrder = shuffleOrder;
+    if (shufflePos != null) _shufflePos = shufflePos;
     notifyListeners();
   }
+
+  /// Test-only seams onto the private index arithmetic behind [playNext]/
+  /// [playPrevious]/[toggleShuffle] — pure and player-free, but private (Dart
+  /// privacy is per-library, so a test file can't reach it directly). Letting
+  /// tests drive this directly avoids going through [playNext] etc., which
+  /// lazily construct a real [AudioPlayer] and therefore need a live platform
+  /// audio backend.
+  @visibleForTesting
+  int? nextPlaylistIndexForTest() => _nextPlaylistIndex();
+
+  @visibleForTesting
+  int? prevPlaylistIndexForTest() => _prevPlaylistIndex();
+
+  @visibleForTesting
+  void regenerateShuffleOrderForTest({int anchorAt = -1}) =>
+      _regenerateShuffleOrder(anchorAt: anchorAt);
+
+  @visibleForTesting
+  List<int> get shuffleOrderForTest => List.unmodifiable(_shuffleOrder);
+
+  @visibleForTesting
+  int get shufflePosForTest => _shufflePos;
 
   Future<void> setVolume(double volume) async {
     _volume = volume.clamp(0.0, 1.0);
