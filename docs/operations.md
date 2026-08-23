@@ -76,6 +76,29 @@ that would unblock cleartext for every real network destination.
 - The manifest needs the `LEANBACK_LAUNCHER` intent filter (it's there — check
   it survived any manifest edit)
 
+### Android build: Kotlin daemon crashes on Windows, then the build retries
+
+**Symptom:** `flutter build apk` / `flutter run` on Windows prints a Kotlin
+daemon failure mid-build — `Daemon compilation failed: null`, with
+`Storage for [...] is already registered` or `Could not close incremental
+caches` in the stack trace — and drops a stack-trace file under
+`android/.kotlin/errors/`. **The build then succeeds anyway**, which is why it
+is easy to ignore: Gradle falls back to in-process compilation and carries on.
+The cost is the wasted retry, not a failure.
+
+**Cause:** Gradle's no-isolation Kotlin workers race each other on the
+incremental-compile cache files. It reproduces on Windows; it has not been seen
+on the Linux/CI path.
+
+**Fix:** already in the tree — `kotlin.incremental=false` in
+`android/gradle.properties`. This app's Kotlin surface is one file
+(`MainActivity.kt`), so incremental compilation buys nothing and turning it off
+removes the race outright.
+
+**Don't commit the evidence.** `android/.kotlin/errors/*.log` are build
+artifacts; add `android/.kotlin/` to `.gitignore` rather than checking the
+stack traces in.
+
 ### `flutter test` hangs forever on a widget that calls `LibraryScanner.scan()`
 
 **Symptom:** a `testWidgets()` test hangs indefinitely (real wall-clock
