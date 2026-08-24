@@ -1,4 +1,7 @@
-import 'package:flutter/material.dart';
+// `RepeatMode` collides with Flutter's own (unrelated) animation-builder
+// class of the same name — hide theirs so ours from audio_player_service.dart
+// resolves unambiguously.
+import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';

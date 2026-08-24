@@ -153,6 +153,24 @@ the outside is too late, the callback (and its zone-bound `scan()`) has
 already fired. See `test/support/pump_helpers.dart`'s `waitForAsyncWork` /
 `pumpAndWaitForAsyncWork` and their usage in `test/screens/`.
 
+### `flutter test` / build fails: `RepeatMode` is imported from both ... and `repeating_animation_builder.dart`
+
+**Symptom:** compilation fails (build or `flutter test`) with `'RepeatMode' is
+imported from both 'package:anywhere_music_player/services/playback_cursor.dart'
+and 'package:flutter/src/widgets/repeating_animation_builder.dart'`, pointing at
+`lib/screens/player_screen.dart` / `lib/screens/tv_player_screen.dart`.
+
+**Cause:** Flutter 3.47 added its own `RepeatMode` class (for animation
+repeating), exported transitively through `material.dart`. It collides with
+this app's own `RepeatMode` enum (`lib/services/playback_cursor.dart`,
+re-exported by `audio_player_service.dart`) in any file that imports both —
+an SDK-bump trap, not something a code change introduced.
+
+**Fix:** already in the tree — the two colliding files hide Flutter's symbol
+at the import site: `import 'package:flutter/material.dart' hide RepeatMode;`.
+If a new screen starts importing both `material.dart` and something exposing
+this app's `RepeatMode`, it needs the same `hide`.
+
 ## Server dependency
 
 Navidrome runs as a Docker service on the fox-core VPS (Coolify-managed) at
