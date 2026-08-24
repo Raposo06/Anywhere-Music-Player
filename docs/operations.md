@@ -37,6 +37,25 @@ installer built from `installer.iss` → `AnywhereMusicPlayer_Setup.exe`.
 they need bumping together — an installer labelled with a version the app
 doesn't report makes bug reports unmatchable to builds.
 
+Linux distribution (personal-use install, not published anywhere) is a
+[PKGBUILD](https://wiki.archlinux.org/title/PKGBUILD) at
+`packaging/arch/PKGBUILD`:
+
+```bash
+cd packaging/arch && makepkg -si
+```
+
+It builds straight from the repo checkout it lives in (`source=()` is
+intentionally empty — see the comment header in the PKGBUILD) and derives
+`pkgver` from `pubspec.yaml` at build time via a `pkgver()` function, so it
+can't drift out of sync with the app the way `installer.iss`'s hardcoded
+version has. It needs `flutter` on `PATH` and a populated `.env` at the repo
+root at build time (`flutter_dotenv` bundles `.env` into the Flutter asset
+bundle, so whatever `API_BASE_URL` is set when you run `makepkg` is what
+ships in that build). Installs to `/usr/lib/anywhere-music-player/` with a
+`/usr/bin/anywhere-music-player` symlink and a desktop entry — remove with
+`sudo pacman -R anywhere-music-player`.
+
 ## Traps
 
 ### Windows build fails with a MAX_PATH error

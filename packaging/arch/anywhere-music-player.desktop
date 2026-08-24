@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Anywhere Music Player
+Comment=Self-hosted Navidrome (Subsonic API) music client
+Exec=anywhere-music-player
+Icon=anywhere-music-player
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+StartupWMClass=com.anywhere.anywhere_music_player

@@ -49,6 +49,10 @@ android/.kotlin/
 
 # Built installers — attach to GitHub releases, don't track
 /Output/
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/*.pkg.tar.*
+packaging/arch/*.log
 
 # Generated plugin registrants
 linux/flutter/generated_plugin_registrant.cc

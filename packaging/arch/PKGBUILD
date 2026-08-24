@@ -1,0 +1,74 @@
+# Maintainer: David Raposo <davidox06@gmail.com>
+#
+# This builds and installs the app for local use on this machine — it is
+# not published to the AUR. It builds in place from the repo checkout this
+# file lives in (two directories up), not from a downloaded/extracted
+# source tarball, so `source=()` is intentionally empty.
+#
+# Prerequisites this PKGBUILD does not (and mostly cannot) declare as
+# makedepends:
+#   - the Flutter SDK, on PATH as `flutter` — there's no Arch package for
+#     it here; it's whatever manually-installed SDK the repo is normally
+#     built with (see docs/operations.md).
+#   - `.env` must exist at the repo root at build time. flutter_dotenv
+#     bundles it into the Flutter asset bundle (pubspec.yaml `assets:`),
+#     so whatever API_BASE_URL is in .env when you run makepkg is the one
+#     baked into this build — see docs/decisions.md on why cover art/URLs
+#     aren't resolved at cache time, same spirit applies here.
+#
+# Usage:
+#   cd packaging/arch && makepkg -si
+
+pkgname=anywhere-music-player
+pkgver=1.1.0.2
+pkgrel=1
+pkgdesc="Self-hosted Navidrome (Subsonic API) music client"
+arch=('x86_64')
+url="https://foxcore.dev/"
+license=('custom:non-commercial')
+depends=('gtk3' 'mpv' 'libsecret')
+makedepends=('clang' 'cmake' 'ninja' 'pkgconf')
+source=()
+sha256sums=()
+
+_repo_root="$startdir/../.."
+
+# Derive pkgver from pubspec.yaml so it can't silently drift from the app
+# itself the way installer.iss's version already has (see docs/operations.md)
+# — every `makepkg` re-reads it instead of carrying its own hardcoded copy.
+pkgver() {
+  cd "$_repo_root"
+  grep -m1 '^version:' pubspec.yaml \
+    | sed -E 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+).*/\1.\2/'
+}
+
+build() {
+  cd "$_repo_root"
+  command -v flutter >/dev/null || {
+    echo "flutter not found on PATH — see docs/operations.md" >&2
+    return 1
+  }
+  [ -f .env ] || {
+    echo ".env not found at repo root — cp .env.example .env and set API_BASE_URL" >&2
+    return 1
+  }
+  flutter pub get
+  flutter build linux --release
+}
+
+package() {
+  cd "$_repo_root"
+  local bundle="build/linux/x64/release/bundle"
+
+  install -d "$pkgdir/usr/lib/$pkgname"
+  cp -r "$bundle"/. "$pkgdir/usr/lib/$pkgname/"
+
+  install -d "$pkgdir/usr/bin"
+  ln -s "/usr/lib/$pkgname/anywhere_music_player" "$pkgdir/usr/bin/$pkgname"
+
+  install -Dm644 "packaging/arch/$pkgname.desktop" \
+    "$pkgdir/usr/share/applications/$pkgname.desktop"
+  install -Dm644 \
+    "macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png" \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/$pkgname.png"
+}
