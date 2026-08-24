@@ -21,7 +21,7 @@
 
 pkgname=anywhere-music-player
 pkgver=1.1.0.2
-pkgrel=2
+pkgrel=3
 pkgdesc="Self-hosted Navidrome (Subsonic API) music client"
 arch=('x86_64')
 url="https://foxcore.dev/"
@@ -68,7 +68,6 @@ package() {
 
   install -Dm644 "packaging/arch/$pkgname.desktop" \
     "$pkgdir/usr/share/applications/$pkgname.desktop"
-  install -Dm644 \
-    "macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png" \
+  install -Dm644 "assets/icons/psx.png" \
     "$pkgdir/usr/share/icons/hicolor/512x512/apps/$pkgname.png"
 }
