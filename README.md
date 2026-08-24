@@ -98,6 +98,12 @@ flutter build apk
 flutter build windows
 ```
 
+**Linux:** install libmpv first (`sudo pacman -S mpv` on Arch, `sudo apt install libmpv-dev mpv` on Debian/Ubuntu) — media_kit links against the system library rather than bundling it. Then:
+```bash
+flutter build linux
+```
+Output: `build/linux/x64/release/bundle/anywhere_music_player`.
+
 ## Features
 
 - Folder-based music browsing (mirrors your server's filesystem structure)
@@ -148,6 +154,7 @@ anywhere_music_player/lib/
 | `just_audio`                   | Cross-platform audio streaming                  |
 | `just_audio_media_kit`         | Windows/Linux audio backend (replaces WMF)      |
 | `media_kit_libs_windows_audio` | Native MPV audio libraries for Windows          |
+| `media_kit_libs_linux`         | Links MPV audio to the system's libmpv on Linux |
 | `audio_service`                | Background playback + media controls            |
 | `provider`                     | State management                                |
 | `crypto`                       | MD5 hashing for Subsonic auth tokens            |
@@ -211,6 +218,9 @@ The Android manifest includes `LEANBACK_LAUNCHER` for TV launcher integration.
 
 ### Windows: build fails with MAX_PATH error
 - Enable long path support (see build instructions above) and restart your terminal
+
+### Linux: build fails to link, or audio doesn't play
+- Install libmpv (see build instructions above) — media_kit needs the system library present, it isn't bundled the way the Windows build is
 
 ## License
 

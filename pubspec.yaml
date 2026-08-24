@@ -23,6 +23,10 @@ dependencies:
   just_audio: ^0.9.40
   just_audio_media_kit: ^2.1.0
   media_kit_libs_windows_audio: ^1.0.9
+  # Linux links against the system's libmpv rather than bundling it (that's
+  # how media_kit does Linux) — see docs/operations.md for the libmpv
+  # install step this needs on the build/run machine.
+  media_kit_libs_linux: ^1.2.1
   audio_service: ^0.18.12
   smtc_windows: ^0.1.3
   windows_taskbar: ^1.1.2

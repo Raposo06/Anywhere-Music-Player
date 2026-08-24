@@ -26,6 +26,7 @@ Navidrome web UI (the app has no signup — see [decisions.md](decisions.md)).
 ```bash
 flutter build apk            # Android phone + TV
 flutter build windows        # Windows
+flutter build linux          # Linux — needs libmpv installed first, see Traps
 ```
 
 Windows distribution is an [Inno Setup](https://jrsoftware.org/isinfo.php)
@@ -63,6 +64,31 @@ kills that loopback specifically.
 `127.0.0.1`/`localhost` only, wired via `android:networkSecurityConfig` in the
 manifest. **Don't "simplify" this to app-wide `usesCleartextTraffic="true"`** —
 that would unblock cleartext for every real network destination.
+
+### Linux build/run fails or plays no audio: missing libmpv
+
+**Symptom:** `flutter build linux` fails to link, or the built app runs but
+throws on `AudioPlayer` init / plays nothing, with an error mentioning
+`mpv`/`libmpv`.
+
+**Cause:** unlike Windows (`media_kit_libs_windows_audio` bundles the DLLs
+directly), on Linux `media_kit` links against the **system's** libmpv —
+`media_kit_libs_linux` only supplies the CMake glue to find it. Nothing in
+the Flutter build tree provides the library itself; it has to already be on
+the machine.
+
+**Fix:** install it via the distro's package manager before building —
+
+```bash
+sudo pacman -S mpv                 # Arch/Omarchy — one package covers build + runtime
+sudo apt install libmpv-dev mpv    # Debian/Ubuntu
+```
+
+Also needs the standard Flutter Linux desktop toolchain (`clang`, `cmake`,
+`ninja`, `pkgconf`, `gtk3`) and `flutter config --enable-linux-desktop` if
+that hasn't been turned on for the SDK yet. The built binary lands at
+`build/linux/x64/release/bundle/anywhere_music_player` (`x64/debug/` for a
+debug build) — run it from there, or `flutter run -d linux` for a dev loop.
 
 ### App won't connect
 
@@ -149,10 +175,10 @@ flutter analyze
 flutter test
 ```
 
-⚠️ `flutter test` currently runs only the default `test/widget_test.dart`
-scaffold — passing it means approximately nothing. Treat manual testing on a real
-device as the actual gate, particularly for anything touching playback: the
-audio path differs by platform (media_kit on Windows, ExoPlayer + loopback cache
-on Android), so a change verified on one says little about the other.
+See [overview.md](overview.md)'s "Test suite" section for what `flutter test`
+actually covers. Treat manual testing on a real device as the real gate for
+anything touching playback, though: the audio path differs by platform
+(media_kit/MPV on Windows and Linux, ExoPlayer + loopback cache on Android),
+so a change verified on one says little about the others.
 
 Device logs: `adb logcat` on Android, `flutter logs` elsewhere.

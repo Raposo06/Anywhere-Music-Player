@@ -63,7 +63,8 @@ no backend of its own.
 | Android TV | Shipped — D-pad UI, `LEANBACK_LAUNCHER` |
 | Windows | Shipped — Inno Setup installer (`installer.iss`) |
 | iOS | Scaffolded (`ios/`), not distributed — needs an Apple Developer account |
-| Linux / macOS | Scaffolded by Flutter, not built or distributed |
+| Linux | Buildable (`flutter build linux`) — not packaged for distribution; needs the system's libmpv installed first, see [operations](operations.md) |
+| macOS | Scaffolded by Flutter, not built or distributed |
 | Web | **Not supported** — there is no `web/` directory |
 
 > ⚠️ The README and the old WikiJS page both listed **Web** as a target. That was

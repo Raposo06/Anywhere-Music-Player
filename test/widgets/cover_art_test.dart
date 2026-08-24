@@ -67,13 +67,20 @@ void main() {
     Track trackWithCover() => sampleTrack(coverArtId: 'cov-1');
 
     testWidgets('the URL and cache key are built from the same size — never out of step', (tester) async {
+      // Pinned explicitly rather than relied on as an ambient default — the
+      // test host's actual default devicePixelRatio varies (seen as high as
+      // 3.0), and this test only cares that the URL and cache key agree with
+      // each other, not what the ratio itself is.
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetDevicePixelRatio);
+
       await tester.pumpWidget(wrap(
         CoverArt(trackWithCover(), size: 48, resolverForTest: resolver),
       ));
 
       final image = tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
-      // Default test devicePixelRatio is 1.0, so the requested pixel size is
-      // 48 either way — what matters is that both come from one value.
+      // devicePixelRatio pinned to 1.0 above, so the requested pixel size is
+      // 48 — what matters is that both come from one value.
       expect(image.imageUrl, resolver.buildCoverArtUrl('cov-1', size: 48));
       expect(image.cacheKey, 'cover_cov-1_48');
     });

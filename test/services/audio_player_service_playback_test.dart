@@ -52,10 +52,17 @@ void main() {
     Duration timeout = const Duration(seconds: 2),
   }) async {
     final deadline = DateTime.now().add(timeout);
-    while (!test()) {
+    // do-while, not while: always wait at least one real tick before the
+    // first check. A plain `while` checks synchronously before this call
+    // yields at all — if the state change comes from an event fired just
+    // before calling this (e.g. injectStreamError, which delivers via a
+    // non-sync broadcast StreamController and so needs a microtask to even
+    // reach its listener), the check can pass before that event has been
+    // processed at all, and the caller moves on having not actually waited.
+    do {
       if (DateTime.now().isAfter(deadline)) fail('waitUntil timed out');
       await Future<void>.delayed(const Duration(milliseconds: 5));
-    }
+    } while (!test());
   }
 
   test('playTrack loads and plays, applying ReplayGain to the volume', () async {

@@ -70,10 +70,12 @@ void main() {
     // Candidate 08: FolderDetailScreen used to read the scanner once in
     // initState and never listen again, so a background refresh landing
     // while the screen was already open was invisible.
-    final songs = [
-      nativeApiSong(id: '1', path: 'Anime/Naruto/song.mp3'),
-      nativeApiSong(id: '2', path: 'Anime/loose.mp3'),
-    ];
+    //
+    // No subfolder in this fixture (unlike the test above) — a subfolder's
+    // own tile shows its own "N track(s)" subtitle (its local count, not the
+    // recursive total), which reads identically to the header and would
+    // make this assertion ambiguous about which one it's actually checking.
+    final songs = [nativeApiSong(id: '1', path: 'Anime/loose.mp3')];
     final scanner = scannerWithSongs(songs);
     await tester.runAsync(() => scanner.scan());
 
@@ -82,7 +84,7 @@ void main() {
 
     expect(find.text('1 track(s)'), findsOneWidget);
 
-    songs.add(nativeApiSong(id: '3', path: 'Anime/loose2.mp3'));
+    songs.add(nativeApiSong(id: '2', path: 'Anime/loose2.mp3'));
     await tester.runAsync(() => scanner.rescan());
     await settle(tester);
 
