@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
+import '../services/auth_service.dart';
+import '../services/stream_url_resolver.dart';
 
 /// Full-screen TV player with large cover art and D-pad navigable controls.
 class TvPlayerScreen extends StatefulWidget {
@@ -113,7 +115,8 @@ class _TvPlayerScreenState extends State<TvPlayerScreen> {
     // 420-px square.
     final pixelSize =
         (size * MediaQuery.devicePixelRatioOf(context)).round();
-    final sizedUrl = track.coverUrl(size: pixelSize);
+    final StreamUrlResolver? resolver = context.watch<AuthService>().apiService;
+    final sizedUrl = resolver.resolveCoverUrl(track, size: pixelSize);
     final sizedCacheKey = track.coverCacheKey(size: pixelSize);
 
     return Container(
@@ -138,7 +141,7 @@ class _TvPlayerScreenState extends State<TvPlayerScreen> {
                 // contain (not cover) so non-square art shows in full
                 // instead of getting cropped to the square frame.
                 fit: BoxFit.contain,
-                errorWidget: (_, __, ___) => _placeholderArt(size),
+                errorWidget: (_, _, _) => _placeholderArt(size),
               )
             : _placeholderArt(size),
       ),

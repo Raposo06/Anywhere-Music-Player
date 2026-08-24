@@ -8,6 +8,38 @@ import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage
 import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/subsonic_api_service.dart';
 
+/// A secure-storage platform whose reads always throw, simulating a
+/// flutter_secure_storage plugin failure (e.g. a corrupted keystore) rather
+/// than the credentials themselves being wrong. Backed by [data] so writes
+/// (login) and deletes (logout) still behave normally — only reads fail.
+class _UnreadableSecureStoragePlatform extends FlutterSecureStoragePlatform {
+  final Map<String, String> data;
+  _UnreadableSecureStoragePlatform(this.data);
+
+  @override
+  Future<String?> read({required String key, required Map<String, String> options}) {
+    throw Exception('plugin failure: keystore unavailable');
+  }
+
+  @override
+  Future<bool> containsKey({required String key, required Map<String, String> options}) async =>
+      data.containsKey(key);
+
+  @override
+  Future<void> delete({required String key, required Map<String, String> options}) async =>
+      data.remove(key);
+
+  @override
+  Future<void> deleteAll({required Map<String, String> options}) async => data.clear();
+
+  @override
+  Future<Map<String, String>> readAll({required Map<String, String> options}) async => data;
+
+  @override
+  Future<void> write({required String key, required String value, required Map<String, String> options}) async =>
+      data[key] = value;
+}
+
 http.Response _pingOk() => http.Response(
   jsonEncode({
     'subsonic-response': {'status': 'ok'},
@@ -104,6 +136,34 @@ void main() {
 
       expect(auth.isAuthenticated, isTrue);
       expect(secureStore.containsKey('server_url'), isTrue);
+    });
+
+    test('a secure-storage read failure does not wipe stored credentials', () async {
+      // Regression for J2: a flutter_secure_storage plugin failure on
+      // startup must not be treated as "credentials rejected" — only a
+      // code-40 ping response may clear storage. See docs/decisions.md.
+      secureStore['server_url'] = 'https://navidrome.example.com';
+      secureStore['username'] = 'alice';
+      secureStore['password'] = 'secret';
+      FlutterSecureStoragePlatform.instance = _UnreadableSecureStoragePlatform(secureStore);
+
+      final auth = AuthService(
+        apiFactory: ({required serverUrl, required username, required password}) =>
+            SubsonicApiService(
+              serverUrl: serverUrl,
+              username: username,
+              password: password,
+              httpClient: MockClient((request) async => _pingOk()),
+            ),
+      );
+      await auth.initialize();
+
+      // Couldn't even read the credentials this launch, so no session — but
+      // critically, they must still be there for the *next* launch to retry.
+      expect(auth.isAuthenticated, isFalse);
+      expect(secureStore.containsKey('server_url'), isTrue);
+      expect(secureStore.containsKey('username'), isTrue);
+      expect(secureStore.containsKey('password'), isTrue);
     });
 
     test('migrates legacy SharedPreferences credentials into secure storage', () async {

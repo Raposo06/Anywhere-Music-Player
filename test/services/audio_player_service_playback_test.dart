@@ -3,17 +3,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
 import '../support/fake_just_audio.dart';
+import '../support/fake_presence.dart';
+import '../support/fake_resolver.dart';
 import '../support/fixtures.dart';
 
-// Covers AudioPlayerService's playback entry points — playTrack/playPlaylist/
+// Covers AudioPlayerService's playback entry points — playTrack/play/
 // playNext/playPrevious/stop/seek/setVolume/togglePlayPause — plus natural
 // end-of-track advance, repeat-one looping, skip-debounce coalescing, a load
 // failure, and mid-stream drop recovery. Exercised against a
 // FakeJustAudioPlatform (test/support/fake_just_audio.dart) standing in for
 // the real native backend (media_kit on Windows, ExoPlayer on Android) that
-// `flutter test` doesn't provide. See audio_player_service_sequencing_test.dart
-// for the pure index/shuffle math this complements, and docs/operations.md
-// for why the two platforms still need real-device testing on top of this.
+// `flutter test` doesn't provide. See playback_cursor_test.dart for the pure
+// index/shuffle math this complements, and docs/operations.md for why the two
+// platforms still need real-device testing on top of this.
+//
+// AudioPlayerService() defaults to NoPresence (see NowPlayingPresence), so
+// none of this needs a real Windows/Android platform channel — that used to
+// require mocking window_manager here purely to stop an unrelated test from
+// throwing. See docs/reviews/2026-08-22-architecture-review.html Candidate 06.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -22,10 +29,6 @@ void main() {
   // Future (AudioPlayerService never awaits play()), which surfaces as an
   // unhandled test error.
   const audioSessionChannel = MethodChannel('com.ryanheise.audio_session');
-  // AudioPlayerService._updateWindowsMetadata calls this directly (unguarded
-  // by try/catch) whenever a track starts — same pattern as
-  // home_screen_test.dart's logout test.
-  const windowManagerChannel = MethodChannel('window_manager');
 
   late FakeJustAudioPlatform fakePlatform;
 
@@ -34,15 +37,11 @@ void main() {
     JustAudioPlatform.instance = fakePlatform;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(audioSessionChannel, (call) async => null);
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(windowManagerChannel, (call) async => null);
   });
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(audioSessionChannel, null);
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(windowManagerChannel, null);
   });
 
   /// Polls until [test] is true — used instead of a fixed delay to wait out
@@ -60,7 +59,7 @@ void main() {
   }
 
   test('playTrack loads and plays, applying ReplayGain to the volume', () async {
-    final service = AudioPlayerService();
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
 
     await service.playTrack(sampleTrack(id: '1', replayGainDb: -7.0));
     await waitUntil(() => !service.isLoading);
@@ -71,11 +70,11 @@ void main() {
     expect(fakePlatform.player.lastVolume, closeTo(0.89, 0.01)); // -7dB @ +6dB preamp
   });
 
-  test('playPlaylist starts at the given index', () async {
-    final service = AudioPlayerService();
+  test('play starts at the given index', () async {
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     final tracks = [sampleTrack(id: '1'), sampleTrack(id: '2'), sampleTrack(id: '3')];
 
-    await service.playPlaylist(tracks, 2);
+    await service.play(tracks, from: 2);
     await waitUntil(() => !service.isLoading);
 
     expect(service.currentIndex, 2);
@@ -83,9 +82,9 @@ void main() {
   });
 
   test('playNext debounces a burst of skips into a single load', () async {
-    final service = AudioPlayerService();
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     final tracks = [sampleTrack(id: '1'), sampleTrack(id: '2'), sampleTrack(id: '3')];
-    await service.playPlaylist(tracks, 0);
+    await service.play(tracks, from: 0);
     await waitUntil(() => !service.isLoading);
     expect(fakePlatform.player.loadCount, 1);
 
@@ -107,9 +106,9 @@ void main() {
   });
 
   test('natural end-of-track advances immediately, without the skip debounce', () async {
-    final service = AudioPlayerService();
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     final tracks = [sampleTrack(id: '1'), sampleTrack(id: '2')];
-    await service.playPlaylist(tracks, 0);
+    await service.play(tracks, from: 0);
     await waitUntil(() => !service.isLoading);
     expect(fakePlatform.player.loadCount, 1);
 
@@ -120,10 +119,10 @@ void main() {
   });
 
   test('repeat-one reloads the same track on natural completion', () async {
-    final service = AudioPlayerService();
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     service.toggleRepeatMode(); // all -> one
     final tracks = [sampleTrack(id: '1'), sampleTrack(id: '2')];
-    await service.playPlaylist(tracks, 0);
+    await service.play(tracks, from: 0);
     await waitUntil(() => !service.isLoading);
     expect(fakePlatform.player.loadCount, 1);
 
@@ -133,10 +132,23 @@ void main() {
     expect(service.currentTrack?.id, '1'); // same track, reloaded
   });
 
-  test('playPrevious steps back through the playlist', () async {
-    final service = AudioPlayerService();
+  test('playShuffled enables shuffle and starts playback from the given tracks', () async {
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     final tracks = [sampleTrack(id: '1'), sampleTrack(id: '2'), sampleTrack(id: '3')];
-    await service.playPlaylist(tracks, 2);
+    expect(service.isShuffleEnabled, isFalse);
+
+    await service.playShuffled(tracks);
+    await waitUntil(() => !service.isLoading);
+
+    expect(service.isShuffleEnabled, isTrue);
+    expect(tracks.map((t) => t.id), contains(service.currentTrack?.id));
+    expect(fakePlatform.player.loadCount, 1);
+  });
+
+  test('playPrevious steps back through the playlist', () async {
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
+    final tracks = [sampleTrack(id: '1'), sampleTrack(id: '2'), sampleTrack(id: '3')];
+    await service.play(tracks, from: 2);
     await waitUntil(() => !service.isLoading);
 
     await service.playPrevious();
@@ -147,9 +159,9 @@ void main() {
   });
 
   test('playNext plays the queue before continuing the playlist', () async {
-    final service = AudioPlayerService();
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     final tracks = [sampleTrack(id: '1'), sampleTrack(id: '2')];
-    await service.playPlaylist(tracks, 0);
+    await service.play(tracks, from: 0);
     await waitUntil(() => !service.isLoading);
     await service.addToQueue(sampleTrack(id: 'q'));
 
@@ -165,7 +177,7 @@ void main() {
   });
 
   test('stop clears playback and queue state', () async {
-    final service = AudioPlayerService();
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     await service.playTrack(sampleTrack(id: '1'));
     await waitUntil(() => !service.isLoading);
     await service.addToQueue(sampleTrack(id: '2'));
@@ -178,7 +190,7 @@ void main() {
   });
 
   test('seek passes the position through to the platform', () async {
-    final service = AudioPlayerService();
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     await service.playTrack(sampleTrack(id: '1'));
     await waitUntil(() => !service.isLoading);
 
@@ -188,7 +200,7 @@ void main() {
   });
 
   test('setVolume applies ReplayGain on top of the requested volume', () async {
-    final service = AudioPlayerService();
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     await service.playTrack(sampleTrack(id: '1')); // no ReplayGain data -> factor 1.0
     await waitUntil(() => !service.isLoading);
 
@@ -198,7 +210,7 @@ void main() {
   });
 
   test('togglePlayPause pauses then resumes', () async {
-    final service = AudioPlayerService();
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     await service.playTrack(sampleTrack(id: '1'));
     await waitUntil(() => !service.isLoading);
     expect(service.isPlaying, isTrue);
@@ -211,9 +223,9 @@ void main() {
   });
 
   test('a load failure surfaces as lastError without crashing playback', () async {
-    final service = AudioPlayerService();
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     final tracks = [sampleTrack(id: '1'), sampleTrack(id: '2')];
-    await service.playPlaylist(tracks, 0);
+    await service.play(tracks, from: 0);
     await waitUntil(() => !service.isLoading);
 
     fakePlatform.player.failNextLoadWith = Exception('simulated stream-open failure');
@@ -226,7 +238,7 @@ void main() {
   });
 
   test('recovers from a mid-stream drop by reloading the same track', () async {
-    final service = AudioPlayerService();
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     await service.playTrack(sampleTrack(id: '1'));
     await waitUntil(() => !service.isLoading);
     expect(service.isPlaying, isTrue);
@@ -239,7 +251,7 @@ void main() {
   });
 
   test('gives up after 3 rapid drop-recovery attempts and surfaces the error', () async {
-    final service = AudioPlayerService();
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     await service.playTrack(sampleTrack(id: '1'));
     await waitUntil(() => !service.isLoading);
 
@@ -255,5 +267,48 @@ void main() {
     await waitUntil(() => service.lastError != null);
 
     expect(service.lastError, contains('Playback error'));
+  });
+
+  test('drop recovery runs the same load path as a fresh selection, not a partial copy', () async {
+    // Regression: recovery used to re-implement the load sequence by hand and
+    // skip presence.show() (and _logStreamParams, cache eviction) in the
+    // process. A second `show` call after recovery proves the recovery path
+    // now goes through the same _loadAndPlay as a fresh track.
+    final presence = RecordingPresence();
+    final service = AudioPlayerService(presence: presence, resolver: const FakeStreamUrlResolver());
+    await service.playTrack(sampleTrack(id: '1'));
+    await waitUntil(() => !service.isLoading);
+    expect(presence.shown, hasLength(1));
+
+    fakePlatform.player.injectStreamError('stream drop');
+    await waitUntil(() => !service.isLoading && fakePlatform.player.loadCount == 2);
+
+    expect(presence.shown, hasLength(2));
+  });
+
+  test('bind wires the live player and transport commands once, at first playback', () async {
+    final presence = RecordingPresence();
+    final service = AudioPlayerService(presence: presence, resolver: const FakeStreamUrlResolver());
+    expect(presence.boundPlayer, isNull);
+
+    await service.playTrack(sampleTrack(id: '1'));
+    await waitUntil(() => !service.isLoading);
+
+    expect(presence.boundPlayer, isNotNull);
+    expect(presence.boundCommands, isNotNull);
+  });
+
+  test('setPlaying reports state changes only while a track is current', () async {
+    final presence = RecordingPresence();
+    final service = AudioPlayerService(presence: presence, resolver: const FakeStreamUrlResolver());
+
+    await service.playTrack(sampleTrack(id: '1'));
+    await waitUntil(() => !service.isLoading);
+    expect(presence.playingStates, isNotEmpty);
+    expect(presence.playingStates.last, isTrue);
+
+    await service.stop();
+
+    expect(presence.clearCount, 1);
   });
 }

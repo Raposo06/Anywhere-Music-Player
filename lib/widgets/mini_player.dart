@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
+import '../services/auth_service.dart';
+import '../services/stream_url_resolver.dart';
 import '../screens/player_screen.dart';
 
 class MiniPlayer extends StatelessWidget {
@@ -27,6 +29,10 @@ class _MiniPlayerContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final StreamUrlResolver? resolver = context.watch<AuthService>().apiService;
+    final pixelSize = (44 * MediaQuery.devicePixelRatioOf(context)).round();
+    final coverUrl = resolver.resolveCoverUrl(track, size: pixelSize);
+
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
@@ -70,18 +76,12 @@ class _MiniPlayerContent extends StatelessWidget {
                     child: SizedBox(
                       width: 44,
                       height: 44,
-                      child: track.coverArtUrl != null
+                      child: coverUrl != null
                           ? CachedNetworkImage(
-                              imageUrl: track.coverUrl(
-                                  size:
-                                      (44 * MediaQuery.devicePixelRatioOf(context))
-                                          .round())!,
-                              cacheKey: track.coverCacheKey(
-                                  size:
-                                      (44 * MediaQuery.devicePixelRatioOf(context))
-                                          .round()),
+                              imageUrl: coverUrl,
+                              cacheKey: track.coverCacheKey(size: pixelSize),
                               fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => Container(
+                              errorWidget: (_, _, _) => Container(
                                 color: Colors.grey[800],
                                 child: const Icon(Icons.music_note, size: 24),
                               ),

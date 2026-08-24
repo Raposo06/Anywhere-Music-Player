@@ -35,7 +35,7 @@ The Flutter app communicates exclusively through the **Subsonic API**. Navidrome
 | Function          | Endpoint                                                      |
 |-------------------|---------------------------------------------------------------|
 | Auth check        | `GET /rest/ping`                                              |
-| Browse folders    | `GET /rest/getMusicFolders`, `GET /rest/getMusicDirectory`    |
+| Browse library    | `GET /api/song` (Navidrome's native REST API, JWT via `/auth/login`) |
 | Search            | `GET /rest/search3`                                           |
 | Stream audio      | `GET /rest/stream?id=X`                                       |
 | Cover art         | `GET /rest/getCoverArt?id=X`                                  |

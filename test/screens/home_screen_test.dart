@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -17,16 +16,18 @@ import 'package:anywhere_music_player/services/subsonic_api_service.dart';
 import '../support/fake_path_provider.dart';
 import '../support/fake_scanner.dart';
 import '../support/fake_auth.dart';
+import '../support/fixtures.dart';
 import '../support/pump_helpers.dart';
 
 Widget _wrap({
   required AuthService auth,
   required LibraryScanner scanner,
+  AudioPlayerService? player,
 }) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<AuthService>.value(value: auth),
-      ChangeNotifierProvider<AudioPlayerService>.value(value: AudioPlayerService()),
+      ChangeNotifierProvider<AudioPlayerService>.value(value: player ?? AudioPlayerService()),
       ChangeNotifierProvider<LibraryScanner>.value(value: scanner),
     ],
     child: const MaterialApp(home: HomeScreen()),
@@ -41,12 +42,6 @@ void main() {
     PathProviderPlatform.instance = FakePathProviderPlatform(tempDir.path);
     FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform({});
     SharedPreferences.setMockInitialValues({});
-
-    // On a Windows test host, AudioPlayerService.stop() (called from
-    // HomeScreen's logout flow) calls window_manager.setTitle() for real —
-    // there's no plugin implementation under flutter test, so stub the channel.
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(const MethodChannel('window_manager'), (call) async => null);
   });
 
   tearDown(() async {
@@ -108,6 +103,32 @@ void main() {
     // The fake auth-service api echoes {"status":"ok"} with no searchResult3,
     // so search3() returns no songs and no library-tree folders match either.
     expect(find.text('No results found'), findsOneWidget);
+  });
+
+  testWidgets('swiping a root-level track away adds it to the queue (was missing — Candidate 04)', (tester) async {
+    // Regression: home's track tile was the one of three copies never given
+    // the swipe-to-queue gesture. See
+    // docs/reviews/2026-08-22-architecture-review.html Candidate 04.
+    final auth = await loggedInAuthService();
+    final scanner = scannerWithSongs([nativeApiSong(id: '1', path: 'Some Song.mp3')]);
+    // A track must already be playing, or addToQueue() would fall through to
+    // playTrack() — which needs a live platform audio backend this test
+    // doesn't have. See AudioPlayerService.addToQueue.
+    final player = AudioPlayerService()
+      ..seedForTest(currentTrack: sampleTrack(id: '0', title: 'Already Playing'));
+
+    await pumpAndWaitForAsyncWork(
+      tester,
+      _wrap(auth: auth, scanner: scanner, player: player),
+      () => scanner.isScanning,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.text('Some Song'), const Offset(500, 0));
+    await settle(tester);
+
+    expect(player.queue.map((t) => t.title), ['Some Song']);
+    expect(find.text('Added to queue: Some Song'), findsOneWidget);
   });
 
   testWidgets('logout stops playback, clears the library, and logs out', (tester) async {

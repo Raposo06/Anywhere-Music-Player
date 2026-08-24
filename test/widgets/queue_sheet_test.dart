@@ -2,12 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
+import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/widgets/queue_sheet.dart';
 import '../support/fixtures.dart';
 
 Widget _wrap(AudioPlayerService service) {
-  return ChangeNotifierProvider<AudioPlayerService>.value(
-    value: service,
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<AudioPlayerService>.value(value: service),
+      // No cover art on any fixture in this file, so an unauthenticated
+      // (apiService == null) AuthService resolves the same as a real one.
+      ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
+    ],
     child: const MaterialApp(home: Scaffold(body: QueueSheet())),
   );
 }
@@ -90,8 +96,11 @@ void main() {
     final service = AudioPlayerService()..seedForTest(currentTrack: sampleTrack());
 
     await tester.pumpWidget(
-      ChangeNotifierProvider<AudioPlayerService>.value(
-        value: service,
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioPlayerService>.value(value: service),
+          ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
+        ],
         child: MaterialApp(
           home: Scaffold(
             body: Builder(

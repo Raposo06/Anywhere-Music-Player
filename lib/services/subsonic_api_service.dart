@@ -1,4 +1,3 @@
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
@@ -6,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/track.dart';
 import '../models/folder.dart';
+import 'stream_url_resolver.dart';
 
 class SubsonicApiException implements Exception {
   final String message;
@@ -17,7 +17,7 @@ class SubsonicApiException implements Exception {
   String toString() => message;
 }
 
-class SubsonicApiService {
+class SubsonicApiService implements StreamUrlResolver {
   final String serverUrl;
   final String username;
   final String password;
@@ -31,21 +31,9 @@ class SubsonicApiService {
   final _random = Random.secure();
   final http.Client _httpClient;
 
-  /// In-memory LRU cache for directory contents and folder listings.
-  /// Key: cache key string, Value: cached response with timestamp.
-  ///
-  /// Instance-scoped (not static): a fresh [SubsonicApiService] is created on
-  /// every login, so scoping the cache to the instance means switching
-  /// accounts (or servers) can never serve stale directory listings from a
-  /// previous session — the old cache is simply garbage collected with the
-  /// old instance.
-  ///
-  /// Uses [LinkedHashMap] for true LRU: [_getFromCache] re-inserts the entry
-  /// on hit (bumping it to most-recently-used) and [_putInCache] evicts the
-  /// map's first key (least-recently-used) once over capacity.
-  final LinkedHashMap<String, _CacheEntry> _cache = LinkedHashMap();
-  static const int _maxCacheSize = 100;
-  static const Duration _cacheTtl = Duration(minutes: 5);
+  /// [serverUrl] with any trailing slash stripped, computed once instead of
+  /// at every call site that builds a URL.
+  final String _baseUrl;
 
   SubsonicApiService({
     required this.serverUrl,
@@ -54,7 +42,10 @@ class SubsonicApiService {
     // Test-only seam: production call sites never pass this, so behavior is
     // unchanged (a real http.Client is still created by default).
     @visibleForTesting http.Client? httpClient,
-  }) : _httpClient = httpClient ?? http.Client();
+  }) : _httpClient = httpClient ?? http.Client(),
+       _baseUrl = serverUrl.endsWith('/')
+           ? serverUrl.substring(0, serverUrl.length - 1)
+           : serverUrl;
 
   /// Generate a random salt string.
   String _generateSalt() {
@@ -94,15 +85,12 @@ class SubsonicApiService {
 
   /// Build the full URI for a Subsonic API endpoint.
   Uri _buildUri(String endpoint, [Map<String, String>? extraParams]) {
-    final baseUrl = serverUrl.endsWith('/')
-        ? serverUrl.substring(0, serverUrl.length - 1)
-        : serverUrl;
     final params = _authParams();
     if (extraParams != null) {
       params.addAll(extraParams);
     }
     return Uri.parse(
-      '$baseUrl/rest/$endpoint',
+      '$_baseUrl/rest/$endpoint',
     ).replace(queryParameters: params);
   }
 
@@ -111,20 +99,16 @@ class SubsonicApiService {
   /// Always requests the original file. Android wraps this URL in
   /// [LockCachingAudioSource] so ExoPlayer seeks against a local byte-range
   /// cache instead of Navidrome's live transcoder output.
+  @override
   String buildStreamUrl(String songId) {
-    final baseUrl = serverUrl.endsWith('/')
-        ? serverUrl.substring(0, serverUrl.length - 1)
-        : serverUrl;
-    return '$baseUrl/rest/stream?id=$songId&format=raw&estimateContentLength=true&${_authQueryString()}';
+    return '$_baseUrl/rest/stream?id=$songId&format=raw&estimateContentLength=true&${_authQueryString()}';
   }
 
   /// Build a cover art URL (with auth params baked in).
+  @override
   String buildCoverArtUrl(String coverArtId, {int? size}) {
-    final baseUrl = serverUrl.endsWith('/')
-        ? serverUrl.substring(0, serverUrl.length - 1)
-        : serverUrl;
     final sizeParam = size != null ? '&size=$size' : '';
-    return '$baseUrl/rest/getCoverArt?id=$coverArtId$sizeParam&${_authQueryString()}';
+    return '$_baseUrl/rest/getCoverArt?id=$coverArtId$sizeParam&${_authQueryString()}';
   }
 
   /// Perform an HTTP GET with timeout.
@@ -164,298 +148,32 @@ class SubsonicApiService {
     return subsonicResponse;
   }
 
-  /// Get a cached value or null if expired/missing. Bumps the entry to
-  /// most-recently-used on a hit (LinkedHashMap iteration/eviction order is
-  /// insertion order, so remove+re-add moves it to the end).
-  T? _getFromCache<T>(String key) {
-    final entry = _cache[key];
-    if (entry == null) return null;
-    if (DateTime.now().difference(entry.timestamp) > _cacheTtl) {
-      _cache.remove(key);
-      return null;
+  /// Build [endpoint]'s URI, GET it, and parse the Subsonic envelope — the
+  /// shape every read endpoint below shares. Normalizes errors the same way
+  /// everywhere: a [SubsonicApiException] passes through unchanged, anything
+  /// else is wrapped with [failureContext] so a caller never has to remember
+  /// to add that guard itself.
+  Future<Map<String, dynamic>> _request(
+    String endpoint,
+    Map<String, String>? params,
+    String failureContext,
+  ) async {
+    try {
+      final uri = _buildUri(endpoint, params);
+      final response = await _get(uri);
+      return _parseResponse(response);
+    } catch (e) {
+      if (e is SubsonicApiException) rethrow;
+      throw SubsonicApiException('$failureContext: $e');
     }
-    _cache.remove(key);
-    _cache[key] = entry;
-    return entry.data as T?;
-  }
-
-  /// Store a value in the cache with LRU eviction. [_cache] is a
-  /// [LinkedHashMap], so its first key is always the least-recently-used one.
-  void _putInCache(String key, dynamic data) {
-    _cache.remove(key);
-    if (_cache.length >= _maxCacheSize) {
-      _cache.remove(_cache.keys.first);
-    }
-    _cache[key] = _CacheEntry(data: data, timestamp: DateTime.now());
-  }
-
-  /// Invalidate all cached data.
-  void clearCache() {
-    _cache.clear();
   }
 
   /// Ping the server to verify credentials.
   /// Returns true if auth succeeds, throws on failure.
   Future<bool> ping() async {
-    try {
-      final uri = _buildUri('ping');
-      if (kDebugMode) debugPrint('Subsonic ping: ${uri.host}${uri.path}');
-      final response = await _get(uri);
-      _parseResponse(response);
-      return true;
-    } catch (e) {
-      if (e is SubsonicApiException) rethrow;
-      throw SubsonicApiException('Connection failed: $e');
-    }
-  }
-
-  /// Get the list of top-level music folders configured in Navidrome.
-  /// Returns a list of {id, name} maps.
-  Future<List<Map<String, dynamic>>> getMusicFolders() async {
-    try {
-      final uri = _buildUri('getMusicFolders');
-      final response = await _get(uri);
-      final data = _parseResponse(response);
-
-      final musicFolders = data['musicFolders'] as Map<String, dynamic>?;
-      if (musicFolders == null) return [];
-
-      final folderList = musicFolders['musicFolder'];
-      if (folderList is List) {
-        return folderList.cast<Map<String, dynamic>>();
-      }
-      if (folderList is Map<String, dynamic>) {
-        return [folderList];
-      }
-      return [];
-    } catch (e) {
-      if (e is SubsonicApiException) rethrow;
-      throw SubsonicApiException('Failed to get music folders: $e');
-    }
-  }
-
-  /// Get the index of artists/folders for a music folder.
-  /// Returns the full indexes response (artists grouped by letter).
-  Future<Map<String, dynamic>> getIndexes({String? musicFolderId}) async {
-    final cacheKey = 'indexes_${musicFolderId ?? 'all'}';
-    final cached = _getFromCache<Map<String, dynamic>>(cacheKey);
-    if (cached != null) return cached;
-
-    try {
-      final params = <String, String>{};
-      if (musicFolderId != null) params['musicFolderId'] = musicFolderId;
-
-      final uri = _buildUri('getIndexes', params);
-      final response = await _get(uri);
-      final result = _parseResponse(response);
-      _putInCache(cacheKey, result);
-      return result;
-    } catch (e) {
-      if (e is SubsonicApiException) rethrow;
-      throw SubsonicApiException('Failed to get indexes: $e');
-    }
-  }
-
-  /// Get the contents of a music directory by ID.
-  /// Returns {directory: {id, name, child: [...]}} where child items can be
-  /// subdirectories (isDir=true) or songs (isDir=false).
-  Future<Map<String, dynamic>> getMusicDirectory(String id) async {
-    final cacheKey = 'dir_$id';
-    final cached = _getFromCache<Map<String, dynamic>>(cacheKey);
-    if (cached != null) return cached;
-
-    try {
-      final uri = _buildUri('getMusicDirectory', {'id': id});
-      final response = await _get(uri);
-      final result = _parseResponse(response);
-      _putInCache(cacheKey, result);
-      return result;
-    } catch (e) {
-      if (e is SubsonicApiException) rethrow;
-      throw SubsonicApiException('Failed to get music directory: $e');
-    }
-  }
-
-  /// Get top-level folders as [Folder] objects.
-  /// Uses getMusicFolders to get the root library, then getMusicDirectory
-  /// to list the actual filesystem directories (not tag-based artists).
-  Future<List<Folder>> getFolders({String? musicFolderId}) async {
-    // Step 1: Get the root music library folder(s) from Navidrome
-    final musicFolders = await getMusicFolders();
-    if (musicFolders.isEmpty) return [];
-
-    // Step 2: For each root library, get its directory contents.
-    // Most Navidrome setups have a single music folder.
-    final allFolders = <Folder>[];
-
-    for (final mf in musicFolders) {
-      final rootId = mf['id']?.toString();
-      if (rootId == null) continue;
-
-      try {
-        final contents = await getDirectoryContents(rootId);
-        allFolders.addAll(contents.folders);
-        // If there are tracks at the root level, they'll be shown in the home screen
-      } catch (e) {
-        debugPrint('Failed to load music folder $rootId: $e');
-      }
-    }
-
-    return allFolders;
-  }
-
-  /// Get top-level root tracks (songs sitting directly in the music folder root).
-  Future<List<Track>> getRootTracks() async {
-    final musicFolders = await getMusicFolders();
-    if (musicFolders.isEmpty) return [];
-
-    final allTracks = <Track>[];
-
-    for (final mf in musicFolders) {
-      final rootId = mf['id']?.toString();
-      if (rootId == null) continue;
-
-      try {
-        final contents = await getDirectoryContents(rootId);
-        allTracks.addAll(contents.tracks);
-      } catch (e) {
-        debugPrint('Failed to load root tracks from $rootId: $e');
-      }
-    }
-
-    return allTracks;
-  }
-
-  /// Get the children of a directory as folders and tracks.
-  /// Returns ({folders: [...], tracks: [...]}).
-  Future<({List<Folder> folders, List<Track> tracks})> getDirectoryContents(
-    String directoryId,
-  ) async {
-    final data = await getMusicDirectory(directoryId);
-
-    final directory = data['directory'] as Map<String, dynamic>?;
-    if (directory == null) {
-      return (folders: <Folder>[], tracks: <Track>[]);
-    }
-
-    final childList = directory['child'];
-    if (childList == null) {
-      return (folders: <Folder>[], tracks: <Track>[]);
-    }
-
-    final children = childList is List ? childList : [childList];
-    final folders = <Folder>[];
-    final tracks = <Track>[];
-    final dirName = directory['name'] as String? ?? '';
-
-    for (final child in children) {
-      final item = child as Map<String, dynamic>;
-      if (item['isDir'] == true) {
-        folders.add(Folder.fromSubsonic(item, api: this));
-      } else {
-        tracks.add(Track.fromSubsonic(item, this, parentFolderName: dirName));
-      }
-    }
-
-    return (folders: folders, tracks: tracks);
-  }
-
-  /// Max number of sibling subdirectories fetched concurrently by
-  /// [getAllTracksInDirectory]. Unbounded fan-out on a deep/wide folder tree
-  /// would fire hundreds of simultaneous requests at the server; this caps it
-  /// while still overlapping requests instead of going fully sequential.
-  static const int _maxDirectoryFetchConcurrency = 6;
-
-  /// Get all tracks (songs) within a directory, recursively fetching
-  /// subdirectories with bounded concurrency for efficiency.
-  Future<List<Track>> getAllTracksInDirectory(String directoryId) async {
-    final contents = await getDirectoryContents(directoryId);
-    final tracks = <Track>[...contents.tracks];
-
-    final subDirIds = contents.folders
-        .where((f) => f.id != null)
-        .map((f) => f.id!)
-        .toList(growable: false);
-
-    for (var i = 0; i < subDirIds.length; i += _maxDirectoryFetchConcurrency) {
-      final chunk = subDirIds.skip(i).take(_maxDirectoryFetchConcurrency);
-      final subResults = await Future.wait(
-        chunk.map((id) => getAllTracksInDirectory(id)),
-      );
-      for (final subTracks in subResults) {
-        tracks.addAll(subTracks);
-      }
-    }
-
-    return tracks;
-  }
-
-  /// Get random songs from the library.
-  /// Useful for showing tracks immediately without requiring a search query.
-  Future<List<Track>> getRandomSongs({int size = 100}) async {
-    try {
-      final uri = _buildUri('getRandomSongs', {'size': size.toString()});
-
-      final response = await _get(uri);
-      final data = _parseResponse(response);
-
-      final randomSongs = data['randomSongs'] as Map<String, dynamic>?;
-      if (randomSongs == null) return [];
-
-      final songList = randomSongs['song'];
-      if (songList == null) return [];
-
-      final items = songList is List ? songList : [songList];
-      return items
-          .map((item) => Track.fromSubsonic(item as Map<String, dynamic>, this))
-          .toList();
-    } catch (e) {
-      if (e is SubsonicApiException) rethrow;
-      throw SubsonicApiException('Failed to get random songs: $e');
-    }
-  }
-
-  /// Get a list of albums using getAlbumList2 (tag-based).
-  /// [type] can be: 'newest', 'recent', 'frequent', 'random', 'alphabeticalByName', etc.
-  Future<List<Folder>> getAlbumList2({
-    required String type,
-    int size = 20,
-    int offset = 0,
-  }) async {
-    final cacheKey = 'albumList2_${type}_${size}_$offset';
-    final cached = _getFromCache<List<Folder>>(cacheKey);
-    if (cached != null) return cached;
-
-    try {
-      final uri = _buildUri('getAlbumList2', {
-        'type': type,
-        'size': size.toString(),
-        'offset': offset.toString(),
-      });
-
-      final response = await _get(uri);
-      final data = _parseResponse(response);
-
-      final albumList = data['albumList2'] as Map<String, dynamic>?;
-      if (albumList == null) return [];
-
-      final albums = albumList['album'];
-      if (albums == null) return [];
-
-      final items = albums is List ? albums : [albums];
-      final result = items
-          .map(
-            (item) =>
-                Folder.fromSubsonic(item as Map<String, dynamic>, api: this),
-          )
-          .toList();
-
-      _putInCache(cacheKey, result);
-      return result;
-    } catch (e) {
-      if (e is SubsonicApiException) rethrow;
-      throw SubsonicApiException('Failed to get album list: $e');
-    }
+    if (kDebugMode) debugPrint('Subsonic ping: $_baseUrl/rest/ping');
+    await _request('ping', null, 'Connection failed');
+    return true;
   }
 
   /// Search for songs, albums, and artists using search3.
@@ -465,57 +183,44 @@ class SubsonicApiService {
     int albumCount = 20,
     int artistCount = 20,
   }) async {
-    try {
-      final uri = _buildUri('search3', {
-        'query': query,
-        'songCount': songCount.toString(),
-        'albumCount': albumCount.toString(),
-        'artistCount': artistCount.toString(),
-      });
+    final data = await _request('search3', {
+      'query': query,
+      'songCount': songCount.toString(),
+      'albumCount': albumCount.toString(),
+      'artistCount': artistCount.toString(),
+    }, 'Search failed');
 
-      final response = await _get(uri);
-      final data = _parseResponse(response);
-
-      final searchResult = data['searchResult3'] as Map<String, dynamic>?;
-      if (searchResult == null) {
-        return (songs: <Track>[], albums: <Folder>[]);
-      }
-
-      // Parse songs
-      final songList = searchResult['song'];
-      final songs = <Track>[];
-      if (songList != null) {
-        final items = songList is List ? songList : [songList];
-        for (final item in items) {
-          songs.add(Track.fromSubsonic(item as Map<String, dynamic>, this));
-        }
-      }
-
-      // Parse albums as folders
-      final albumList = searchResult['album'];
-      final albums = <Folder>[];
-      if (albumList != null) {
-        final items = albumList is List ? albumList : [albumList];
-        for (final item in items) {
-          albums.add(
-            Folder.fromSubsonic(item as Map<String, dynamic>, api: this),
-          );
-        }
-      }
-
-      return (songs: songs, albums: albums);
-    } catch (e) {
-      if (e is SubsonicApiException) rethrow;
-      throw SubsonicApiException('Search failed: $e');
+    final searchResult = data['searchResult3'] as Map<String, dynamic>?;
+    if (searchResult == null) {
+      return (songs: <Track>[], albums: <Folder>[]);
     }
+
+    // Parse songs
+    final songList = searchResult['song'];
+    final songs = <Track>[];
+    if (songList != null) {
+      final items = songList is List ? songList : [songList];
+      for (final item in items) {
+        songs.add(Track.fromSubsonic(item as Map<String, dynamic>));
+      }
+    }
+
+    // Parse albums as folders
+    final albumList = searchResult['album'];
+    final albums = <Folder>[];
+    if (albumList != null) {
+      final items = albumList is List ? albumList : [albumList];
+      for (final item in items) {
+        albums.add(Folder.fromSubsonic(item as Map<String, dynamic>));
+      }
+    }
+
+    return (songs: songs, albums: albums);
   }
 
   /// Authenticate with Navidrome's native REST API and get a JWT token.
   Future<String> _getNativeApiToken() async {
-    final baseUrl = serverUrl.endsWith('/')
-        ? serverUrl.substring(0, serverUrl.length - 1)
-        : serverUrl;
-    final uri = Uri.parse('$baseUrl/auth/login');
+    final uri = Uri.parse('$_baseUrl/auth/login');
 
     try {
       final response = await _httpClient
@@ -549,9 +254,6 @@ class SubsonicApiService {
   /// which is the real filesystem path (unlike the Subsonic API which returns
   /// tag-based virtual paths).
   Future<List<Map<String, dynamic>>> getAllSongsNativeApi() async {
-    final baseUrl = serverUrl.endsWith('/')
-        ? serverUrl.substring(0, serverUrl.length - 1)
-        : serverUrl;
     final token = await _getNativeApiToken();
     final allSongs = <Map<String, dynamic>>[];
     const pageSize = 500;
@@ -559,7 +261,7 @@ class SubsonicApiService {
 
     while (true) {
       final uri = Uri.parse(
-        '$baseUrl/api/song?_start=$offset&_end=${offset + pageSize}&_order=ASC&_sort=path',
+        '$_baseUrl/api/song?_start=$offset&_end=${offset + pageSize}&_order=ASC&_sort=path',
       );
       try {
         final response = await _httpClient
@@ -598,12 +300,4 @@ class SubsonicApiService {
   void dispose() {
     _httpClient.close();
   }
-}
-
-/// Internal cache entry with timestamp for TTL-based expiration.
-class _CacheEntry {
-  final dynamic data;
-  final DateTime timestamp;
-
-  _CacheEntry({required this.data, required this.timestamp});
 }

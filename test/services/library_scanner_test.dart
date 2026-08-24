@@ -98,6 +98,16 @@ void main() {
       expect(topLevel, ['Anime', 'Rock']); // alphabetically sorted
     });
 
+    test('populates folderName on scanned tracks (was left empty by the old inline parser)', () async {
+      final scanner = LibraryScanner(apiWith([
+        _song(id: '1', path: 'Anime/Naruto/01 - Opening.mp3'),
+      ]));
+
+      await scanner.scan();
+
+      expect(scanner.allTracks.single.folderName, 'Naruto');
+    });
+
     test('getFolderContents drills into a nested subfolder', () async {
       final scanner = LibraryScanner(apiWith([
         _song(id: '1', path: 'Anime/Naruto/01 - Opening.mp3'),

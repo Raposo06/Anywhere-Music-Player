@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:anywhere_music_player/screens/all_tracks_screen.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
+import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/library_scanner.dart';
 import '../support/fake_path_provider.dart';
 import '../support/fake_scanner.dart';
@@ -16,6 +17,9 @@ Widget _wrap({required LibraryScanner scanner, AudioPlayerService? player}) {
     providers: [
       ChangeNotifierProvider<AudioPlayerService>.value(value: player ?? AudioPlayerService()),
       ChangeNotifierProvider<LibraryScanner>.value(value: scanner),
+      // No cover art on any fixture in this file, so an unauthenticated
+      // (apiService == null) AuthService resolves the same as a real one.
+      ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
     ],
     child: const MaterialApp(home: AllTracksScreen()),
   );

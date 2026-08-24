@@ -68,11 +68,12 @@ class LibraryScanner with ChangeNotifier {
     notifyListeners();
 
     // ── Phase 1: hydrate from cache if we have no data yet ────────────────
-    // Requires an api client to recompute stream URLs from cached track ids.
-    // If we're logged out, skip the cache entirely — we have nothing to play
-    // anyway, and the api == null branch below will set the error state.
+    // Loading the cache no longer needs a live api client (stream/cover URLs
+    // are resolved at the point of use, not recomputed here) — but we still
+    // skip it when logged out: there's nothing to play anyway, and the
+    // api == null branch below will set the error state.
     if (!_hasInitialData && _api != null) {
-      final cached = await LibraryCache.load(api: _api!);
+      final cached = await LibraryCache.load();
       if (cached != null && cached.isNotEmpty) {
         debugPrint('LibraryScanner: hydrated ${cached.length} tracks from cache');
         _allTracks = cached;
@@ -90,33 +91,12 @@ class LibraryScanner with ChangeNotifier {
       }
 
       debugPrint('LibraryScanner: fetching all songs via Navidrome native API...');
-      final rawSongs = await _api!.getAllSongsNativeApi();
+      final rawSongs = await _api.getAllSongsNativeApi();
       debugPrint('LibraryScanner: got ${rawSongs.length} songs from native API');
 
-      final tracks = <Track>[];
-      for (final song in rawSongs) {
-        final songId = song['id']?.toString() ?? '';
-        final coverArtId = song['coverArtId']?.toString() ?? song['id']?.toString();
-        final path = song['path'] as String? ?? '';
-
-        tracks.add(Track(
-          id: songId,
-          title: song['title'] as String? ?? 'Unknown',
-          filename: path,
-          streamUrl: _api!.buildStreamUrl(songId),
-          coverArtUrl: coverArtId != null ? _api!.buildCoverArtUrl(coverArtId) : null,
-          coverArtId: coverArtId,
-          folderPath: path.contains('/') ? path.substring(0, path.lastIndexOf('/')) : '',
-          durationSeconds: (song['duration'] is num) ? (song['duration'] as num).round() : null,
-          fileSizeBytes: (song['size'] is num) ? (song['size'] as num).round() : null,
-          createdAt: song['createdAt'] != null
-              ? DateTime.tryParse(song['createdAt'] as String) ?? DateTime.now()
-              : DateTime.now(),
-          artist: song['artist'] as String?,
-          album: song['album'] as String?,
-          replayGainDb: (song['rgTrackGain'] as num?)?.toDouble(),
-        ));
-      }
+      final tracks = rawSongs
+          .map((song) => Track.fromNativeApi(song))
+          .toList(growable: false);
 
       _allTracks = tracks;
       _buildFolderTree();
@@ -145,7 +125,6 @@ class LibraryScanner with ChangeNotifier {
     _allTracks = [];
     _rootNodes = {};
     _hasInitialData = false;
-    _api?.clearCache();
     await scan();
   }
 
@@ -167,8 +146,8 @@ class LibraryScanner with ChangeNotifier {
     _rootNodes = {};
 
     for (final track in _allTracks) {
-      // track.filename has the full path like "Anime/Naruto/23.Senya.mp3"
-      final path = track.filename;
+      // track.path is the full path, e.g. "Anime/Naruto/23.Senya.mp3"
+      final path = track.path;
       final segments = path.split('/');
 
       if (segments.length < 2) {
@@ -236,7 +215,7 @@ class LibraryScanner with ChangeNotifier {
   List<Folder> getTopLevelFolders() {
     return _effectiveRoot.entries
         .where((e) => e.key.isNotEmpty)
-        .map((e) => e.value.toFolder(_api))
+        .map((e) => e.value.toFolder())
         .toList()
       ..sort((a, b) => a.folderPath.toLowerCase().compareTo(b.folderPath.toLowerCase()));
   }
@@ -262,7 +241,7 @@ class LibraryScanner with ChangeNotifier {
 
     final subfolders = node.children.entries
         .where((e) => e.key.isNotEmpty)
-        .map((e) => e.value.toFolder(_api))
+        .map((e) => e.value.toFolder())
         .toList()
       ..sort((a, b) => a.folderPath.toLowerCase().compareTo(b.folderPath.toLowerCase()));
 
@@ -306,7 +285,7 @@ class LibraryScanner with ChangeNotifier {
       return a.fullPath.toLowerCase().compareTo(b.fullPath.toLowerCase());
     });
 
-    return matches.map((n) => n.toFolder(_api)).toList();
+    return matches.map((n) => n.toFolder()).toList();
   }
 
   /// Navigate to a node by its full path, walking from _rootNodes.
@@ -356,17 +335,14 @@ class _FolderNode {
     return result;
   }
 
-  /// Convert to a Folder model for the UI. [api] resolves the cover art id
-  /// into a full URL — pass the scanner's live api client so folders built
-  /// from a stale/logged-out client never happen.
-  Folder toFolder(SubsonicApiService? api) {
-    final id = coverArtId ?? _findFirstCoverArtId();
+  /// Convert to a Folder model for the UI. Carries only the cover art id —
+  /// the URL is resolved at the point of use (see StreamUrlResolver).
+  Folder toFolder() {
     return Folder(
       id: fullPath, // Use the path as ID for virtual folders
       folderPath: fullPath,
       trackCount: totalTrackCount,
-      coverArtUrl: id != null && api != null ? api.buildCoverArtUrl(id) : null,
-      coverArtId: id,
+      coverArtId: coverArtId ?? _findFirstCoverArtId(),
       albumCount: subfolderCount,
     );
   }

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
 import '../services/auth_service.dart';
@@ -9,6 +8,8 @@ import '../services/subsonic_api_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/library_scanner.dart';
 import '../utils/responsive.dart';
+import '../widgets/cover_art.dart';
+import '../widgets/track_tile.dart';
 import 'player_screen.dart';
 import 'folder_detail_screen.dart';
 
@@ -142,15 +143,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleLogout() async {
-    await context.read<AudioPlayerService>().stop();
-    await context.read<LibraryScanner>().resetAndClearCache();
-    await context.read<AuthService>().logout();
+    // Read all three before the first await — using `context` after an
+    // await needs a `mounted` guard, and these are stable Provider
+    // singletons for this widget's lifetime, so reading them upfront and
+    // holding local references avoids the guard entirely.
+    final player = context.read<AudioPlayerService>();
+    final scanner = context.read<LibraryScanner>();
+    final auth = context.read<AuthService>();
+    await player.stop();
+    await scanner.resetAndClearCache();
+    await auth.logout();
   }
 
   void _playTrack(Track track, List<Track> playlist) {
     final playerService = context.read<AudioPlayerService>();
     final trackIndex = playlist.indexOf(track);
-    playerService.playPlaylist(playlist, trackIndex);
+    playerService.play(playlist, from: trackIndex);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -167,10 +175,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final tracks = scanner.getAllTracksInFolder(folder.id!);
 
     if (tracks.isNotEmpty) {
-      if (!playerService.isShuffleEnabled) {
-        playerService.toggleShuffle();
-      }
-      playerService.playPlaylist(tracks, -1);
+      playerService.playShuffled(tracks);
       if (mounted) {
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -359,10 +364,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ElevatedButton.icon(
                   onPressed: () {
                     final playerService = context.read<AudioPlayerService>();
-                    if (!playerService.isShuffleEnabled) {
-                      playerService.toggleShuffle();
-                    }
-                    playerService.playPlaylist(rootTracks, -1);
+                    playerService.playShuffled(rootTracks);
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const PlayerScreen()),
                     );
@@ -373,7 +375,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          ...rootTracks.map((track) => _TrackTile(
+          ...rootTracks.map((track) => TrackTile(
             track: track,
             onTap: () => _playTrack(track, rootTracks),
           )),
@@ -485,10 +487,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 TextButton.icon(
                   onPressed: () {
                     final playerService = context.read<AudioPlayerService>();
-                    if (!playerService.isShuffleEnabled) {
-                      playerService.toggleShuffle();
-                    }
-                    playerService.playPlaylist(_searchTracks, -1);
+                    playerService.playShuffled(_searchTracks);
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const PlayerScreen()),
                     );
@@ -499,7 +498,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          ..._searchTracks.map((track) => _TrackTile(
+          ..._searchTracks.map((track) => TrackTile(
             track: track,
             onTap: () => _playTrack(track, _searchTracks),
           )),
@@ -511,26 +510,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildFolderTile(Folder folder) {
     return ListTile(
-      leading: folder.coverArtUrl != null
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: CachedNetworkImage(
-                imageUrl: folder.coverUrl(
-                    size: (48 * MediaQuery.devicePixelRatioOf(context))
-                        .round())!,
-                cacheKey: folder.coverCacheKey(
-                    size: (48 * MediaQuery.devicePixelRatioOf(context))
-                        .round()),
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-                placeholder: (_, __) =>
-                    const Icon(Icons.folder, size: 48, color: Colors.blue),
-                errorWidget: (_, __, ___) =>
-                    const Icon(Icons.folder, size: 48, color: Colors.blue),
-              ),
-            )
-          : const Icon(Icons.folder, size: 48, color: Colors.blue),
+      leading: CoverArt(
+        folder,
+        size: 48,
+        fallbackIcon: Icons.folder,
+        fallbackIconColor: Colors.blue,
+      ),
       title: Text(
         folder.displayName,
         style: const TextStyle(
@@ -558,28 +543,19 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: folder.coverArtUrl != null
-                  ? CachedNetworkImage(
-                      // Stable card-sized request (DPI-aware but NOT tied to the
-                      // live card width) so resizing the window doesn't change
-                      // the URL and force a re-download.
-                      imageUrl: folder.coverUrl(
-                          size: (384 * MediaQuery.devicePixelRatioOf(context))
-                              .round())!,
-                      cacheKey: folder.coverCacheKey(
-                          size: (384 * MediaQuery.devicePixelRatioOf(context))
-                              .round()),
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => const Center(
-                        child: Icon(Icons.folder, size: 64, color: Colors.blue),
-                      ),
-                      errorWidget: (_, __, ___) => const Center(
-                        child: Icon(Icons.folder, size: 64, color: Colors.blue),
-                      ),
-                    )
-                  : const Center(
-                      child: Icon(Icons.folder, size: 64, color: Colors.blue),
-                    ),
+              // Stable card-sized request (DPI-aware but NOT tied to the live
+              // card width) so resizing the window doesn't change the URL
+              // and force a re-download. radius: 0 — the Card itself already
+              // clips (clipBehavior: Clip.antiAlias above).
+              child: CoverArt(
+                folder,
+                size: 384,
+                expand: true,
+                radius: 0,
+                fallbackIcon: Icons.folder,
+                fallbackIconColor: Colors.blue,
+                fallbackIconSize: 64,
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
@@ -625,56 +601,4 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// Extracted track tile widget that uses Selector to only rebuild when
-/// the current track ID changes, not on every position update.
-class _TrackTile extends StatelessWidget {
-  final Track track;
-  final VoidCallback onTap;
-
-  const _TrackTile({required this.track, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Selector<AudioPlayerService, String?>(
-      selector: (_, ps) => ps.currentTrack?.id,
-      builder: (context, currentTrackId, _) {
-        final isCurrentTrack = currentTrackId == track.id;
-
-        return ListTile(
-          leading: track.coverArtUrl != null
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: CachedNetworkImage(
-                    imageUrl: track.coverUrl(
-                        size: (48 * MediaQuery.devicePixelRatioOf(context))
-                            .round())!,
-                    cacheKey: track.coverCacheKey(
-                        size: (48 * MediaQuery.devicePixelRatioOf(context))
-                            .round()),
-                    width: 48,
-                    height: 48,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => const Icon(
-                      Icons.music_note,
-                      size: 48,
-                    ),
-                  ),
-                )
-              : const Icon(Icons.music_note, size: 48),
-          title: Text(
-            track.title,
-            style: TextStyle(
-              fontWeight: isCurrentTrack ? FontWeight.bold : null,
-              color: isCurrentTrack ? Colors.blue : null,
-            ),
-          ),
-          subtitle: Text(track.formattedDuration),
-          trailing: isCurrentTrack
-              ? const Icon(Icons.equalizer, color: Colors.blue)
-              : null,
-          onTap: onTap,
-        );
-      },
-    );
-  }
-}
+// Track rows are TrackTile (lib/widgets/track_tile.dart).

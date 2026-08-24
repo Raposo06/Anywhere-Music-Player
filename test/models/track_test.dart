@@ -1,14 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:anywhere_music_player/models/track.dart';
-import 'package:anywhere_music_player/services/subsonic_api_service.dart';
 
 void main() {
-  final api = SubsonicApiService(
-    serverUrl: 'https://navidrome.example.com',
-    username: 'alice',
-    password: 'secret',
-  );
-
   group('Track.fromSubsonic', () {
     test('parses a well-formed song response', () {
       final track = Track.fromSubsonic({
@@ -22,11 +15,11 @@ void main() {
         'artist': 'An Artist',
         'album': 'An Album',
         'replayGain': {'trackGain': -6.5},
-      }, api);
+      });
 
       expect(track.id, '42');
       expect(track.title, 'A Song');
-      expect(track.filename, 'Artist/Album/01 - A Song.flac');
+      expect(track.path, 'Artist/Album/01 - A Song.flac');
       expect(track.folderPath, 'Artist/Album');
       expect(track.folderName, 'Album');
       expect(track.coverArtId, 'cov-42');
@@ -35,38 +28,96 @@ void main() {
       expect(track.artist, 'An Artist');
       expect(track.album, 'An Album');
       expect(track.replayGainDb, -6.5);
-      // streamUrl/coverArtUrl are derived, not asserted byte-for-byte here —
-      // covered by SubsonicApiService's own URL-building tests.
-      expect(track.streamUrl, contains('/rest/stream?id=42'));
-      expect(track.coverArtUrl, contains('/rest/getCoverArt?id=cov-42'));
+      // No streamUrl/coverArtUrl to assert — resolved on demand at the point
+      // of use instead (see StreamUrlResolver, and its own test file for the
+      // URL-building coverage).
     });
 
     test('falls back sensibly when optional fields are missing', () {
-      final track = Track.fromSubsonic({'id': '1', 'title': 'Untitled'}, api);
+      final track = Track.fromSubsonic({'id': '1', 'title': 'Untitled'});
 
       expect(track.folderPath, '');
       expect(track.folderName, '');
       expect(track.coverArtId, isNull);
-      expect(track.coverArtUrl, isNull);
       expect(track.durationSeconds, isNull);
       expect(track.replayGainDb, isNull);
     });
 
-    test('defaults title to Unknown and derives a filename when both are absent', () {
-      final track = Track.fromSubsonic({'id': '1'}, api);
+    test('defaults title to Unknown, and leaves path empty rather than synthesizing one', () {
+      // Was: falls back to a filename-shaped string ('unknown.mp3') that
+      // looked like real data. An empty path is honest about "we don't know"
+      // and matches folderPath/folderName's own empty-string convention.
+      final track = Track.fromSubsonic({'id': '1'});
 
       expect(track.title, 'Unknown');
-      expect(track.filename, 'unknown.mp3');
+      expect(track.path, '');
     });
 
     test('respects an explicit parentFolderName override', () {
       final track = Track.fromSubsonic(
         {'id': '1', 'title': 'T', 'path': 'A/B/song.mp3'},
-        api,
         parentFolderName: 'Custom Name',
       );
 
       expect(track.folderName, 'Custom Name');
+    });
+  });
+
+  group('Track.fromNativeApi', () {
+    // The Navidrome native API (/api/song) — used by LibraryScanner for real
+    // filesystem paths — uses different key names than Subsonic for the same
+    // concepts. This is a separate parser, not a variant of fromSubsonic's.
+    test('parses a well-formed native-API song response', () {
+      final track = Track.fromNativeApi({
+        'id': '42',
+        'title': 'A Song',
+        'path': 'Artist/Album/01 - A Song.flac',
+        'coverArtId': 'cov-42',
+        'duration': 245,
+        'size': 12345678,
+        'createdAt': '2024-01-15T10:00:00Z',
+        'artist': 'An Artist',
+        'album': 'An Album',
+        'rgTrackGain': -6.5,
+      });
+
+      expect(track.id, '42');
+      expect(track.title, 'A Song');
+      expect(track.path, 'Artist/Album/01 - A Song.flac');
+      expect(track.folderPath, 'Artist/Album');
+      // Regression: LibraryScanner's inline construction never set this,
+      // leaving folderName empty on every scanned track — see
+      // docs/decisions.md "Library cache schema v3 → v4".
+      expect(track.folderName, 'Album');
+      expect(track.coverArtId, 'cov-42');
+      expect(track.durationSeconds, 245);
+      expect(track.fileSizeBytes, 12345678);
+      expect(track.artist, 'An Artist');
+      expect(track.album, 'An Album');
+      expect(track.replayGainDb, -6.5);
+    });
+
+    test('falls back to the track id for cover art when coverArtId is absent', () {
+      final track = Track.fromNativeApi({'id': '1', 'title': 'T'});
+      expect(track.coverArtId, '1');
+    });
+
+    test('leaves path and folder fields empty rather than guessing when path is absent', () {
+      final track = Track.fromNativeApi({'id': '1', 'title': 'T'});
+
+      expect(track.path, '');
+      expect(track.folderPath, '');
+      expect(track.folderName, '');
+    });
+
+    test('defaults title to Unknown when absent', () {
+      final track = Track.fromNativeApi({'id': '1'});
+      expect(track.title, 'Unknown');
+    });
+
+    test('tolerates a missing/unparseable createdAt', () {
+      final track = Track.fromNativeApi({'id': '1', 'title': 'T'});
+      expect(track.createdAt, isA<DateTime>());
     });
   });
 
@@ -77,7 +128,7 @@ void main() {
         'title': 'T',
         'coverArt': 'cov-1',
         'path': 'A/song.mp3',
-      }, api);
+      });
 
       final json = track.toJson();
 
@@ -86,7 +137,7 @@ void main() {
       expect(json['cover_art_id'], 'cov-1');
     });
 
-    test('fromJson reconstructs the track and recomputes URLs from the live api', () {
+    test('fromJson reconstructs the track', () {
       final original = Track.fromSubsonic({
         'id': '7',
         'title': 'Round Trip',
@@ -98,14 +149,14 @@ void main() {
         'artist': 'Artist',
         'album': 'Album',
         'replayGain': {'trackGain': -3.0},
-      }, api);
+      });
 
       final json = original.toJson();
-      final restored = Track.fromJson(json, api: api);
+      final restored = Track.fromJson(json);
 
       expect(restored.id, original.id);
       expect(restored.title, original.title);
-      expect(restored.filename, original.filename);
+      expect(restored.path, original.path);
       expect(restored.folderPath, original.folderPath);
       expect(restored.coverArtId, original.coverArtId);
       expect(restored.durationSeconds, original.durationSeconds);
@@ -113,19 +164,15 @@ void main() {
       expect(restored.artist, original.artist);
       expect(restored.album, original.album);
       expect(restored.replayGainDb, original.replayGainDb);
-      // Re-derived, not persisted — but still populated because `api` was
-      // supplied at load time.
-      expect(restored.streamUrl, contains('/rest/stream?id=7'));
-      expect(restored.coverArtUrl, contains('/rest/getCoverArt?id=cov-7'));
     });
 
     test('fromJson tolerates a missing/unparseable created_at', () {
       final restored = Track.fromJson({
         'id': '1',
         'title': 'T',
-        'filename': 'f.mp3',
+        'path': 'f.mp3',
         'folder_path': '',
-      }, api: api);
+      });
 
       expect(restored.createdAt, isA<DateTime>());
     });
@@ -160,29 +207,17 @@ void main() {
     });
   });
 
-  group('coverUrl / coverCacheKey', () {
-    test('coverUrl appends &size= only when size is requested', () {
-      final track = Track.fromSubsonic(
-        {'id': '1', 'title': 'T', 'coverArt': 'cov-1'},
-        api,
-      );
-
-      expect(track.coverUrl(), track.coverArtUrl);
-      expect(track.coverUrl(size: 300), '${track.coverArtUrl}&size=300');
-    });
-
-    test('coverUrl and coverCacheKey are null without cover art', () {
-      final track = Track.fromSubsonic({'id': '1', 'title': 'T'}, api);
-
-      expect(track.coverUrl(), isNull);
+  group('coverCacheKey', () {
+    // coverUrl moved off the model entirely — see
+    // test/services/stream_url_resolver_test.dart and
+    // docs/reviews/2026-08-22-architecture-review.html Candidate 07.
+    test('is null without cover art', () {
+      final track = Track.fromSubsonic({'id': '1', 'title': 'T'});
       expect(track.coverCacheKey(), isNull);
     });
 
-    test('coverCacheKey is stable and keyed on the id, not the (salt-rotating) URL', () {
-      final track = Track.fromSubsonic(
-        {'id': '1', 'title': 'T', 'coverArt': 'cov-99'},
-        api,
-      );
+    test('is stable and keyed on the id, not a (salt-rotating) URL', () {
+      final track = Track.fromSubsonic({'id': '1', 'title': 'T', 'coverArt': 'cov-99'});
 
       expect(track.coverCacheKey(), 'cover_cov-99_full');
       expect(track.coverCacheKey(size: 300), 'cover_cov-99_300');
@@ -193,8 +228,7 @@ void main() {
 Track _trackWithDuration(int? seconds) => Track(
   id: '1',
   title: 'T',
-  filename: 'f.mp3',
-  streamUrl: 'https://x/stream',
+  path: 'f.mp3',
   folderPath: '',
   createdAt: DateTime(2024),
   durationSeconds: seconds,
@@ -203,8 +237,7 @@ Track _trackWithDuration(int? seconds) => Track(
 Track _trackWithFileSize(int? bytes) => Track(
   id: '1',
   title: 'T',
-  filename: 'f.mp3',
-  streamUrl: 'https://x/stream',
+  path: 'f.mp3',
   folderPath: '',
   createdAt: DateTime(2024),
   fileSizeBytes: bytes,

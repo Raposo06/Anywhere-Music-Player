@@ -1,12 +1,10 @@
-import '../services/subsonic_api_service.dart';
+import 'cover_art_ref.dart';
 
-class Folder {
+class Folder with CoverArtRef {
   final String? id;
   final String folderPath;
   final int trackCount;
-  final String? coverArtUrl;
-  /// Raw Subsonic cover art id — see [Track.coverArtId] for why this is
-  /// kept separately from the (salt-rotating) [coverArtUrl].
+  @override
   final String? coverArtId;
   final int albumCount;
 
@@ -14,14 +12,12 @@ class Folder {
     this.id,
     required this.folderPath,
     required this.trackCount,
-    this.coverArtUrl,
     this.coverArtId,
     this.albumCount = 0,
   });
 
   /// Create a Folder from a Subsonic API directory/artist response.
-  /// Pass [api] to resolve cover art URLs.
-  factory Folder.fromSubsonic(Map<String, dynamic> json, {SubsonicApiService? api}) {
+  factory Folder.fromSubsonic(Map<String, dynamic> json) {
     // Count direct child songs (non-directory items) if available
     int childCount = 0;
     final childList = json['child'];
@@ -34,40 +30,18 @@ class Folder {
     // Use child song count if available, otherwise fall back to albumCount
     final displayCount = childCount > 0 ? childCount : albumCnt;
 
-    // Resolve cover art URL
     final coverArtId = json['coverArt']?.toString() ?? json['artistImageUrl']?.toString();
-    String? coverArtUrl;
-    if (coverArtId != null && api != null) {
-      // Size-less base URL; callers append the size they render via [coverUrl].
-      coverArtUrl = api.buildCoverArtUrl(coverArtId);
-    }
 
     return Folder(
       id: json['id']?.toString(),
       folderPath: json['name'] as String? ?? json['title'] as String? ?? 'Unknown',
       trackCount: displayCount,
-      coverArtUrl: coverArtUrl,
       coverArtId: coverArtId,
       albumCount: albumCnt,
     );
   }
 
-  /// Cover art URL for a given square pixel [size] (typically the rendered
-  /// logical size × devicePixelRatio). Pass null for full resolution. Returns
-  /// null when there's no cover. The stored [coverArtUrl] carries no size.
-  String? coverUrl({int? size}) {
-    final base = coverArtUrl;
-    if (base == null) return null;
-    return size == null ? base : '$base&size=$size';
-  }
-
-  /// Stable cache key for the cover at a given [size] — see
-  /// [Track.coverCacheKey] for rationale.
-  String? coverCacheKey({int? size}) {
-    final id = coverArtId;
-    if (id == null) return null;
-    return 'cover_${id}_${size ?? 'full'}';
-  }
+  // coverUrl / coverCacheKey come from CoverArtRef.
 
   /// Get the display name (last segment of path)
   /// e.g., "Animes/Pokemon" → "Pokemon"

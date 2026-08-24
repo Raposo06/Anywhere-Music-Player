@@ -59,6 +59,11 @@ dependencies:
   # JSON Serialization
   json_annotation: any
 
+  # @visibleForTesting — used directly (not via flutter/foundation.dart) by
+  # playback_cursor.dart, which is deliberately plain Dart with no Flutter
+  # import.
+  meta: any
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

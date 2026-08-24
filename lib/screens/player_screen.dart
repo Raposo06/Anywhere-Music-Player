@@ -4,6 +4,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
+import '../services/auth_service.dart';
+import '../services/stream_url_resolver.dart';
 import '../utils/responsive.dart';
 import '../widgets/queue_sheet.dart';
 import 'folder_detail_screen.dart';
@@ -75,12 +77,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (_precachedForTrackId == current.id) return;
     _precachedForTrackId = current.id;
 
+    final StreamUrlResolver? resolver = context.read<AuthService>().apiService;
     final pixelSize =
         (size * MediaQuery.devicePixelRatioOf(context)).round();
 
     // Immediate next (wrap-aware): decode it so the very next skip is instant.
     final next = ps.peekNextTrack();
-    final nextUrl = next?.coverUrl(size: pixelSize);
+    final nextUrl = next == null ? null : resolver.resolveCoverUrl(next, size: pixelSize);
     if (nextUrl != null) {
       precacheImage(
         CachedNetworkImageProvider(
@@ -98,7 +101,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final window = <Track>[...ps.queue, ...ps.upcomingFromContext]
         .take(_coverPrefetchAhead);
     for (final track in window) {
-      final url = track.coverUrl(size: pixelSize);
+      final url = resolver.resolveCoverUrl(track, size: pixelSize);
       if (url != null) {
         _warmCoverToDisk(url, track.coverCacheKey(size: pixelSize));
       }
@@ -387,7 +390,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // both wastes bandwidth and balloons the in-memory image cache.
     final pixelSize =
         (size * MediaQuery.devicePixelRatioOf(context)).round();
-    final sizedUrl = track.coverUrl(size: pixelSize);
+    final StreamUrlResolver? resolver = context.watch<AuthService>().apiService;
+    final sizedUrl = resolver.resolveCoverUrl(track, size: pixelSize);
     final sizedCacheKey = track.coverCacheKey(size: pixelSize);
 
     final art = Container(
@@ -410,7 +414,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 imageUrl: sizedUrl,
                 cacheKey: sizedCacheKey,
                 fit: BoxFit.contain,
-                errorWidget: (_, __, ___) => Container(
+                errorWidget: (_, _, _) => Container(
                   color: Colors.grey[800],
                   child: Icon(
                     Icons.music_note,

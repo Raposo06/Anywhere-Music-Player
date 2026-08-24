@@ -1,14 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:anywhere_music_player/models/folder.dart';
-import 'package:anywhere_music_player/services/subsonic_api_service.dart';
 
 void main() {
-  final api = SubsonicApiService(
-    serverUrl: 'https://navidrome.example.com',
-    username: 'alice',
-    password: 'secret',
-  );
-
   group('Folder.fromSubsonic', () {
     test('counts direct child songs over albumCount when children are present', () {
       final folder = Folder.fromSubsonic({
@@ -51,14 +44,9 @@ void main() {
       expect(Folder.fromSubsonic({}).folderPath, 'Unknown');
     });
 
-    test('resolves coverArtUrl only when both coverArt id and api are given', () {
-      final withApi = Folder.fromSubsonic({'name': 'A', 'coverArt': 'cov-1'}, api: api);
-      final withoutApi = Folder.fromSubsonic({'name': 'A', 'coverArt': 'cov-1'});
-
-      expect(withApi.coverArtUrl, isNotNull);
-      expect(withApi.coverArtId, 'cov-1');
-      expect(withoutApi.coverArtUrl, isNull);
-      expect(withoutApi.coverArtId, 'cov-1');
+    test('extracts the coverArt id — no URL is resolved here (see StreamUrlResolver)', () {
+      final folder = Folder.fromSubsonic({'name': 'A', 'coverArt': 'cov-1'});
+      expect(folder.coverArtId, 'cov-1');
     });
 
     test('falls back to artistImageUrl for the cover id when coverArt is absent', () {
@@ -97,22 +85,17 @@ void main() {
     });
   });
 
-  group('coverUrl / coverCacheKey', () {
-    test('mirrors Track: size-qualified URL and id-keyed cache key', () {
-      final folder = Folder(
-        folderPath: 'A',
-        trackCount: 0,
-        coverArtUrl: 'https://x/rest/getCoverArt?id=cov-1&u=a&t=b&s=c',
-        coverArtId: 'cov-1',
-      );
-
-      expect(folder.coverUrl(size: 300), '${folder.coverArtUrl}&size=300');
+  group('coverCacheKey', () {
+    // coverUrl moved off the model entirely — see
+    // test/services/stream_url_resolver_test.dart and
+    // docs/reviews/2026-08-22-architecture-review.html Candidate 07.
+    test('is size-qualified and keyed on the id', () {
+      final folder = Folder(folderPath: 'A', trackCount: 0, coverArtId: 'cov-1');
       expect(folder.coverCacheKey(size: 300), 'cover_cov-1_300');
     });
 
-    test('are null without cover art', () {
+    test('is null without cover art', () {
       final folder = Folder(folderPath: 'A', trackCount: 0);
-      expect(folder.coverUrl(), isNull);
       expect(folder.coverCacheKey(), isNull);
     });
   });

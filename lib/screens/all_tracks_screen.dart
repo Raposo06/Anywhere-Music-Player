@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import '../services/library_scanner.dart';
 import '../utils/responsive.dart';
+import '../widgets/track_tile.dart';
 import 'player_screen.dart';
 
 class AllTracksScreen extends StatefulWidget {
@@ -146,7 +146,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     if (playerService.currentTrack?.id != track.id) {
       // Always play from the full library so playback continues past tracks
       // that didn't match the current search.
-      playerService.playPlaylist(_allTracks, _allTracks.indexOf(track));
+      playerService.play(_allTracks, from: _allTracks.indexOf(track));
     }
 
     Navigator.of(context).push(
@@ -158,10 +158,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
     if (_tracks.isEmpty) return;
 
     final playerService = context.read<AudioPlayerService>();
-    if (!playerService.isShuffleEnabled) {
-      playerService.toggleShuffle();
-    }
-    playerService.playPlaylist(_tracks, -1);
+    playerService.playShuffled(_tracks);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -300,9 +297,9 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
       itemCount: _tracks.length,
       itemBuilder: (context, index) {
         final track = _tracks[index];
-        return _AllTracksTile(
+        return TrackTile(
           track: track,
-          index: index,
+          leadingIndex: index,
           onTap: () => _playTrack(track),
         );
       },
@@ -310,110 +307,4 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
   }
 }
 
-/// Extracted track tile that uses Selector to avoid rebuilding on position updates.
-class _AllTracksTile extends StatelessWidget {
-  final Track track;
-  final int index;
-  final VoidCallback onTap;
-
-  const _AllTracksTile({required this.track, required this.index, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Selector<AudioPlayerService, String?>(
-      selector: (_, ps) => ps.currentTrack?.id,
-      builder: (context, currentTrackId, _) {
-        final isCurrentTrack = currentTrackId == track.id;
-
-        return Dismissible(
-          key: ValueKey('all-$index-${track.id}'),
-          direction: DismissDirection.startToEnd,
-          background: Container(
-            color: Colors.green.shade600,
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.queue_music, color: Colors.white),
-                SizedBox(width: 8),
-                Text('Add to queue',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w500)),
-              ],
-            ),
-          ),
-          confirmDismiss: (_) async {
-            final ps = context.read<AudioPlayerService>();
-            final messenger = ScaffoldMessenger.of(context);
-            final willQueue = ps.currentTrack != null;
-            await ps.addToQueue(track);
-            if (willQueue) {
-              messenger
-                ..hideCurrentSnackBar()
-                ..showSnackBar(SnackBar(
-                  content: Text('Added to queue: ${track.title}'),
-                  duration: const Duration(seconds: 2),
-                ));
-            }
-            return false;
-          },
-          child: ListTile(
-          leading: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 30,
-                child: Text(
-                  '${index + 1}',
-                  style: TextStyle(
-                    color: isCurrentTrack ? Colors.blue : Colors.grey,
-                    fontWeight: isCurrentTrack ? FontWeight.bold : null,
-                  ),
-                ),
-              ),
-              if (track.coverArtUrl != null)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: CachedNetworkImage(
-                    imageUrl: track.coverUrl(
-                        size: (48 * MediaQuery.devicePixelRatioOf(context))
-                            .round())!,
-                    cacheKey: track.coverCacheKey(
-                        size: (48 * MediaQuery.devicePixelRatioOf(context))
-                            .round()),
-                    width: 48,
-                    height: 48,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => const Icon(
-                      Icons.music_note,
-                      size: 48,
-                    ),
-                  ),
-                )
-              else
-                const Icon(Icons.music_note, size: 48),
-            ],
-          ),
-          title: Text(
-            track.title,
-            style: TextStyle(
-              fontWeight: isCurrentTrack ? FontWeight.bold : null,
-              color: isCurrentTrack ? Colors.blue : null,
-            ),
-          ),
-          subtitle: Text(
-            track.formattedDuration,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: isCurrentTrack
-              ? const Icon(Icons.equalizer, color: Colors.blue)
-              : null,
-          onTap: onTap,
-          ),
-        );
-      },
-    );
-  }
-}
+// Track rows are TrackTile (lib/widgets/track_tile.dart).

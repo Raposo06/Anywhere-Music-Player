@@ -14,6 +14,148 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## `LibraryCache.save()` swaps files via rename-aside, not delete-then-rename (2026-08-24)
+
+**Decided.** `save()`'s write order changed from `write .tmp → delete target →
+rename .tmp to target` to `write .tmp → rename target to .old → rename .tmp
+to target → delete .old`. The class doc comment now says "crash-safe", not
+"atomic" — the actual guarantee is that a crash never corrupts the cache; in
+the sub-millisecond window between the two renames it degrades to "no
+cache" (same as first launch), not to a corrupt or missing-then-broken file.
+
+**Why.** Not hypothetical — the architecture review's own test run hit
+`PathAccessException: Cannot rename file ... (OS Error: Acesso negado,
+errno = 5)` twice. `File.rename` can't replace an existing file on Windows,
+which is why the delete existed at all, but deleting the target and then
+immediately renaming onto that exact path is a known Windows race: a
+just-deleted path can briefly stay in a pending-delete state, and the
+rename lands on it before the OS has fully released it. Renaming the old
+file aside instead of deleting it means the target path is never reused
+immediately after something is removed from it — this is the standard
+atomic-replace idiom on Windows for exactly this reason.
+
+**What would reverse it.** Nothing planned. If `File.rename` on Windows is
+ever confirmed to replace an existing destination reliably (newer Dart SDK
+behavior), the aside-rename becomes unnecessary — verify with a real
+repeated-save stress test before reverting, not just a version bump.
+
+---
+
+## `AuthService.initialize()`'s outer catch no longer clears storage (2026-08-24)
+
+**Decided.** The outer `try/catch` wrapping the six `_secureStorage.read()`
+calls in `initialize()` now only logs on failure — it no longer calls
+`_clearStorage()`. Only the inner `on SubsonicApiException catch (e)` branch,
+when `e.code == 40` (server actively rejects the credentials), may clear
+storage.
+
+**Why.** The outer catch previously covered both the storage reads *and* the
+ping/login logic below them, so any `flutter_secure_storage` plugin failure
+on startup (corrupted keystore, OS-level storage error — not the credentials
+being wrong) fell into the same branch as "credentials rejected" and wiped
+the saved login. That's a real data-loss path and directly contradicted the
+comment two lines above it, which promises clearing only happens on a
+code-40 rejection. This was the only finding in either review that loses
+user data, so it was fixed first regardless of scheduling.
+
+**What would reverse it.** Nothing planned — this is a correctness fix, not
+a capability being held open. A broader refactor (collapsing
+`_apiService`/`_currentUser` into one `Session`, extracting a `_Credentials`
+read/write/delete helper) was considered and declined for now — the bug is
+fixed with a one-line change to the outer catch; the duplication it would
+clean up is real but not a live risk.
+
+---
+
+## `SubsonicApiService` dropped its tag-based directory browsing methods (2026-08-24)
+
+**Decided.** Removed `getMusicFolders`, `getIndexes`, `getMusicDirectory`,
+`getFolders`, `getRootTracks`, `getDirectoryContents`,
+`getAllTracksInDirectory`, `getRandomSongs`, `getAlbumList2`, and the in-memory
+LRU response cache (`_cache`/`_getFromCache`/`_putInCache`/`clearCache`) that
+existed only to serve three of them. `ping`, `search3`, `buildStreamUrl`,
+`buildCoverArtUrl`, and the native-API scan path
+(`getAllSongsNativeApi`/`_getNativeApiToken`) are untouched. The file drops
+from 609 lines to ~300. A shared `_baseUrl` field (trailing slash stripped
+once, in the constructor) and a small `_request()` helper replace the
+duplicated URI-build/GET/parse/rethrow shape across what's left.
+
+**Why.** `LibraryScanner` builds the entire virtual folder tree from
+`getAllSongsNativeApi`'s real filesystem paths (see "Track sequencing" note
+below, and `Track.fromNativeApi`) — the tag-based Subsonic browsing path was
+superseded by that migration and nothing called it anymore. Confirmed by
+grep: zero production call sites for any of the nine methods outside their
+own definitions, and no existing test coverage for seven of them.
+`README.md`/`docs/overview.md` still listed `getMusicFolders`/
+`getMusicDirectory` as the live "Browse folders" mechanism — corrected here.
+
+**What would reverse it.** Reintroducing tag-based (artist/album) browsing as
+a real feature — Navidrome's tag index has data the filesystem-path scan
+doesn't (album/artist metadata quality varies by tagging, but the *index* is
+richer). If that's ever wanted, recover the deleted methods from git history
+(this commit) rather than re-deriving them; they were previously exercised
+manually even without unit tests.
+
+---
+
+## Track/Folder stopped carrying a resolved streamUrl/coverArtUrl (2026-08-24)
+
+**Decided.** `Track.streamUrl` and `Track.coverArtUrl`/`Folder.coverArtUrl` are
+gone. Both models now hold only the raw `coverArtId` (`Track.path`/`id` double
+as the stream key). A new `StreamUrlResolver` interface (implemented by
+`SubsonicApiService`) is consulted at the moment of use instead — by
+`AudioPlayerService` when it actually loads a track, and by `CoverArt`/the
+handful of screens that render one, via the live `AuthService.apiService`.
+`AudioPlayerService` and the Android audio handler are both constructed once,
+before login, so each takes a `RotatingStreamUrlResolver` — a stable
+reference `main.dart` keeps pointed at whatever session is current, updated
+by a plain listener on `AuthService`.
+
+**Why.** The old design meant every `Track` held a live, password-equivalent
+auth token+salt baked into a URL, frozen in memory for as long as the object
+lived — for the whole library, for the whole session. It also meant the
+domain model imported the transport (`Track`/`Folder` importing
+`SubsonicApiService`) just to mint a URL once at parse time, and every
+construction site (the scanner, the cache, three spots in
+`subsonic_api_service.dart`) had to thread an `api:` argument through for it.
+Minting fresh at the point of use also matches what the auth scheme already
+assumes elsewhere: the Android stream cache is keyed on track id specifically
+*because* the salt rotates per request (see that decision below) — the old
+code kept a stale URL around anyway, it just didn't matter because nothing
+re-minted it.
+
+**What would reverse it.** Nothing planned. This is a dependency-direction
+and freshness fix, not a capability being held open.
+
+**Note.** This *extends* "Cached cover art stores the id, not the resolved
+URL" below rather than touching it — that decision is about the on-disk
+cache and stays exactly as it was (still id-only, still schema-versioned).
+This one applies the same reasoning to the copy that used to sit in memory.
+
+---
+
+## Library cache schema v3 → v4: `filename` renamed to `path` (2026-08-23)
+
+**Decided.** `Track.filename` is renamed to `Track.path`, and the persisted
+JSON key follows (`filename` → `path`). The no-path fallback also changes:
+`Track.fromSubsonic` used to synthesize a filename-shaped string
+(`'$title.$suffix'`) when the server sent no path; it now uses `''`, matching
+the empty-string-means-absent convention `folderPath`/`folderName` already
+use. `LibraryCache._version` bumps to 4 so old caches self-heal via a fresh
+scan rather than being read under the old key name.
+
+**Why.** The field held a full relative path (e.g.
+`"Artist/Album/song.flac"`) everywhere it was actually used — building the
+virtual folder tree — but its name and one fallback path described a bare
+filename. That mismatch let a third construction path (`LibraryScanner`'s
+inline `Track(...)`, now `Track.fromNativeApi`) go a full release without
+ever setting `folderName`, because it was never obvious the fields disagreed.
+
+**What would reverse it.** Nothing planned — this is a naming and consistency
+fix, not a capability being held open.
+
+---
+
 ## Track sequencing is hand-rolled in Dart, not `ConcatenatingAudioSource`
 
 **Decided.** The player loads **one track at a time**. All sequencing — playlist
@@ -96,8 +238,10 @@ lower the pre-amp. Wanting maximum loudness → raise it. **Don't change the cla
 
 ## Cached cover art stores the id, not the resolved URL (security)
 
-**Decided.** The library cache (`library_cache.dart`, schema **v3**) stores
-`cover_art_id`. Schema v2 → v3 exists specifically to drop `cover_art_url`.
+**Decided.** The library cache (`library_cache.dart`, schema **v4** as of
+2026-08-23; v3 when this was decided) stores `cover_art_id`. Schema v2 → v3
+exists specifically to drop `cover_art_url`; the v3 → v4 bump was an unrelated
+field rename (see the schema v3 → v4 entry above) and didn't touch this.
 
 **Why.** A resolved cover-art URL has a **live auth token and salt baked into
 it**. Persisting it meant a password-equivalent credential sitting in a plaintext

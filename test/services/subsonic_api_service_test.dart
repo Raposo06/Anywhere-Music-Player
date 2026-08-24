@@ -118,37 +118,6 @@ void main() {
     });
   });
 
-  group('getMusicFolders', () {
-    test('normalizes a single-object musicFolder into a one-item list', () async {
-      final client = MockClient((request) async => _ok({
-        'musicFolders': {
-          'musicFolder': {'id': '1', 'name': 'Music'},
-        },
-      }));
-      final api = SubsonicApiService(
-        serverUrl: 'https://navidrome.example.com',
-        username: 'a',
-        password: 'p',
-        httpClient: client,
-      );
-
-      final folders = await api.getMusicFolders();
-      expect(folders, [{'id': '1', 'name': 'Music'}]);
-    });
-
-    test('returns an empty list when musicFolders is absent', () async {
-      final client = MockClient((request) async => _ok({}));
-      final api = SubsonicApiService(
-        serverUrl: 'https://navidrome.example.com',
-        username: 'a',
-        password: 'p',
-        httpClient: client,
-      );
-
-      expect(await api.getMusicFolders(), isEmpty);
-    });
-  });
-
   group('search3', () {
     test('parses songs and albums, normalizing single-object results into lists', () async {
       final client = MockClient((request) async {
@@ -192,17 +161,9 @@ void main() {
       expect(result.songs, isEmpty);
       expect(result.albums, isEmpty);
     });
-  });
 
-  group('getMusicDirectory caching', () {
-    test('serves the second call from cache without a second HTTP request', () async {
-      var requestCount = 0;
-      final client = MockClient((request) async {
-        requestCount++;
-        return _ok({
-          'directory': {'id': 'd1', 'child': []},
-        });
-      });
+    test('a Subsonic-level error rethrows unchanged, not double-wrapped', () async {
+      final client = MockClient((request) async => _subsonicError('Bad query', code: 10));
       final api = SubsonicApiService(
         serverUrl: 'https://navidrome.example.com',
         username: 'a',
@@ -210,32 +171,10 @@ void main() {
         httpClient: client,
       );
 
-      await api.getMusicDirectory('d1');
-      await api.getMusicDirectory('d1');
-
-      expect(requestCount, 1);
-    });
-
-    test('clearCache forces the next call to hit the network again', () async {
-      var requestCount = 0;
-      final client = MockClient((request) async {
-        requestCount++;
-        return _ok({
-          'directory': {'id': 'd1', 'child': []},
-        });
-      });
-      final api = SubsonicApiService(
-        serverUrl: 'https://navidrome.example.com',
-        username: 'a',
-        password: 'p',
-        httpClient: client,
+      expect(
+        () => api.search3('x'),
+        throwsA(isA<SubsonicApiException>().having((e) => e.message, 'message', 'Bad query')),
       );
-
-      await api.getMusicDirectory('d1');
-      api.clearCache();
-      await api.getMusicDirectory('d1');
-
-      expect(requestCount, 2);
     });
   });
 }

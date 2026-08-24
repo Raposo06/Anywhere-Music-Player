@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
 import '../services/library_scanner.dart';
 import '../services/audio_player_service.dart';
 import '../utils/responsive.dart';
+import '../widgets/cover_art.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/track_tile.dart';
 import 'player_screen.dart';
 
 class FolderDetailScreen extends StatefulWidget {
@@ -43,6 +44,11 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     super.initState();
     _loadContents();
     context.read<AudioPlayerService>().addListener(_followCurrentTrack);
+    // Without this, a background refresh (LibraryScanner.scan()'s phase 2,
+    // or an explicit rescan) that lands while this screen is already open
+    // is invisible here — _loadContents was previously only ever called
+    // once, from initState.
+    context.read<LibraryScanner>().addListener(_loadContents);
   }
 
   @override
@@ -50,6 +56,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     _searchController.dispose();
     try {
       context.read<AudioPlayerService>().removeListener(_followCurrentTrack);
+      context.read<LibraryScanner>().removeListener(_loadContents);
     } catch (_) {}
     super.dispose();
   }
@@ -106,7 +113,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     if (allTracks.isEmpty) return;
 
     final playerService = context.read<AudioPlayerService>();
-    playerService.playPlaylist(allTracks, 0);
+    playerService.play(allTracks);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -119,11 +126,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     if (allTracks.isEmpty) return;
 
     final playerService = context.read<AudioPlayerService>();
-    // Enable shuffle before starting playlist — playPlaylist will shuffle internally
-    if (!playerService.isShuffleEnabled) {
-      playerService.toggleShuffle();
-    }
-    playerService.playPlaylist(allTracks, -1);
+    playerService.playShuffled(allTracks);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -337,7 +340,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     // while the rest of the content remains centered + constrained.
     return Column(
       children: [
-        if (breadcrumb != null) breadcrumb,
+        ?breadcrumb,
         Expanded(
           child: Center(
             child: ConstrainedBox(
@@ -418,26 +421,13 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
               if (showSubfolders && i < _subfolders.length) {
                 final folder = _subfolders[i];
                 return ListTile(
-                  leading: folder.coverArtUrl != null
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: CachedNetworkImage(
-                            imageUrl: folder.coverUrl(
-                                size: (48 *
-                                        MediaQuery.devicePixelRatioOf(context))
-                                    .round())!,
-                            cacheKey: folder.coverCacheKey(
-                                size: (48 *
-                                        MediaQuery.devicePixelRatioOf(context))
-                                    .round()),
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) =>
-                                const Icon(Icons.folder, size: 48, color: Colors.blue),
-                          ),
-                        )
-                      : const Icon(Icons.folder, size: 48, color: Colors.blue),
+                  leading: CoverArt(
+                    folder,
+                    size: 48,
+                    fallbackIcon: Icons.folder,
+                    fallbackIconColor: Colors.blue,
+                    showPlaceholder: false,
+                  ),
                   title: Text(
                     folder.displayName,
                     style: const TextStyle(fontWeight: FontWeight.bold),
@@ -453,9 +443,9 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
               // Tracks.
               final index = i - _leadingRowCount;
               final track = visibleTracks[index];
-              return _FolderTrackTile(
+              return TrackTile(
                 track: track,
-                index: _isSearching ? _tracks.indexOf(track) : index,
+                leadingIndex: _isSearching ? _tracks.indexOf(track) : index,
                 onTap: () {
                   final playerService = context.read<AudioPlayerService>();
                   // If this track is already the current one, don't restart it
@@ -463,7 +453,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                   if (playerService.currentTrack?.id != track.id) {
                     // Always play from the full folder list so playback
                     // continues through tracks not matched by the search.
-                    playerService.playPlaylist(_tracks, _tracks.indexOf(track));
+                    playerService.play(_tracks, from: _tracks.indexOf(track));
                   }
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -478,116 +468,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   }
 }
 
-/// Extracted track tile that uses Selector to avoid rebuilding on position updates.
-class _FolderTrackTile extends StatelessWidget {
-  final Track track;
-  final int index;
-  final VoidCallback onTap;
-
-  const _FolderTrackTile({
-    required this.track,
-    required this.index,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Selector<AudioPlayerService, String?>(
-      selector: (_, ps) => ps.currentTrack?.id,
-      builder: (context, currentTrackId, _) {
-        final isCurrentTrack = currentTrackId == track.id;
-
-        return Dismissible(
-          key: ValueKey('folder-$index-${track.id}'),
-          direction: DismissDirection.startToEnd,
-          background: Container(
-            color: Colors.green.shade600,
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.queue_music, color: Colors.white),
-                SizedBox(width: 8),
-                Text('Add to queue',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w500)),
-              ],
-            ),
-          ),
-          confirmDismiss: (_) async {
-            final ps = context.read<AudioPlayerService>();
-            final messenger = ScaffoldMessenger.of(context);
-            final willQueue = ps.currentTrack != null;
-            await ps.addToQueue(track);
-            if (willQueue) {
-              messenger
-                ..hideCurrentSnackBar()
-                ..showSnackBar(SnackBar(
-                  content: Text('Added to queue: ${track.title}'),
-                  duration: const Duration(seconds: 2),
-                ));
-            }
-            return false;
-          },
-          child: ListTile(
-          leading: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 30,
-                child: Text(
-                  '${index + 1}',
-                  style: TextStyle(
-                    color: isCurrentTrack ? Colors.blue : Colors.grey,
-                    fontWeight: isCurrentTrack ? FontWeight.bold : null,
-                  ),
-                ),
-              ),
-              if (track.coverArtUrl != null)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: CachedNetworkImage(
-                    imageUrl: track.coverUrl(
-                        size: (48 * MediaQuery.devicePixelRatioOf(context))
-                            .round())!,
-                    cacheKey: track.coverCacheKey(
-                        size: (48 * MediaQuery.devicePixelRatioOf(context))
-                            .round()),
-                    width: 48,
-                    height: 48,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => const Icon(Icons.music_note, size: 48),
-                  ),
-                )
-              else
-                const Icon(Icons.music_note, size: 48),
-            ],
-          ),
-          title: Text(
-            track.title,
-            style: TextStyle(
-              fontWeight: isCurrentTrack ? FontWeight.bold : null,
-              color: isCurrentTrack ? Colors.blue : null,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            track.formattedDuration,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: isCurrentTrack
-              ? const Icon(Icons.equalizer, color: Colors.blue)
-              : null,
-          onTap: onTap,
-          ),
-        );
-      },
-    );
-  }
-}
+// Track rows are TrackTile (lib/widgets/track_tile.dart).
 
 /// One segment of the breadcrumb — either a clickable parent link or the
 /// non-interactive current-folder label. Renders as a tappable chip with

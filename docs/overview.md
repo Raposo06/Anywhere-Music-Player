@@ -50,7 +50,7 @@ no backend of its own.
 | Function | Endpoint |
 |---|---|
 | Auth check | `GET /rest/ping` |
-| Browse folders | `GET /rest/getMusicFolders`, `GET /rest/getMusicDirectory` |
+| Browse library | `GET /api/song` (Navidrome's native REST API, JWT via `/auth/login`) — not the Subsonic tag-based endpoints; see [decisions](decisions.md) |
 | Search | `GET /rest/search3` |
 | Stream audio | `GET /rest/stream?id=X` |
 | Cover art | `GET /rest/getCoverArt?id=X` |
@@ -124,15 +124,20 @@ library mode (the caches accelerate a working setup, they don't replace it).
 library + stream + cover caching, drop recovery, Android TV UI, Windows SMTC and
 wakelock, Windows installer.
 
-**Test suite:** 16 test files under `test/` (~2,900 lines including support
-fakes) covering the models, all four services, the screens and the shared
-widgets. Playback is exercised against a fake `just_audio` platform
-(`test/support/fake_just_audio.dart`) rather than a live backend, and the
-sequencing math is driven through `@visibleForTesting` seams on
-`AudioPlayerService`. Run with `flutter test`. **This does not replace
-on-device testing** — the audio path differs by platform (media_kit/MPV on
-Windows, ExoPlayer + loopback stream cache on Android), so a green suite says
-nothing about either backend.
+**Test suite:** 27 test files under `test/` (~3,500 lines including support
+fakes) covering the models, services, the screens and the shared widgets.
+Playback is exercised against a fake `just_audio` platform
+(`test/support/fake_just_audio.dart`) rather than a live backend. Sequencing
+(playlist/queue/shuffle/repeat) lives in `PlaybackCursor`, a pure Dart class
+with no player or Flutter dependency, tested directly rather than through
+seams on `AudioPlayerService`; "what tells the OS this is playing"
+(`NowPlayingPresence`) and "what's the URL for this track"
+(`StreamUrlResolver`, see [decisions](decisions.md)) are similarly pulled out
+into their own seams, each with a no-op/throwing test default so nothing in
+the suite needs a real Windows or Android platform channel. Run with
+`flutter test`. **This does not replace on-device testing** — the audio path
+differs by platform (media_kit/MPV on Windows, ExoPlayer + loopback stream
+cache on Android), so a green suite says nothing about either backend.
 
 **Remaining / known gaps:**
 - iOS is scaffolded but never distributed (needs an Apple Developer account).

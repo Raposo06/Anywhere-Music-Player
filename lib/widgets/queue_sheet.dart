@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
+import 'cover_art.dart';
 
 class QueueSheet extends StatelessWidget {
   const QueueSheet({super.key});
@@ -166,24 +166,7 @@ class _TrackRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tile = ListTile(
-      leading: track.coverArtUrl != null
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: CachedNetworkImage(
-                imageUrl: track.coverUrl(
-                    size: (48 * MediaQuery.devicePixelRatioOf(context))
-                        .round())!,
-                cacheKey: track.coverCacheKey(
-                    size: (48 * MediaQuery.devicePixelRatioOf(context))
-                        .round()),
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) =>
-                    const Icon(Icons.music_note, size: 48),
-              ),
-            )
-          : const Icon(Icons.music_note, size: 48),
+      leading: CoverArt(track, size: 48, showPlaceholder: false),
       title: Text(
         track.title,
         maxLines: 1,

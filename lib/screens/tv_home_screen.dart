@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/audio_player_service.dart';
+import '../services/auth_service.dart';
 import '../services/library_scanner.dart';
+import '../services/stream_url_resolver.dart';
 import '../models/track.dart';
 import 'tv_player_screen.dart';
 
@@ -60,17 +62,14 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
 
   void _playTrack(int index) {
     final audioPlayer = context.read<AudioPlayerService>();
-    audioPlayer.playPlaylist(_tracks, index);
+    audioPlayer.play(_tracks, from: index);
     _openPlayer();
   }
 
   void _shuffleAll() {
     if (_tracks.isEmpty) return;
     final audioPlayer = context.read<AudioPlayerService>();
-    if (!audioPlayer.isShuffleEnabled) {
-      audioPlayer.toggleShuffle();
-    }
-    audioPlayer.playPlaylist(_tracks, -1);
+    audioPlayer.playShuffled(_tracks);
     _openPlayer();
   }
 
@@ -374,6 +373,9 @@ class _TvTrackRowState extends State<_TvTrackRow> {
   Widget build(BuildContext context) {
     final audioPlayer = context.watch<AudioPlayerService>();
     final isPlaying = audioPlayer.currentTrack?.id == widget.track.id;
+    final StreamUrlResolver? resolver = context.watch<AuthService>().apiService;
+    final pixelSize = (48 * MediaQuery.devicePixelRatioOf(context)).round();
+    final coverUrl = resolver.resolveCoverUrl(widget.track, size: pixelSize);
 
     return Focus(
       onFocusChange: _handleFocusChange,
@@ -399,7 +401,7 @@ class _TvTrackRowState extends State<_TvTrackRow> {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           decoration: BoxDecoration(
             color: isPlaying
-                ? const Color(0xFF2D5F9F).withOpacity(0.3)
+                ? const Color(0xFF2D5F9F).withValues(alpha: 0.3)
                 : _isFocused
                     ? const Color(0xFF2A2A2A)
                     : Colors.transparent,
@@ -421,20 +423,14 @@ class _TvTrackRowState extends State<_TvTrackRow> {
                 child: isPlaying
                     ? const Icon(Icons.equalizer,
                         color: Color(0xFF2D5F9F), size: 28)
-                    : widget.track.coverArtUrl != null
+                    : coverUrl != null
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(4),
                             child: CachedNetworkImage(
-                              imageUrl: widget.track.coverUrl(
-                                  size: (48 *
-                                          MediaQuery.devicePixelRatioOf(context))
-                                      .round())!,
-                              cacheKey: widget.track.coverCacheKey(
-                                  size: (48 *
-                                          MediaQuery.devicePixelRatioOf(context))
-                                      .round()),
+                              imageUrl: coverUrl,
+                              cacheKey: widget.track.coverCacheKey(size: pixelSize),
                               fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => const Icon(
+                              errorWidget: (_, _, _) => const Icon(
                                 Icons.music_note,
                                 color: Colors.white54,
                                 size: 24,
@@ -483,6 +479,6 @@ class _TvTrackRowState extends State<_TvTrackRow> {
   String _formatDuration(int seconds) {
     final minutes = seconds ~/ 60;
     final secs = seconds % 60;
-    return '${minutes}:${secs.toString().padLeft(2, '0')}';
+    return '$minutes:${secs.toString().padLeft(2, '0')}';
   }
 }

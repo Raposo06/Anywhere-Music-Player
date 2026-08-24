@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:anywhere_music_player/screens/folder_detail_screen.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
+import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/library_scanner.dart';
 import '../support/fake_path_provider.dart';
 import '../support/fake_scanner.dart';
@@ -21,6 +22,9 @@ Widget _wrap({
     providers: [
       ChangeNotifierProvider<AudioPlayerService>.value(value: player ?? AudioPlayerService()),
       ChangeNotifierProvider<LibraryScanner>.value(value: scanner),
+      // No cover art on any fixture in this file, so an unauthenticated
+      // (apiService == null) AuthService resolves the same as a real one.
+      ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
     ],
     child: MaterialApp(
       home: FolderDetailScreen(folderId: folderId, folderName: folderName),
@@ -60,6 +64,30 @@ void main() {
     expect(find.text('Naruto'), findsOneWidget); // subfolder
     expect(find.text('loose'), findsOneWidget); // direct track
     expect(find.text('1 track(s)'), findsOneWidget); // recursive total
+  });
+
+  testWidgets('refreshes when a background rescan updates the library', (tester) async {
+    // Candidate 08: FolderDetailScreen used to read the scanner once in
+    // initState and never listen again, so a background refresh landing
+    // while the screen was already open was invisible.
+    final songs = [
+      nativeApiSong(id: '1', path: 'Anime/Naruto/song.mp3'),
+      nativeApiSong(id: '2', path: 'Anime/loose.mp3'),
+    ];
+    final scanner = scannerWithSongs(songs);
+    await tester.runAsync(() => scanner.scan());
+
+    await tester.pumpWidget(_wrap(scanner: scanner, folderId: 'Anime', folderName: 'Anime'));
+    await settle(tester);
+
+    expect(find.text('1 track(s)'), findsOneWidget);
+
+    songs.add(nativeApiSong(id: '3', path: 'Anime/loose2.mp3'));
+    await tester.runAsync(() => scanner.rescan());
+    await settle(tester);
+
+    expect(find.text('2 track(s)'), findsOneWidget);
+    expect(find.text('loose2'), findsOneWidget);
   });
 
   testWidgets('shows "No content found" for a path with nothing in it', (tester) async {

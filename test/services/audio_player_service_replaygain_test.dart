@@ -11,8 +11,7 @@ void main() {
   Track trackWithGain(double? db) => Track(
     id: '1',
     title: 'T',
-    filename: 'f.mp3',
-    streamUrl: 'https://x/stream',
+    path: 'f.mp3',
     folderPath: '',
     createdAt: DateTime(2024),
     replayGainDb: db,

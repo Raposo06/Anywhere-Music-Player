@@ -5,43 +5,31 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:window_manager/window_manager.dart';
 import '../models/track.dart';
-import 'audio_handler.dart';
-import 'windows_media_controls_service.dart';
-import 'windows_wakelock.dart';
+import 'now_playing_presence.dart';
+import 'playback_cursor.dart';
+import 'stream_url_resolver.dart';
 
-enum RepeatMode { off, all, one }
+export 'playback_cursor.dart' show RepeatMode;
 
 /// Plays one track at a time. All sequencing (playlist order, shuffle, loop,
-/// queue) is handled in Dart so we don't depend on just_audio's
+/// queue) is handled by [PlaybackCursor] so we don't depend on just_audio's
 /// ConcatenatingAudioSource — which is buggy on just_audio_media_kit
-/// (Windows/Linux). The user-facing API is unchanged.
+/// (Windows/Linux). This class is the adapter over just_audio: it asks the
+/// cursor what plays next and is responsible for actually loading and
+/// playing it. Telling the OS what's playing is [NowPlayingPresence]'s job;
+/// minting the stream/cover URLs to play and show is [StreamUrlResolver]'s —
+/// neither is this class's own concern. The user-facing API is unchanged.
 class AudioPlayerService with ChangeNotifier {
   AudioPlayer? _player;
-  final MusicAudioHandler? _audioHandler;
-  final WindowsMediaControlsService _windowsMediaControls =
-      WindowsMediaControlsService.instance;
+  final NowPlayingPresence _presence;
+  final StreamUrlResolver _resolver;
 
-  // Active playlist (the folder/album the user is browsing).
-  List<Track> _playlist = [];
-  // Position in _playlist that will be resumed when the queue empties.
-  int _currentIndex = -1;
-  // Explicit FIFO queue. Independent of shuffle.
-  final List<Track> _queue = [];
-  // The track currently coming out of the speakers — may be a _playlist item
+  final PlaybackCursor _cursor = PlaybackCursor();
+  // The track currently coming out of the speakers — may be a playlist item
   // or a queue item.
   Track? _currentTrack;
-  // True iff _currentTrack came from _queue (so _currentIndex points at the
-  // playlist track we'll return to once the queue is done).
-  bool _playingFromQueue = false;
 
-  // Shuffle plumbing: a permutation of playlist indices and where we are in it.
-  List<int> _shuffleOrder = [];
-  int _shufflePos = 0;
-  bool _isShuffleEnabled = false;
-
-  RepeatMode _repeatMode = RepeatMode.all;
   double _volume = 1.0;
   String? _lastError;
   bool _isLoading = false;
@@ -74,9 +62,9 @@ class AudioPlayerService with ChangeNotifier {
   bool _playerInitialized = false;
 
   // Provide safe stream getters that return empty streams before init.
-  static final _emptyDurationStream = Stream<Duration>.empty();
-  static final _emptyNullDurationStream = Stream<Duration?>.empty();
-  static final _emptyBoolStream = Stream<bool>.empty();
+  static const _emptyDurationStream = Stream<Duration>.empty();
+  static const _emptyNullDurationStream = Stream<Duration?>.empty();
+  static const _emptyBoolStream = Stream<bool>.empty();
 
   Stream<Duration> get positionStream =>
       _player?.positionStream ?? _emptyDurationStream;
@@ -88,31 +76,18 @@ class AudioPlayerService with ChangeNotifier {
 
   AudioPlayer? get player => _player;
   Track? get currentTrack => _currentTrack;
-  List<Track> get playlist => _playlist;
-  int get currentIndex => _currentIndex;
-  List<Track> get queue => List.unmodifiable(_queue);
-  int get queueLength => _queue.length;
+  List<Track> get playlist => _cursor.playlist;
+  int get currentIndex => _cursor.currentIndex;
+  List<Track> get queue => _cursor.queue;
+  int get queueLength => _cursor.queueLength;
 
   /// The upcoming tracks from the browsing context (playlist), in play order
   /// and shuffle-aware, starting after the current playback position. Does not
   /// wrap around on repeat-all. Independent of the manual [queue].
-  List<Track> get upcomingFromContext {
-    if (_playlist.isEmpty) return const [];
-    final result = <Track>[];
-    if (_isShuffleEnabled && _shuffleOrder.length == _playlist.length) {
-      for (var p = _shufflePos + 1; p < _shuffleOrder.length; p++) {
-        result.add(_playlist[_shuffleOrder[p]]);
-      }
-    } else {
-      for (var i = _currentIndex + 1; i < _playlist.length; i++) {
-        result.add(_playlist[i]);
-      }
-    }
-    return List.unmodifiable(result);
-  }
+  List<Track> get upcomingFromContext => _cursor.upcoming;
   bool get isLoading => _isLoading;
-  bool get isShuffleEnabled => _isShuffleEnabled;
-  RepeatMode get repeatMode => _repeatMode;
+  bool get isShuffleEnabled => _cursor.isShuffleEnabled;
+  RepeatMode get repeatMode => _cursor.repeatMode;
   double get volume => _volume;
   String? get lastError => _lastError;
 
@@ -121,35 +96,11 @@ class AudioPlayerService with ChangeNotifier {
   Duration? get position => _player?.position;
   Duration? get bufferedPosition => _player?.bufferedPosition;
 
-  bool get _isWindows => !kIsWeb && Platform.isWindows;
   bool get _isAndroid => !kIsWeb && Platform.isAndroid;
 
-  static const _appName = 'Anywhere Music Player';
-
-  bool _windowsMediaControlsReady = false;
-
-  void _updateWindowsMetadata(Track? track) {
-    if (!_isWindows) return;
-    if (track != null) {
-      windowManager.setTitle('${track.title} - $_appName');
-      if (!_windowsMediaControlsReady) {
-        _windowsMediaControlsReady = true;
-        _initializeWindowsMediaControls().then((_) {
-          _windowsMediaControls.updateMetadata(track);
-          _windowsMediaControls.updatePlaybackStatus(
-            isPlaying: _player?.playing ?? false,
-          );
-        });
-      } else {
-        _windowsMediaControls.updateMetadata(track);
-      }
-    } else {
-      windowManager.setTitle(_appName);
-    }
-  }
-
-  AudioPlayerService({MusicAudioHandler? audioHandler})
-    : _audioHandler = audioHandler;
+  AudioPlayerService({NowPlayingPresence? presence, StreamUrlResolver? resolver})
+    : _presence = presence ?? const NoPresence(),
+      _resolver = resolver ?? const NoResolver();
 
   /// Lazily initialize the AudioPlayer and stream listeners.
   void _ensurePlayerInitialized() {
@@ -160,26 +111,16 @@ class AudioPlayerService with ChangeNotifier {
     // We sequence manually, so always let the player report completion.
     _player!.setLoopMode(LoopMode.off);
 
-    if (_audioHandler != null) {
-      _audioHandler!.attachPlayer(
-        player: _player!,
-        onNextCallback: playNext,
-        onPreviousCallback: playPrevious,
-      );
-    }
+    _presence.bind(_player!, (
+      play: () => _player?.play(),
+      pause: () => _player?.pause(),
+      next: playNext,
+      previous: playPrevious,
+      stop: stop,
+    ));
 
     _playingSubscription = _player!.playingStream.listen((playing) {
-      if (_isWindows) {
-        // Keep the PC awake while playing; release it when paused/stopped.
-        if (playing) {
-          WindowsWakelock.enable();
-        } else {
-          WindowsWakelock.disable();
-        }
-        if (_currentTrack != null) {
-          _windowsMediaControls.updatePlaybackStatus(isPlaying: playing);
-        }
-      }
+      if (_currentTrack != null) _presence.setPlaying(playing);
       notifyListeners();
     });
 
@@ -194,21 +135,6 @@ class AudioPlayerService with ChangeNotifier {
       (event) {},
       onError: (Object e, StackTrace st) => _handleStreamError(e),
     );
-  }
-
-  Future<void> _initializeWindowsMediaControls() async {
-    if (!_isWindows) return;
-    try {
-      await _windowsMediaControls.initialize(
-        onPlay: () => _player?.play(),
-        onPause: () => _player?.pause(),
-        onNext: () => playNext(),
-        onPrevious: () => playPrevious(),
-        onStop: () => stop(),
-      );
-    } catch (e) {
-      debugPrint('Failed to initialize Windows media controls: $e');
-    }
   }
 
   void _handlePlaybackError(Object error) {
@@ -255,21 +181,7 @@ class AudioPlayerService with ChangeNotifier {
     final token = ++_loadToken;
     _isLoading = true;
     notifyListeners();
-    try {
-      await _setSourceWithRetry(track, token);
-      if (token != _loadToken) return;
-      await _player!.setVolume(_volume * _replayGainFactor(track));
-      if (resumeFrom > Duration.zero) await _player!.seek(resumeFrom);
-      _player!.play();
-    } catch (e) {
-      if (token != _loadToken) return;
-      _handlePlaybackError(e);
-    } finally {
-      if (token == _loadToken) {
-        _isLoading = false;
-        notifyListeners();
-      }
-    }
+    await _loadAndPlay(track, token, resumeFrom: resumeFrom);
   }
 
   void clearError() {
@@ -279,19 +191,22 @@ class AudioPlayerService with ChangeNotifier {
 
   // -------- Source helpers --------
 
-  MediaItem _buildMediaItem(Track track) => MediaItem(
-    id: track.id,
-    title: track.title,
-    artist: track.artist ?? '',
-    album: track.album ?? '',
-    duration: track.durationSeconds != null
-        ? Duration(seconds: track.durationSeconds!)
-        : null,
-    artUri: track.coverArtUrl != null ? Uri.parse(track.coverArtUrl!) : null,
-  );
+  MediaItem _buildMediaItem(Track track) {
+    final coverUrl = _resolver.resolveCoverUrl(track);
+    return MediaItem(
+      id: track.id,
+      title: track.title,
+      artist: track.artist ?? '',
+      album: track.album ?? '',
+      duration: track.durationSeconds != null
+          ? Duration(seconds: track.durationSeconds!)
+          : null,
+      artUri: coverUrl != null ? Uri.parse(coverUrl) : null,
+    );
+  }
 
   AudioSource _buildSource(Track track) {
-    final uri = Uri.parse(track.streamUrl);
+    final uri = Uri.parse(_resolver.buildStreamUrl(track.id));
     final tag = _buildMediaItem(track);
     // On Android, cache the stream to a per-song file so playback is seekable
     // (the live HTTP stream isn't) and replays don't re-fetch from the server.
@@ -374,7 +289,7 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   void _logStreamParams(Track track) {
-    final uri = Uri.tryParse(track.streamUrl);
+    final uri = Uri.tryParse(_resolver.buildStreamUrl(track.id));
     final params = uri?.queryParameters ?? const <String, String>{};
     final platform = kIsWeb
         ? 'web'
@@ -418,16 +333,21 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   /// Load [track] as the single audio source and start playback, guarded by
-  /// [token] (assigned in [_selectAndPlay]) against rapid successive calls.
-  Future<void> _loadAndPlay(Track track, int token) async {
+  /// [token] (assigned in [_selectAndPlay] or [_handleStreamError]) against
+  /// rapid successive calls. Pass [resumeFrom] to seek there once loaded —
+  /// [_handleStreamError] uses this to resume a dropped stream where it left
+  /// off; a fresh track selection never passes one.
+  Future<void> _loadAndPlay(Track track, int token, {Duration? resumeFrom}) async {
     try {
       _logStreamParams(track);
       await _setSourceWithRetry(track, token);
       if (token != _loadToken) return;
       await _player!.setVolume(_volume * _replayGainFactor(track));
-      _player!.play();
-      if (_audioHandler != null) unawaited(_audioHandler!.updateTrackInfo(track));
-      _updateWindowsMetadata(track);
+      if (resumeFrom != null && resumeFrom > Duration.zero) {
+        await _player!.seek(resumeFrom);
+      }
+      await _player!.play();
+      _presence.show(track);
       unawaited(_evictAudioCacheIfNeeded());
     } catch (e) {
       if (token != _loadToken) return;
@@ -440,102 +360,11 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  // -------- Shuffle helpers --------
-
-  void _regenerateShuffleOrder({int anchorAt = -1}) {
-    if (_playlist.isEmpty) {
-      _shuffleOrder = [];
-      _shufflePos = 0;
-      return;
-    }
-    _shuffleOrder = List.generate(_playlist.length, (i) => i)..shuffle();
-    if (anchorAt >= 0 && anchorAt < _playlist.length) {
-      final pos = _shuffleOrder.indexOf(anchorAt);
-      if (pos > 0) {
-        _shuffleOrder.removeAt(pos);
-        _shuffleOrder.insert(0, anchorAt);
-      }
-    }
-    _shufflePos = 0;
-  }
-
-  /// Next playlist index respecting shuffle and loop. Returns null when
-  /// playback should stop (end of playlist with loop off).
-  int? _nextPlaylistIndex() {
-    if (_playlist.isEmpty) return null;
-    if (_isShuffleEnabled && _shuffleOrder.length == _playlist.length) {
-      var next = _shufflePos + 1;
-      if (next >= _shuffleOrder.length) {
-        if (_repeatMode == RepeatMode.all) {
-          _regenerateShuffleOrder(anchorAt: _currentIndex);
-          next = 0;
-        } else {
-          return null;
-        }
-      }
-      _shufflePos = next;
-      return _shuffleOrder[next];
-    }
-    var next = _currentIndex + 1;
-    if (next >= _playlist.length) {
-      if (_repeatMode == RepeatMode.all) {
-        next = 0;
-      } else {
-        return null;
-      }
-    }
-    return next;
-  }
-
   /// What [playNext] would play right now — without mutating shuffle state.
   /// Used by the player screen to precache the next track's cover art so the
   /// transition between tracks doesn't flash an empty/loading frame. Returns
   /// null when end-of-playlist (repeat off) would stop playback.
-  Track? peekNextTrack() {
-    if (_queue.isNotEmpty) return _queue.first;
-    if (_playlist.isEmpty || _currentIndex < 0) return null;
-
-    if (_isShuffleEnabled && _shuffleOrder.length == _playlist.length) {
-      var next = _shufflePos + 1;
-      if (next >= _shuffleOrder.length) {
-        if (_repeatMode != RepeatMode.all) return null;
-        next = 0;
-      }
-      return _playlist[_shuffleOrder[next]];
-    }
-
-    var next = _currentIndex + 1;
-    if (next >= _playlist.length) {
-      if (_repeatMode != RepeatMode.all) return null;
-      next = 0;
-    }
-    return _playlist[next];
-  }
-
-  int? _prevPlaylistIndex() {
-    if (_playlist.isEmpty) return null;
-    if (_isShuffleEnabled && _shuffleOrder.length == _playlist.length) {
-      var prev = _shufflePos - 1;
-      if (prev < 0) {
-        if (_repeatMode == RepeatMode.all) {
-          prev = _shuffleOrder.length - 1;
-        } else {
-          return null;
-        }
-      }
-      _shufflePos = prev;
-      return _shuffleOrder[prev];
-    }
-    var prev = _currentIndex - 1;
-    if (prev < 0) {
-      if (_repeatMode == RepeatMode.all) {
-        prev = _playlist.length - 1;
-      } else {
-        return null;
-      }
-    }
-    return prev;
-  }
+  Track? peekNextTrack() => _cursor.peekNext();
 
   // -------- Playback entry points --------
 
@@ -544,45 +373,31 @@ class AudioPlayerService with ChangeNotifier {
   /// the user has explicitly lined up to play next.
   Future<void> playTrack(Track track) async {
     _ensurePlayerInitialized();
-    _playlist = [track];
-    _currentIndex = 0;
-    _playingFromQueue = false;
-    if (_isShuffleEnabled) _regenerateShuffleOrder(anchorAt: 0);
-    _selectAndPlay(track, immediate: true);
+    _selectAndPlay(_cursor.start([track], at: 0), immediate: true);
   }
 
-  /// Play a playlist. Pass [startIndex] = -1 to let shuffle pick the first
-  /// track at random, or use a specific index otherwise. Preserves the
-  /// user-built queue so switching songs doesn't discard queued tracks.
-  Future<void> playPlaylist(List<Track> tracks, int startIndex) async {
+  /// Play [tracks] starting from [from]. Preserves the user-built queue so
+  /// switching songs doesn't discard queued tracks.
+  Future<void> play(List<Track> tracks, {int from = 0}) async {
     if (tracks.isEmpty) return;
-    if (startIndex != -1 && (startIndex < 0 || startIndex >= tracks.length)) {
-      return;
-    }
-
+    if (from < 0 || from >= tracks.length) return;
     _ensurePlayerInitialized();
-    _playlist = List.from(tracks);
-    _playingFromQueue = false;
+    _selectAndPlay(_cursor.start(tracks, at: from), immediate: true);
+  }
 
-    final int resolvedStart;
-    if (startIndex >= 0) {
-      resolvedStart = startIndex;
-    } else if (_isShuffleEnabled && tracks.length > 1) {
-      resolvedStart = Random().nextInt(tracks.length);
-    } else {
-      resolvedStart = 0;
-    }
-    _currentIndex = resolvedStart;
-
-    if (_isShuffleEnabled) {
-      _regenerateShuffleOrder(anchorAt: resolvedStart);
-    }
-
-    _selectAndPlay(_playlist[resolvedStart], immediate: true);
+  /// Shuffle-play [tracks]: turns shuffle on (if it wasn't already) and
+  /// starts from a random track. Replaces the toggleShuffle()-then-play(-1)
+  /// protocol every call site used to hand-assemble.
+  Future<void> playShuffled(List<Track> tracks) async {
+    if (tracks.isEmpty) return;
+    _ensurePlayerInitialized();
+    _cursor.setShuffle(true);
+    final start = tracks.length > 1 ? Random().nextInt(tracks.length) : 0;
+    _selectAndPlay(_cursor.start(tracks, at: start), immediate: true);
   }
 
   Future<void> _onTrackCompleted() async {
-    if (_repeatMode == RepeatMode.one && _currentTrack != null) {
+    if (_cursor.repeatMode == RepeatMode.one && _currentTrack != null) {
       _selectAndPlay(_currentTrack!, immediate: true);
       return;
     }
@@ -598,27 +413,12 @@ class AudioPlayerService with ChangeNotifier {
   /// natural end-of-track advance (gapless); user skips pass false to debounce.
   Future<void> _advance({required bool immediate}) async {
     _ensurePlayerInitialized();
-
-    if (_queue.isNotEmpty) {
-      final next = _queue.removeAt(0);
-      _playingFromQueue = true;
-      _selectAndPlay(next, immediate: immediate);
-      return;
-    }
-
-    if (_playlist.isEmpty) {
-      await stop();
-      return;
-    }
-
-    final next = _nextPlaylistIndex();
+    final next = _cursor.advance();
     if (next == null) {
       await stop();
       return;
     }
-    _currentIndex = next;
-    _playingFromQueue = false;
-    _selectAndPlay(_playlist[_currentIndex], immediate: immediate);
+    _selectAndPlay(next, immediate: immediate);
   }
 
   /// Previous from a queue item returns to the playlist track that was
@@ -626,22 +426,9 @@ class AudioPlayerService with ChangeNotifier {
   /// playlist (or shuffle order).
   Future<void> playPrevious() async {
     _ensurePlayerInitialized();
-
-    if (_playingFromQueue &&
-        _currentIndex >= 0 &&
-        _currentIndex < _playlist.length) {
-      _playingFromQueue = false;
-      _selectAndPlay(_playlist[_currentIndex], immediate: false);
-      return;
-    }
-
-    if (_playlist.isEmpty) return;
-
-    final prev = _prevPlaylistIndex();
+    final prev = _cursor.rewind();
     if (prev == null) return;
-    _currentIndex = prev;
-    _playingFromQueue = false;
-    _selectAndPlay(_playlist[_currentIndex], immediate: false);
+    _selectAndPlay(prev, immediate: false);
   }
 
   Future<void> togglePlayPause() async {
@@ -656,10 +443,8 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> stop() async {
     if (_player != null) await _player!.stop();
     _currentTrack = null;
-    _playingFromQueue = false;
-    _queue.clear();
-    _updateWindowsMetadata(null);
-    if (_isWindows) _windowsMediaControls.clear();
+    _cursor.clearQueue();
+    _presence.clear();
     notifyListeners();
   }
 
@@ -684,33 +469,24 @@ class AudioPlayerService with ChangeNotifier {
       await playTrack(track);
       return;
     }
-    _queue.add(track);
+    _cursor.enqueue(track);
     notifyListeners();
   }
 
   Future<void> removeFromQueue(int queueIndex) async {
-    if (queueIndex < 0 || queueIndex >= _queue.length) return;
-    _queue.removeAt(queueIndex);
-    notifyListeners();
+    if (_cursor.dequeueAt(queueIndex)) notifyListeners();
   }
 
   Future<void> moveInQueue(int oldIndex, int newIndex) async {
-    if (oldIndex == newIndex) return;
-    if (oldIndex < 0 || oldIndex >= _queue.length) return;
-    if (newIndex < 0 || newIndex >= _queue.length) return;
-    final t = _queue.removeAt(oldIndex);
-    _queue.insert(newIndex, t);
-    notifyListeners();
+    if (_cursor.moveInQueue(oldIndex, newIndex)) notifyListeners();
   }
 
   /// Play the manual-queue track at [queueIndex] now, discarding the queued
   /// tracks ahead of it (the ones that would have played first).
   Future<void> jumpToQueued(int queueIndex) async {
-    if (queueIndex < 0 || queueIndex >= _queue.length) return;
+    final track = _cursor.jumpToQueued(queueIndex);
+    if (track == null) return;
     _ensurePlayerInitialized();
-    final track = _queue[queueIndex];
-    _queue.removeRange(0, queueIndex + 1);
-    _playingFromQueue = true;
     _selectAndPlay(track, immediate: true);
   }
 
@@ -718,20 +494,10 @@ class AudioPlayerService with ChangeNotifier {
   /// cursor simply moves; skipped tracks are not removed and remain reachable
   /// via Previous.
   Future<void> jumpToUpcoming(int autoIndex) async {
-    if (autoIndex < 0 || _playlist.isEmpty) return;
+    final next = _cursor.jumpToUpcoming(autoIndex);
+    if (next == null) return;
     _ensurePlayerInitialized();
-    if (_isShuffleEnabled && _shuffleOrder.length == _playlist.length) {
-      final pos = _shufflePos + 1 + autoIndex;
-      if (pos >= _shuffleOrder.length) return;
-      _shufflePos = pos;
-      _currentIndex = _shuffleOrder[pos];
-    } else {
-      final idx = _currentIndex + 1 + autoIndex;
-      if (idx >= _playlist.length) return;
-      _currentIndex = idx;
-    }
-    _playingFromQueue = false;
-    _selectAndPlay(_playlist[_currentIndex], immediate: true);
+    _selectAndPlay(next, immediate: true);
   }
 
   /// Reorder a track within the auto-upcoming section. In shuffle mode this
@@ -739,46 +505,25 @@ class AudioPlayerService with ChangeNotifier {
   /// sequential mode it reorders the playlist tail. Indices are relative to
   /// [upcomingFromContext].
   Future<void> reorderUpcoming(int oldAuto, int newAuto) async {
-    if (oldAuto == newAuto) return;
-    final shuffle = _isShuffleEnabled && _shuffleOrder.length == _playlist.length;
-    final base = shuffle ? _shufflePos + 1 : _currentIndex + 1;
-    final list = shuffle ? _shuffleOrder : _playlist;
-    final oldPos = base + oldAuto;
-    final newPos = base + newAuto;
-    if (oldPos < base || oldPos >= list.length) return;
-    if (newPos < base || newPos >= list.length) return;
-    if (shuffle) {
-      final v = _shuffleOrder.removeAt(oldPos);
-      _shuffleOrder.insert(newPos, v);
-    } else {
-      final v = _playlist.removeAt(oldPos);
-      _playlist.insert(newPos, v);
-    }
-    notifyListeners();
+    if (_cursor.reorderUpcoming(oldAuto, newAuto)) notifyListeners();
   }
 
   // -------- Modes --------
 
   Future<void> toggleShuffle() async {
-    _isShuffleEnabled = !_isShuffleEnabled;
-    if (_isShuffleEnabled && _playlist.length > 1) {
-      _regenerateShuffleOrder(anchorAt: _currentIndex);
-    }
+    _cursor.toggleShuffle();
+    notifyListeners();
+  }
+
+  /// Set shuffle to a known state, rather than flipping it — for callers
+  /// that want "shuffle on" as an outcome, not a toggle.
+  void setShuffle(bool enabled) {
+    _cursor.setShuffle(enabled);
     notifyListeners();
   }
 
   void toggleRepeatMode() {
-    switch (_repeatMode) {
-      case RepeatMode.off:
-        _repeatMode = RepeatMode.all;
-        break;
-      case RepeatMode.all:
-        _repeatMode = RepeatMode.one;
-        break;
-      case RepeatMode.one:
-        _repeatMode = RepeatMode.off;
-        break;
-    }
+    _cursor.toggleRepeatMode();
     notifyListeners();
   }
 
@@ -818,10 +563,11 @@ class AudioPlayerService with ChangeNotifier {
   double replayGainFactorForTest(Track? track) => _replayGainFactor(track);
 
   /// Test-only seam: seeds playback state directly instead of going through
-  /// [playTrack]/[playPlaylist], which lazily construct a real [AudioPlayer]
+  /// [playTrack]/[play], which lazily construct a real [AudioPlayer]
   /// and therefore need a live platform audio backend. Lets widget tests
   /// render UI driven by this service (mini player, queue sheet) against
-  /// realistic state without one. Never touches the player.
+  /// realistic state without one, and lets sequencing tests set up scenarios
+  /// no production entry point produces on its own. Never touches the player.
   @visibleForTesting
   void seedForTest({
     List<Track>? playlist,
@@ -833,42 +579,23 @@ class AudioPlayerService with ChangeNotifier {
     List<int>? shuffleOrder,
     int? shufflePos,
   }) {
-    if (playlist != null) _playlist = playlist;
-    if (currentIndex != null) _currentIndex = currentIndex;
-    if (queue != null) {
-      _queue
-        ..clear()
-        ..addAll(queue);
-    }
+    // PlaybackCursor.seed is itself a test-only seam; this method (also
+    // @visibleForTesting) is its sole production-code caller, wrapping it
+    // the same way replayGainFactorForTest wraps _replayGainFactor above —
+    // the analyzer just can't see through one test seam calling another.
+    // ignore: invalid_use_of_visible_for_testing_member
+    _cursor.seed(
+      playlist: playlist,
+      currentIndex: currentIndex,
+      queue: queue,
+      isShuffleEnabled: isShuffleEnabled,
+      repeatMode: repeatMode,
+      shuffleOrder: shuffleOrder,
+      shufflePos: shufflePos,
+    );
     if (currentTrack != null) _currentTrack = currentTrack;
-    if (isShuffleEnabled != null) _isShuffleEnabled = isShuffleEnabled;
-    if (repeatMode != null) _repeatMode = repeatMode;
-    if (shuffleOrder != null) _shuffleOrder = shuffleOrder;
-    if (shufflePos != null) _shufflePos = shufflePos;
     notifyListeners();
   }
-
-  /// Test-only seams onto the private index arithmetic behind [playNext]/
-  /// [playPrevious]/[toggleShuffle] — pure and player-free, but private (Dart
-  /// privacy is per-library, so a test file can't reach it directly). Letting
-  /// tests drive this directly avoids going through [playNext] etc., which
-  /// lazily construct a real [AudioPlayer] and therefore need a live platform
-  /// audio backend.
-  @visibleForTesting
-  int? nextPlaylistIndexForTest() => _nextPlaylistIndex();
-
-  @visibleForTesting
-  int? prevPlaylistIndexForTest() => _prevPlaylistIndex();
-
-  @visibleForTesting
-  void regenerateShuffleOrderForTest({int anchorAt = -1}) =>
-      _regenerateShuffleOrder(anchorAt: anchorAt);
-
-  @visibleForTesting
-  List<int> get shuffleOrderForTest => List.unmodifiable(_shuffleOrder);
-
-  @visibleForTesting
-  int get shufflePosForTest => _shufflePos;
 
   Future<void> setVolume(double volume) async {
     _volume = volume.clamp(0.0, 1.0);
@@ -885,10 +612,7 @@ class AudioPlayerService with ChangeNotifier {
     _playingSubscription?.cancel();
     _playbackEventSubscription?.cancel();
     _player?.dispose();
-    if (_isWindows) {
-      WindowsWakelock.disable();
-      _windowsMediaControls.dispose();
-    }
+    _presence.dispose();
     super.dispose();
   }
 }

@@ -98,8 +98,12 @@ class AuthService with ChangeNotifier {
         }
       }
     } catch (e) {
+      // This is a *read* failure (e.g. a flutter_secure_storage plugin
+      // error), not a credentials-rejected response — must not clear
+      // storage. Only the code-40 branch above may do that. Leave the
+      // stored credentials alone so the next launch can retry the read;
+      // this launch just starts logged out. See docs/decisions.md.
       debugPrint('Error initializing auth: $e');
-      await _clearStorage();
     } finally {
       _isLoading = false;
       notifyListeners();

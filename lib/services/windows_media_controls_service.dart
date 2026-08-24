@@ -162,15 +162,16 @@ class WindowsMediaControlsService {
     }
   }
 
-  /// Update the metadata shown in Windows media overlay.
-  Future<void> updateMetadata(Track track) async {
+  /// Update the metadata shown in Windows media overlay. [thumbnail] is
+  /// already resolved by the caller (see StreamUrlResolver) — this service
+  /// doesn't mint URLs itself.
+  Future<void> updateMetadata(Track track, {String? thumbnail}) async {
     if (!isSupported || !_isInitialized || _smtc == null) return;
 
     try {
       final title = track.title.isNotEmpty ? track.title : 'Unknown Track';
       final artist =
           track.folderPath.isNotEmpty ? track.folderPath : 'Unknown Artist';
-      final thumbnail = track.coverArtUrl;
 
       await _smtc!.updateMetadata(MusicMetadata(
         title: title,

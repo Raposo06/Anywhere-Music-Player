@@ -45,6 +45,10 @@ android/app/build/
 android/build/
 android/local.properties
 android/key.properties
+android/.kotlin/
+
+# Built installers — attach to GitHub releases, don't track
+/Output/
 
 # Generated plugin registrants
 linux/flutter/generated_plugin_registrant.cc

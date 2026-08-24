@@ -2,6 +2,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../models/track.dart';
+import 'stream_url_resolver.dart';
 
 /// Audio handler for system media controls (notifications, lock screen, etc.)
 ///
@@ -12,6 +13,7 @@ class MusicAudioHandler extends BaseAudioHandler {
   AudioPlayer? _player;
   Function()? onNext;
   Function()? onPrevious;
+  final StreamUrlResolver _resolver;
 
   // Monotonic counter bumped on every track change. Used as the playbackState
   // queueIndex so Bluetooth AVRCP (car head units) sees a new queue position
@@ -23,7 +25,7 @@ class MusicAudioHandler extends BaseAudioHandler {
   // master) so it downloads fast and stays small enough for head-unit displays.
   static const int _carArtSize = 512;
 
-  MusicAudioHandler() {
+  MusicAudioHandler({required StreamUrlResolver resolver}) : _resolver = resolver {
     // Initialize with stopped state
     playbackState.add(PlaybackState(
       controls: [
@@ -112,7 +114,7 @@ class MusicAudioHandler extends BaseAudioHandler {
   /// doesn't appear until the user pauses and resumes. Falls back to the remote
   /// URL if the file can't be fetched (e.g. offline).
   Future<void> updateTrackInfo(Track track) async {
-    final artUrl = track.coverUrl(size: _carArtSize);
+    final artUrl = _resolver.resolveCoverUrl(track, size: _carArtSize);
 
     Uri? artUri;
     if (artUrl != null) {

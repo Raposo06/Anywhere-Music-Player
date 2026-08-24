@@ -10,6 +10,10 @@ import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/audio_handler.dart';
+import 'services/android_presence.dart';
+import 'services/now_playing_presence.dart';
+import 'services/stream_url_resolver.dart';
+import 'services/windows_presence.dart';
 import 'services/library_scanner.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
@@ -44,6 +48,13 @@ void main() async {
   // Initialize native platform detection (Android TV detection)
   await PlatformDetector.initialize();
 
+  // Mints stream/cover-art URLs on demand from the *current* authenticated
+  // session (see StreamUrlResolver) — a stable reference that outlives any
+  // one AuthService instance, so AudioPlayerService and the audio handler
+  // (both constructed once, here, before login even happens) keep working
+  // across logout/re-login. MyApp wires it to AuthService's changes.
+  final resolver = RotatingStreamUrlResolver();
+
   // Initialize audio service for Android/iOS background playback and
   // lock screen controls. Skip on Windows — SMTC handles media controls there.
   MusicAudioHandler? audioHandler;
@@ -51,7 +62,7 @@ void main() async {
   if (!isDesktop) {
     try {
       audioHandler = await AudioService.init(
-        builder: () => MusicAudioHandler(),
+        builder: () => MusicAudioHandler(resolver: resolver),
         config: const AudioServiceConfig(
           androidNotificationChannelId: 'com.anywhere_music_player.audio',
           androidNotificationChannelName: 'Music Playback',
@@ -70,7 +81,16 @@ void main() async {
     }
   }
 
-  runApp(MyApp(audioHandler: audioHandler));
+  // Which adapter tells the OS what's playing — see NowPlayingPresence.
+  // Windows gets SMTC/taskbar/wakelock; mobile gets the audio_service
+  // notification (only if it initialized above); nothing else gets one.
+  final NowPlayingPresence presence = (!kIsWeb && Platform.isWindows)
+      ? WindowsPresence(resolver: resolver)
+      : audioHandler != null
+          ? AndroidPresence(audioHandler)
+          : const NoPresence();
+
+  runApp(MyApp(presence: presence, resolver: resolver));
 }
 
 // ── PS1 Classic theme: deep navy background with PlayStation button colours ───
@@ -180,22 +200,39 @@ ThemeData _retroTheme() {
 }
 
 class MyApp extends StatelessWidget {
-  final MusicAudioHandler? audioHandler;
+  final NowPlayingPresence presence;
+  final StreamUrlResolver resolver;
 
-  const MyApp({super.key, this.audioHandler});
+  const MyApp({
+    super.key,
+    this.presence = const NoPresence(),
+    this.resolver = const NoResolver(),
+  });
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        // Auth Service (owns the SubsonicApiService after login)
+        // Auth Service (owns the SubsonicApiService after login). If
+        // [resolver] is the rotating kind (always true in production — see
+        // main()), keep it pointed at whatever session is current, so
+        // AudioPlayerService and the audio handler — both constructed once,
+        // before login — always resolve against the live session.
         ChangeNotifierProvider<AuthService>(
-          create: (_) => AuthService(),
+          create: (_) {
+            final auth = AuthService();
+            final resolver = this.resolver;
+            if (resolver is RotatingStreamUrlResolver) {
+              resolver.updateFrom(auth.apiService);
+              auth.addListener(() => resolver.updateFrom(auth.apiService));
+            }
+            return auth;
+          },
         ),
 
         // Audio Player Service
         ChangeNotifierProvider<AudioPlayerService>(
-          create: (_) => AudioPlayerService(audioHandler: audioHandler),
+          create: (_) => AudioPlayerService(presence: presence, resolver: resolver),
         ),
 
         // Library Scanner - depends on AuthService for the API connection.
