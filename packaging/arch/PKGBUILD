@@ -21,7 +21,7 @@
 
 pkgname=anywhere-music-player
 pkgver=1.1.0.2
-pkgrel=1
+pkgrel=2
 pkgdesc="Self-hosted Navidrome (Subsonic API) music client"
 arch=('x86_64')
 url="https://foxcore.dev/"
