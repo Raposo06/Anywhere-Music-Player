@@ -11,6 +11,7 @@ import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/audio_handler.dart';
 import 'services/android_presence.dart';
+import 'services/linux_presence.dart';
 import 'services/now_playing_presence.dart';
 import 'services/stream_url_resolver.dart';
 import 'services/windows_presence.dart';
@@ -83,12 +84,15 @@ void main() async {
 
   // Which adapter tells the OS what's playing — see NowPlayingPresence.
   // Windows gets SMTC/taskbar/wakelock; mobile gets the audio_service
-  // notification (only if it initialized above); nothing else gets one.
+  // notification (only if it initialized above); Linux gets MPRIS (hardware
+  // media keys go through it — see LinuxPresence); nothing else gets one.
   final NowPlayingPresence presence = (!kIsWeb && Platform.isWindows)
       ? WindowsPresence(resolver: resolver)
       : audioHandler != null
           ? AndroidPresence(audioHandler)
-          : const NoPresence();
+          : (!kIsWeb && Platform.isLinux)
+              ? LinuxPresence(resolver: resolver)
+              : const NoPresence();
 
   runApp(MyApp(presence: presence, resolver: resolver));
 }

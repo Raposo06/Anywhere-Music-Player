@@ -30,6 +30,12 @@ dependencies:
   audio_service: ^0.18.12
   smtc_windows: ^0.1.3
   windows_taskbar: ^1.1.2
+  # Linux media-key/session integration: audio_service has no Linux platform
+  # implementation and media_kit's embedded libmpv doesn't auto-load
+  # mpv-mpris (that needs mpv's user config loading, which embedded libmpv
+  # disables by default) — so LinuxPresence implements the MPRIS D-Bus
+  # interface directly on top of this.
+  dbus: ^0.7.15
 
   # Permissions
   permission_handler: any

@@ -14,6 +14,44 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Linux media keys: a hand-rolled MPRIS server on `package:dbus`, not a library (2026-08-24)
+
+**Decided.** `LinuxPresence`/`MprisMediaService` implement `org.mpris.MediaPlayer2`
+and `.Player` directly on top of the general-purpose `dbus` package — exporting
+a `DBusObject` at `/org/mpris/MediaPlayer2`, handling `Play`/`Pause`/`PlayPause`/
+`Stop`/`Next`/`Previous`, and serving `Metadata`/`PlaybackStatus`/`Position` —
+rather than pulling in an existing MPRIS package or leaning on mpv's own MPRIS
+support.
+
+**Why.** Neither of the two paths that might have made this a config change
+actually work: `audio_service` (Android's lock-screen/notification integration)
+ships no Linux platform implementation at all, and `media_kit`'s embedded
+libmpv doesn't auto-load `mpv-mpris` — that plugin lives in mpv's user config
+directory, and embedded libmpv disables config loading by default unless the
+host app explicitly turns it on, which nothing in this app's `media_kit`
+`PlayerConfiguration` does. The one MPRIS package on pub.dev is a *client* for
+controlling other players (built for talking to spotifyd), the wrong
+direction — so there was nothing to depend on. `dbus` is pure Dart, actively
+maintained, and MPRIS's method/property surface is small enough that hand-rolling
+it directly was less work and less risk than routing through mpv's config system
+or shelling out to `playerctld`.
+
+**What would reverse it.** A published, maintained Dart package that does this
+well would be worth switching to. Turning on `mpv-mpris` instead (enabling
+libmpv's `config`/`config-dir` options) was considered and rejected — it would
+also pull in the user's own mpv config/keybindings/OSD, not just the MPRIS
+script, which is a much bigger behavior change than adding one dependency.
+
+**Verified.** Manually, over the real session bus (`busctl --user`) — not just
+type-checked. Registered the name, ran `Properties.GetAll` on both interfaces,
+and confirmed `Next`/`Previous`/`PlayPause` D-Bus calls actually reached the
+Dart callbacks. This can't be covered by `flutter test` (`defaultTargetPlatform`
+defaults to `android` in that harness, and there's no live session bus in
+`test/`) or by on-device testing on any other platform — Windows/Android
+verification says nothing about this path.
+
+---
+
 ## `LibraryCache.save()` swaps files via rename-aside, not delete-then-rename (2026-08-24)
 
 **Decided.** `save()`'s write order changed from `write .tmp → delete target →

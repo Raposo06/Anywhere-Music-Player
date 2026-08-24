@@ -79,6 +79,7 @@ no backend of its own.
 | Audio | **just_audio** | `just_audio_media_kit` (MPV) on Windows/Linux — see [decisions](decisions.md) |
 | Background playback | **audio_service** | Android notification + lock screen controls |
 | Windows media keys | **smtc_windows** | System Media Transport Controls |
+| Linux media keys | **dbus** | Hand-rolled MPRIS server — see [decisions](decisions.md) |
 | State | **provider** | |
 | Server | **Navidrome** | Subsonic-compatible; Docker on the fox-core VPS, managed by Coolify |
 | Config | **flutter_dotenv** | Runtime `.env` → `API_BASE_URL` |
@@ -94,7 +95,8 @@ no backend of its own.
 - Caching: on-disk library cache for instant cold start, Android on-disk stream
   cache (seekable replay, 2 GB cap), cover-art prefetching
 - Automatic recovery from mid-stream connection drops
-- Lock screen / notification controls (Android); SMTC + keep-awake (Windows)
+- Lock screen / notification controls (Android); SMTC + keep-awake (Windows);
+  MPRIS media keys (Linux)
 - Android TV UI with remote navigation, auto-detected via `UiModeManager`
 
 ## Authentication
@@ -123,7 +125,7 @@ library mode (the caches accelerate a working setup, they don't replace it).
 
 **Implemented:** browsing, search, streaming, queue, shuffle/repeat, ReplayGain,
 library + stream + cover caching, drop recovery, Android TV UI, Windows SMTC and
-wakelock, Windows installer.
+wakelock, Windows installer, Linux MPRIS media keys, Arch packaging (PKGBUILD).
 
 **Test suite:** 27 test files under `test/` (~3,500 lines including support
 fakes) covering the models, services, the screens and the shared widgets.
