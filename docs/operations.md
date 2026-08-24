@@ -90,6 +90,28 @@ that hasn't been turned on for the SDK yet. The built binary lands at
 `build/linux/x64/release/bundle/anywhere_music_player` (`x64/debug/` for a
 debug build) — run it from there, or `flutter run -d linux` for a dev loop.
 
+### Linux build fails: `identifier '_json' preceded by whitespace ... deprecated-literal-operator`
+
+**Symptom:** `flutter build linux` fails to compile with errors like
+`identifier '_json' preceded by whitespace in a literal operator declaration
+is deprecated [-Werror,-Wdeprecated-literal-operator]`, pointing at
+`.../flutter_secure_storage_linux/linux/include/json.hpp` (a vendored
+nlohmann/json single header, not our code).
+
+**Cause:** that vendored header declares literal operators the old way
+(`operator"" _json`, with a space) — valid but deprecated since C++17. A
+sufficiently new Clang (this repo has hit it on Clang 22) turns that
+deprecation warning into a hard error under `linux/CMakeLists.txt`'s
+`-Wall -Werror`, which every plugin target inherits via
+`apply_standard_settings`. It's an upstream/toolchain issue, not something a
+code change here caused.
+
+**Fix:** already in the tree — `apply_standard_settings` in
+`linux/CMakeLists.txt` adds `-Wno-error=deprecated-literal-operator` after
+`-Werror`, downgrading just that one diagnostic back to non-fatal everywhere
+`apply_standard_settings` is used (runner + all plugins). The warning still
+prints; the build no longer aborts on it.
+
 ### App won't connect
 
 - Check `.env` exists and `API_BASE_URL` is set and reachable **from the device**
