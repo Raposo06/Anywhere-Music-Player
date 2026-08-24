@@ -83,7 +83,7 @@ no backend of its own.
 | State | **provider** | |
 | Server | **Navidrome** | Subsonic-compatible; Docker on the fox-core VPS, managed by Coolify |
 | Config | **flutter_dotenv** | Runtime `.env` → `API_BASE_URL` |
-| Credentials | **shared_preferences** | Local only |
+| Credentials | **flutter_secure_storage** | Encrypted, local only. `shared_preferences` is a one-time legacy migration source, not an active store |
 
 ## Features
 
@@ -103,7 +103,9 @@ no backend of its own.
 
 Subsonic token auth: every request carries a fresh random salt and
 `token = MD5(password + salt)` — the password itself is never sent. Credentials
-live in `SharedPreferences` on the device.
+live in `flutter_secure_storage` (encrypted) on the device. Older installs that
+still had them in `SharedPreferences` get migrated automatically on the next
+launch, then the legacy copy is deleted.
 
 **There is no in-app signup.** Users are created in the Navidrome web UI. That's
 a deliberate consequence of having no backend: the client has nothing to register

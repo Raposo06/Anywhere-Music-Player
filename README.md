@@ -158,7 +158,8 @@ anywhere_music_player/lib/
 | `audio_service`                | Background playback + media controls            |
 | `provider`                     | State management                                |
 | `crypto`                       | MD5 hashing for Subsonic auth tokens            |
-| `shared_preferences`           | Local credential storage                        |
+| `flutter_secure_storage`       | Encrypted local credential storage              |
+| `shared_preferences`           | Legacy credential storage, migrated on launch   |
 | `http`                         | HTTP client for Subsonic API calls              |
 | `permission_handler`           | Android notification permission                 |
 | `smtc_windows`                 | Windows system media transport controls (SMTC)  |
@@ -167,7 +168,7 @@ anywhere_music_player/lib/
 
 ## Authentication
 
-The app uses Subsonic token authentication: for every request it generates a random salt and computes `token = MD5(password + salt)`. Credentials are stored locally in SharedPreferences. No signup flow — users are created via the Navidrome web UI.
+The app uses Subsonic token authentication: for every request it generates a random salt and computes `token = MD5(password + salt)`. Credentials are stored locally in encrypted storage (`flutter_secure_storage`); older installs that still had them in SharedPreferences get migrated automatically on the next launch. No signup flow — users are created via the Navidrome web UI.
 
 ## Android TV
 
