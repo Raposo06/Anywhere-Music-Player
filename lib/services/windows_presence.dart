@@ -26,6 +26,7 @@ class WindowsPresence implements NowPlayingPresence {
   AudioPlayer? _player;
   PlaybackCommands? _commands;
   bool _smtcReady = false;
+  StreamSubscription<bool>? _playingSubscription;
 
   @override
   void bind(AudioPlayer player, PlaybackCommands commands) {
@@ -33,6 +34,21 @@ class WindowsPresence implements NowPlayingPresence {
     // through the callbacks, not the player, for everything else.
     _player = player;
     _commands = commands;
+
+    // Subscribed directly to the player's raw stream, not routed through
+    // [setPlaying]: that call is gated on "a track is current" (it exists to
+    // feed SMTC, which needs metadata to show), but the wakelock must track
+    // literal play/pause state regardless — the PC should never suspend
+    // while audio is actually playing. Was unconditional before the
+    // NowPlayingPresence seam folded wakelock and SMTC into one call; see
+    // docs/decisions.md.
+    _playingSubscription = player.playingStream.listen((playing) {
+      if (playing) {
+        WindowsWakelock.enable();
+      } else {
+        WindowsWakelock.disable();
+      }
+    });
   }
 
   /// SMTC init is deliberately lazy — deferred to the first [show] rather
@@ -70,11 +86,6 @@ class WindowsPresence implements NowPlayingPresence {
 
   @override
   void setPlaying(bool playing) {
-    if (playing) {
-      WindowsWakelock.enable();
-    } else {
-      WindowsWakelock.disable();
-    }
     _mediaControls.updatePlaybackStatus(isPlaying: playing);
   }
 
@@ -86,6 +97,7 @@ class WindowsPresence implements NowPlayingPresence {
 
   @override
   void dispose() {
+    _playingSubscription?.cancel();
     WindowsWakelock.disable();
     _mediaControls.dispose();
   }

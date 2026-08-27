@@ -14,6 +14,30 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Windows wakelock tracks the raw player stream, not `NowPlayingPresence.setPlaying` (2026-08-27)
+
+**Decided.** `WindowsPresence` subscribes to `AudioPlayer.playingStream`
+directly inside `bind()` to drive `WindowsWakelock.enable()`/`.disable()`,
+instead of doing it inside `setPlaying()` like the SMTC update.
+
+**Why.** This was a regression, not a fresh design choice. Before the
+`NowPlayingPresence` seam existed, the `playingStream` listener in
+`AudioPlayerService` called `WindowsWakelock.enable()`/`.disable()`
+unconditionally on every play/pause transition; SMTC's update was the only
+part gated on `_currentTrack != null` (SMTC needs metadata to show). Folding
+both into one `presence.setPlaying()` call put wakelock behind that same gate
+— a contract `NowPlayingPresence.setPlaying` documents ("only called while a
+track is current") that makes sense for SMTC but has nothing to do with
+whether the PC should be allowed to sleep. Net effect: the PC could suspend
+during playback in any state transition where that gate wasn't satisfied,
+silently undoing the original fix from commit `468156c`.
+
+**What would reverse it.** If `NowPlayingPresence` ever needs the same "raw,
+ungated" hook for another adapter, promote it to a proper interface method
+instead of each adapter reaching into the player stream itself.
+
+---
+
 ## Linux media keys: a hand-rolled MPRIS server on `package:dbus`, not a library (2026-08-24)
 
 **Decided.** `LinuxPresence`/`MprisMediaService` implement `org.mpris.MediaPlayer2`
