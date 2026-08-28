@@ -45,7 +45,7 @@ the window too — this only scales the boxes, the 34px title is unchanged.
 
 **What would reverse it.** Nothing likely — this was a bug, not a tradeoff.
 
-**Note.** `lib/screens/folder_detail_screen.dart` (phone) has the identical bug — its own `_filteredTracks` filters only `_tracks` too. Left alone this pass since it wasn't part of the desktop work in progress; worth the same fix.
+**Update (2026-08-28, same day).** `lib/screens/folder_detail_screen.dart` (phone) had the identical bug — its own `_filteredTracks` filtered only `_tracks` too. Fixed the same way, plus a regression test (`search finds tracks nested in a subfolder, not just direct children`) reproducing the exact shape that broke it: a track several folders below the one being searched from.
 
 ---
 

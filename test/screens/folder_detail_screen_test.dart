@@ -138,6 +138,28 @@ void main() {
     expect(find.text('Bleach Opening'), findsNothing);
   });
 
+  testWidgets('search finds tracks nested in a subfolder, not just direct children', (tester) async {
+    // Regression: a browsable folder frequently has zero *direct* tracks —
+    // everything lives one or more album subfolders down (confirmed against
+    // a real library: e.g. a "Games" folder held 0 direct / 2,218 recursive
+    // tracks). Searching used to filter only the direct-children list, so it
+    // silently found nothing in exactly this shape of folder.
+    final scanner = scannerWithSongs([
+      nativeApiSong(id: '1', path: 'Anime/Bleach/Bleach OST 1/Naruto Opening.mp3'),
+    ]);
+    await tester.runAsync(() => scanner.scan());
+
+    await tester.pumpWidget(_wrap(scanner: scanner, folderId: 'Anime/Bleach', folderName: 'Bleach'));
+    await settle(tester);
+
+    await tester.tap(find.byIcon(Icons.search));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'naruto');
+    await tester.pump();
+
+    expect(find.text('Naruto Opening'), findsOneWidget);
+  });
+
   testWidgets('search with no matches shows the empty-search message', (tester) async {
     final scanner = scannerWithSongs([nativeApiSong(id: '1', path: 'Anime/Naruto Opening.mp3')]);
     await tester.runAsync(() => scanner.scan());
