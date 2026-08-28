@@ -4,7 +4,7 @@
 > *meaningful* changes (architecture, stack, platform support, major features,
 > or implemented/remaining status) — not on every commit. Migrated from WikiJS
 > (`projects/anywhere-music-player`) on 2026-08-17 so the docs live next to the
-> code they describe. Last reviewed: 2026-08-22.
+> code they describe. Last reviewed: 2026-08-28.
 
 Self-hosted, cross-platform music streaming: **write once (Flutter), host
 anywhere (Navidrome), play everywhere**. A private client for a personal music
@@ -81,16 +81,22 @@ no backend of its own.
 | Windows media keys | **smtc_windows** | System Media Transport Controls |
 | Linux media keys | **dbus** | Hand-rolled MPRIS server — see [decisions](decisions.md) |
 | State | **provider** | |
+| Theme | Hand-rolled `ThemeData` | `lib/theme/` — warm off-black + one teal accent; tokens converted from the design's OKLCH values, see [decisions](decisions.md) |
+| Fonts | **Work Sans**, **Source Serif 4** | Bundled static TTFs in `assets/fonts/` (OFL). Serif for titles and track names, sans for everything else |
 | Server | **Navidrome** | Subsonic-compatible; Docker on the fox-core VPS, managed by Coolify |
 | Config | **flutter_dotenv** | Runtime `.env` → `API_BASE_URL` |
 | Credentials | **flutter_secure_storage** | Encrypted, local only. `shared_preferences` is a one-time legacy migration source, not an active store |
 
 ## Features
 
+- Desktop (Windows/Linux) shell: app-drawn title bar, sidebar navigation,
+  folder grid, docked mini player, and a full-window Now Playing with a
+  permanent "Up Next" queue panel
 - Folder-based browsing that mirrors the server's filesystem structure
 - All-tracks list with local search
 - Streaming with background playback, seeking, and gapless-style advance
-- Manual queue (add / remove / reorder), plus shuffle and repeat (off / all / one)
+- Manual queue (add / remove / reorder), plus shuffle and repeat
+  (off / all / one), both persisted across restarts
 - ReplayGain volume normalization — attenuate-only, clipping impossible
 - Caching: on-disk library cache for instant cold start, Android on-disk stream
   cache (seekable replay, 2 GB cap), cover-art prefetching
@@ -98,6 +104,27 @@ no backend of its own.
 - Lock screen / notification controls (Android); SMTC + keep-awake (Windows);
   MPRIS media keys (Linux)
 - Android TV UI with remote navigation, auto-detected via `UiModeManager`
+
+## UI layout
+
+Three layouts over one set of services. `MainScreen` picks between the first two;
+`AuthWrapper` sends Android TV straight to `TvHomeScreen`.
+
+| Form factor | Entry point | Navigation | Player |
+|---|---|---|---|
+| Desktop (Windows/Linux) | `screens/desktop/desktop_shell.dart` | 224px sidebar + a nested navigator for folder drill-down | Full-window `DesktopPlayerScreen` with a docked "Up Next" panel |
+| Android phone | `MainScreen`'s `_PhoneScaffold` | Bottom tab bar | `PlayerScreen` + modal `QueueSheet` |
+| Android TV | `screens/tv_home_screen.dart` | D-pad focus traversal | `TvPlayerScreen` |
+
+Desktop and phone are **separate screens on purpose** — see
+[decisions](decisions.md). What they share is everything below the widget layer
+(`AudioPlayerService`, `PlaybackCursor`, `LibraryScanner`, `CoverArt`) plus the
+theme in `lib/theme/`.
+
+The desktop shell owns the window: `main()` hides the native frame on
+Windows/Linux, so `WindowChrome` is the only way to move, maximise or close the
+window, and every desktop screen renders one — including login, via
+`DesktopWindowFrame`.
 
 ## Authentication
 
@@ -127,7 +154,8 @@ library mode (the caches accelerate a working setup, they don't replace it).
 
 **Implemented:** browsing, search, streaming, queue, shuffle/repeat, ReplayGain,
 library + stream + cover caching, drop recovery, Android TV UI, Windows SMTC and
-wakelock, Windows installer, Linux MPRIS media keys, Arch packaging (PKGBUILD).
+wakelock, Windows installer, Linux MPRIS media keys, Arch packaging (PKGBUILD),
+the desktop redesign (theme + sidebar shell + custom window chrome).
 
 **Test suite:** 27 test files under `test/` (~3,500 lines including support
 fakes) covering the models, services, the screens and the shared widgets.
@@ -146,6 +174,8 @@ cache on Android), so a green suite says nothing about either backend.
 
 **Remaining / known gaps:**
 - iOS is scaffolded but never distributed (needs an Apple Developer account).
+- The desktop screens have no widget tests yet; `test/` still covers only the
+  phone widgets and the services beneath both.
 - Library cache is a single file per install, wiped on logout — no per-account
   scoping, so switching users rebuilds from a full scan.
 

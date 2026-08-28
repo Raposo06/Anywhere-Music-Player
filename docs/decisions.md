@@ -14,6 +14,147 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Now Playing scales with the window; its cover art request does not (2026-08-28)
+
+**Decided.** The Now Playing pane sizes the cover art and the info column from
+the available space (`LayoutBuilder`), clamped to 240–520px and 340–620px. The
+art is still *requested* at a fixed 640px and scaled down to fit.
+
+**Why.** The design is a fixed composition at a 1240px reference width — 320px
+art, 380px info column. Taken literally it leaves most of a maximised window
+empty. The ratio 0.38 is what the design's own art occupies at its reference
+width, so the mock is reproduced there and grows from there; the clamps stop the
+cover dwarfing the transport controls beside it. The request size is deliberately
+*not* the display size: a request that tracked the layout would mint a new URL
+and cache key on every resize and re-download the same cover — the same failure
+mode `CoverArt` and the Android stream cache already warn about. One oversized
+fetch is cheaper. The precache uses the same constant so the warmed key and the
+rendered key cannot drift.
+
+**What would reverse it.** Wanting true fidelity to the mock at all sizes (cap
+both at the design's numbers), or a design revision that scales the *type* with
+the window too — this only scales the boxes, the 34px title is unchanged.
+
+---
+
+## Folder-screen search spans the whole folder recursively, not just its direct tracks (2026-08-28)
+
+**Decided.** `DesktopFolderScreen`'s search filters `LibraryScanner.getAllTracksInFolder` (the same recursive set `_playAll` already used), not `getFolderContents`'s direct-children list. Search-result rows number by position in the results, not by "real" position in the folder; tapping a result plays from the recursive set so playback continues past the filtered view, mirroring how `DesktopAllTracksScreen` already treats its own search.
+
+**Why.** Verified against the real library cache: a typical Library-grid folder has **zero** direct tracks — e.g. `SOUNDTRACKS/GAMES` holds 0 direct / 2,218 recursive, `SOUNDTRACKS/ANIMES & ANIMATIONS` 0/1,578 — because the actual files sit one or more album subfolders down. Filtering only direct tracks made search return nothing for almost every real folder, while the Library and All Tracks screens (which already search everything) worked fine — reported as "search doesn't work inside folders."
+
+**What would reverse it.** Nothing likely — this was a bug, not a tradeoff.
+
+**Note.** `lib/screens/folder_detail_screen.dart` (phone) has the identical bug — its own `_filteredTracks` filters only `_tracks` too. Left alone this pass since it wasn't part of the desktop work in progress; worth the same fix.
+
+---
+
+## Desktop gets its own screens; the phone keeps the old ones (2026-08-28)
+
+**Decided.** The desktop redesign lives in `lib/screens/desktop/` and
+`lib/widgets/desktop/` as a parallel set of screens, selected by
+`PlatformDetector.isDesktop` in `MainScreen`. The phone screens
+(`home_screen.dart`, `all_tracks_screen.dart`, `folder_detail_screen.dart`,
+`player_screen.dart`, `widgets/mini_player.dart`) are untouched structurally and
+keep serving Android; Android TV keeps `tv_*`. The **theme** is the one thing
+shared across all three.
+
+**Why.** The two layouts disagree about almost everything above the data layer:
+sidebar vs bottom tabs, a folder grid vs a list, a docked "Up Next" panel vs a
+modal queue sheet, an app-drawn title bar vs none. Expressing that as
+`if (isDesktop)` inside the existing screens would have put a form-factor branch
+around most of every build method for no shared code worth the coupling. The
+services underneath — `AudioPlayerService`, `PlaybackCursor`, `LibraryScanner`,
+`CoverArt` — are shared unchanged, which is where the duplication would actually
+have cost something.
+
+**What would reverse it.** Convergence: if phone and desktop layouts ever grow
+close enough that one responsive screen is genuinely smaller than two, collapse
+them. Watch for fixes that have to be made twice — that is the signal.
+
+---
+
+## Desktop draws its own title bar (2026-08-28)
+
+**Decided.** On Windows and Linux `main()` calls
+`windowManager.setTitleBarStyle(TitleBarStyle.hidden)` before the first frame,
+and `WindowChrome` renders the 40px bar — app mark, context label, and
+minimise/maximise/close — inside the Flutter tree. Every desktop screen must
+render one, including the login and auth-loading screens (via
+`DesktopWindowFrame`), because there is no native frame left to fall back on.
+
+**Why.** The design specifies it, and a hidden-frame app that shows an OS title
+bar on one screen and not another looks broken. Hiding the frame *before* the
+first frame (inside `waitUntilReadyToShow`) is what avoids the native bar
+flashing on launch.
+
+**What would reverse it.** Window-management friction that can't be fixed in
+Dart — snap layouts, per-monitor DPI, or a Linux WM that fights
+`TitleBarStyle.hidden`. The escape hatch is small: drop the `WindowOptions`
+in `main()` and stop rendering `WindowChrome`; nothing else depends on it.
+
+**Note.** `WindowsPresence.setTitle()` still runs and still drives the **taskbar**
+entry — the hidden frame doesn't affect it. The in-window context line is a
+separate thing, fed by the shell's navigator observer.
+
+---
+
+## Colour tokens are stored as sRGB hex, converted once from OKLCH (2026-08-28)
+
+**Decided.** `lib/theme/app_colors.dart` holds the palette as Flutter `Color`
+constants, each with its source `oklch(...)` value in a comment beside it. The
+conversion was done once, numerically (OKLab → linear sRGB → sRGB), not matched
+by eye.
+
+**Why.** The handoff specifies every colour in OKLCH and asks for a direct
+conversion, because the palette is a deliberate lightness/chroma ramp — hand-
+tweaking a hex silently steps off it. Flutter has no OKLCH type, so converting
+at build time would mean shipping the maths for a value that never changes.
+
+**What would reverse it.** Flutter gaining first-class wide-gamut colour, or
+needing runtime-generated palettes (a per-album accent). Either way, re-derive
+from the OKLCH values in the comments — not from the hex.
+
+---
+
+## Shuffle and repeat persist across restarts (2026-08-28)
+
+**Decided.** `AudioPlayerService` reads both modes from `SharedPreferences` in
+its constructor and writes them back on every toggle. `PlaybackCursor` gained
+`setRepeatMode` to make the restore expressible without the test-only `seed`.
+
+**Why.** The handoff asks for it, and both modes are sticky user intent rather
+than per-session state — "shuffle off" is a preference, not a fact about this
+playlist. Persistence lives in the service, not the cursor, because the cursor
+is deliberately plain Dart with no plugin dependencies so it stays testable
+without a platform channel.
+
+**What would reverse it.** Nothing likely. Note the reads and writes swallow
+their errors on purpose: with no `shared_preferences` implementation (widget
+tests) the cursor's defaults are a fine fallback, and failing to remember a
+toggle must never break playback.
+
+**Note.** The handoff describes shuffle and repeat as *net-new* for this
+redesign. They were not — the state, the cycling and the sequencing already
+existed in `PlaybackCursor`. Only persistence and the new controls were missing.
+
+---
+
+## The desktop folder card's play button plays in order, not shuffled (2026-08-28)
+
+**Decided.** The round accent play button on a library folder card calls
+`play()`. The phone's equivalent called `playShuffled()`.
+
+**Why.** The redesign puts an explicit Shuffle control on the folder screen, in
+the mini player and on Now Playing. With shuffle visible and separately
+controllable, a plain ▶ that silently randomises is a lie about what it does.
+
+**What would reverse it.** Finding that folder-card playback is overwhelmingly
+used as "surprise me". The phone still shuffles here, so the two form factors
+currently disagree — worth unifying once there's a preference either way.
+
+---
+
 ## Windows wakelock tracks the raw player stream, not `NowPlayingPresence.setPlaying` (2026-08-27)
 
 **Decided.** `WindowsPresence` subscribes to `AudioPlayer.playingStream`

@@ -214,6 +214,12 @@ class PlaybackCursor {
     if (enabled != _isShuffleEnabled) toggleShuffle();
   }
 
+  /// Set repeat to a known mode, rather than cycling it — for callers that
+  /// want a specific mode as an outcome (restoring the saved one at startup).
+  void setRepeatMode(RepeatMode mode) {
+    _repeatMode = mode;
+  }
+
   void toggleRepeatMode() {
     switch (_repeatMode) {
       case RepeatMode.off:

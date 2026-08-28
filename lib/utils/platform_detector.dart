@@ -31,6 +31,16 @@ class PlatformDetector {
   /// Check if running on Windows
   static bool get isWindows => !kIsWeb && Platform.isWindows;
 
+  /// Whether this build gets the desktop shell — the sidebar layout and the
+  /// app-drawn title bar.
+  ///
+  /// Deliberately Windows and Linux only, matching exactly where `main()`
+  /// initialises `window_manager` and hides the native frame. macOS is not a
+  /// shipped target; including it here would give it a shell whose window
+  /// controls have no native frame hidden behind them.
+  static bool get isDesktop =>
+      !kIsWeb && (Platform.isWindows || Platform.isLinux);
+
   /// Check if running on mobile (phone/tablet)
   static bool get isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 

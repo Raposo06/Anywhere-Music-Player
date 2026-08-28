@@ -82,12 +82,12 @@ class _MiniPlayerContent extends StatelessWidget {
                               cacheKey: track.coverCacheKey(size: pixelSize),
                               fit: BoxFit.cover,
                               errorWidget: (_, _, _) => Container(
-                                color: Colors.grey[800],
+                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                                 child: const Icon(Icons.music_note, size: 24),
                               ),
                             )
                           : Container(
-                              color: Colors.grey[800],
+                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
                               child: const Icon(Icons.music_note, size: 24),
                             ),
                     ),

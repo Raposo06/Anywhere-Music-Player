@@ -36,6 +36,7 @@ class TrackTile extends StatelessWidget {
     return Selector<AudioPlayerService, String?>(
       selector: (_, ps) => ps.currentTrack?.id,
       builder: (context, currentTrackId, _) {
+        final scheme = Theme.of(context).colorScheme;
         final isCurrentTrack = currentTrackId == track.id;
         final index = leadingIndex;
 
@@ -50,7 +51,7 @@ class TrackTile extends StatelessWidget {
                       child: Text(
                         '${index + 1}',
                         style: TextStyle(
-                          color: isCurrentTrack ? Colors.blue : Colors.grey,
+                          color: isCurrentTrack ? scheme.primary : scheme.onSurfaceVariant,
                           fontWeight: isCurrentTrack ? FontWeight.bold : null,
                         ),
                       ),
@@ -64,7 +65,7 @@ class TrackTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontWeight: isCurrentTrack ? FontWeight.bold : null,
-              color: isCurrentTrack ? Colors.blue : null,
+              color: isCurrentTrack ? scheme.primary : null,
             ),
           ),
           subtitle: Text(
@@ -73,7 +74,7 @@ class TrackTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           trailing: isCurrentTrack
-              ? const Icon(Icons.equalizer, color: Colors.blue)
+              ? Icon(Icons.equalizer, color: scheme.primary)
               : null,
           onTap: onTap,
         );

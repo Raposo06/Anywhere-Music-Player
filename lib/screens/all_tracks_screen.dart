@@ -264,7 +264,7 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
           children: [
             Text(
               _errorMessage!,
-              style: const TextStyle(color: Colors.red),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
             const SizedBox(height: 16),
             ElevatedButton(
@@ -281,11 +281,14 @@ class _AllTracksScreenState extends State<AllTracksScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.library_music, size: 64, color: Colors.grey[400]),
+            Icon(Icons.library_music,
+                size: 64, color: Theme.of(context).colorScheme.outline),
             const SizedBox(height: 16),
             Text(
               _searchQuery.isEmpty ? 'No tracks found' : 'No results for "$_searchQuery"',
-              style: TextStyle(fontSize: 18, color: Colors.grey[500]),
+              style: TextStyle(
+                  fontSize: 18,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
         ),

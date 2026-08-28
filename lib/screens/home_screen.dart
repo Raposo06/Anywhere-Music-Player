@@ -274,7 +274,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     if (scanner.hasInitialData)
                       Text(
                         '${scanner.allTracks.length} tracks',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontSize: 13),
                       ),
                     if (scanner.isScanning) ...[
                       if (scanner.hasInitialData) const SizedBox(width: 8),
@@ -325,7 +327,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(scanner.error!, style: const TextStyle(color: Colors.red)),
+            Text(scanner.error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () => scanner.rescan(),
@@ -352,7 +354,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
               children: [
-                const Icon(Icons.music_note, color: Colors.orange),
+                Icon(Icons.music_note, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   'Songs (${rootTracks.length})',
@@ -388,7 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
               children: [
-                const Icon(Icons.folder, color: Colors.blue),
+                Icon(Icons.folder, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   'Folders (${folders.length})',
@@ -433,7 +435,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(_searchError!, style: const TextStyle(color: Colors.red)),
+            Text(_searchError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () => _performSearch(_searchQuery),
@@ -456,7 +458,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
               children: [
-                const Icon(Icons.folder, color: Colors.blue),
+                Icon(Icons.folder, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   'Folders (${_searchFolders.length})',
@@ -475,7 +477,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
               children: [
-                const Icon(Icons.music_note, color: Colors.orange),
+                Icon(Icons.music_note, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   'Songs (${_searchTracks.length})',
@@ -514,7 +516,7 @@ class _HomeScreenState extends State<HomeScreen> {
         folder,
         size: 48,
         fallbackIcon: Icons.folder,
-        fallbackIconColor: Colors.blue,
+        fallbackIconColor: Theme.of(context).colorScheme.primary,
       ),
       title: Text(
         folder.displayName,
@@ -525,7 +527,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       subtitle: folder.subtitle.isNotEmpty ? Text(folder.subtitle) : null,
       trailing: IconButton(
-        icon: const Icon(Icons.play_circle_fill, size: 36, color: Color(0xFFF7C000)),
+        icon: Icon(Icons.play_circle_fill,
+            size: 36, color: Theme.of(context).colorScheme.primary),
         onPressed: () => _playFolder(folder),
         tooltip: 'Play all tracks in this folder',
       ),
@@ -553,7 +556,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 expand: true,
                 radius: 0,
                 fallbackIcon: Icons.folder,
-                fallbackIconColor: Colors.blue,
+                fallbackIconColor: Theme.of(context).colorScheme.primary,
                 fallbackIconSize: 64,
               ),
             ),
@@ -576,7 +579,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Text(
                   folder.subtitle,
                   style: TextStyle(
-                    color: Colors.grey[600],
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 11,
                   ),
                   textAlign: TextAlign.center,
@@ -586,7 +589,8 @@ class _HomeScreenState extends State<HomeScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.play_circle_fill, color: Color(0xFFF7C000)),
+                  icon: Icon(Icons.play_circle_fill,
+                      color: Theme.of(context).colorScheme.primary),
                   iconSize: 36,
                   onPressed: () => _playFolder(folder),
                   tooltip: 'Play all',

@@ -418,7 +418,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 cacheKey: sizedCacheKey,
                 fit: BoxFit.contain,
                 errorWidget: (_, _, _) => Container(
-                  color: Colors.grey[800],
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: Icon(
                     Icons.music_note,
                     size: size * 0.4,
@@ -427,7 +427,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
               )
             : Container(
-                color: Colors.grey[800],
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 child: Icon(
                   Icons.music_note,
                   size: size * 0.4,
@@ -663,7 +663,7 @@ class _ShuffleRepeatControls extends StatelessWidget {
                 Icons.shuffle,
                 color: state.shuffle
                     ? Theme.of(context).colorScheme.primary
-                    : Colors.grey,
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               iconSize: 32,
               onPressed: () => playerService.toggleShuffle(),
@@ -675,7 +675,7 @@ class _ShuffleRepeatControls extends StatelessWidget {
               style: TextStyle(
                 color: state.shuffle
                     ? Theme.of(context).colorScheme.primary
-                    : Colors.grey[600],
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 14,
                 fontWeight: state.shuffle ? FontWeight.bold : FontWeight.normal,
               ),
@@ -688,7 +688,7 @@ class _ShuffleRepeatControls extends StatelessWidget {
                     : Icons.repeat,
                 color: state.repeat != RepeatMode.off
                     ? Theme.of(context).colorScheme.primary
-                    : Colors.grey,
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               iconSize: 32,
               onPressed: playerService.toggleRepeatMode,
@@ -708,7 +708,7 @@ class _ShuffleRepeatControls extends StatelessWidget {
               style: TextStyle(
                 color: state.repeat != RepeatMode.off
                     ? Theme.of(context).colorScheme.primary
-                    : Colors.grey[600],
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 14,
                 fontWeight: state.repeat != RepeatMode.off
                     ? FontWeight.bold
@@ -785,7 +785,7 @@ class _PlaylistInfo extends StatelessWidget {
         return Text(
           'Track ${state.index + 1} of ${state.length}',
           style: TextStyle(
-            color: Colors.grey[600],
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
             fontSize: 14,
           ),
         );

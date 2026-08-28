@@ -1,16 +1,34 @@
 import 'package:flutter/material.dart';
-import 'home_screen.dart';
-import 'all_tracks_screen.dart';
+import '../utils/platform_detector.dart';
 import '../widgets/mini_player.dart';
+import 'all_tracks_screen.dart';
+import 'desktop/desktop_shell.dart';
+import 'home_screen.dart';
 
-class MainScreen extends StatefulWidget {
+/// Picks the layout for the form factor.
+///
+/// Desktop gets the redesign's sidebar shell; phone keeps the bottom tab bar
+/// below. (Android TV never reaches here — `AuthWrapper` routes it straight to
+/// `TvHomeScreen`.) Both share the same theme and the same services; only the
+/// navigation chrome differs.
+class MainScreen extends StatelessWidget {
   const MainScreen({super.key});
 
   @override
-  State<MainScreen> createState() => _MainScreenState();
+  Widget build(BuildContext context) {
+    if (PlatformDetector.isDesktop) return const DesktopShell();
+    return const _PhoneScaffold();
+  }
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _PhoneScaffold extends StatefulWidget {
+  const _PhoneScaffold();
+
+  @override
+  State<_PhoneScaffold> createState() => _PhoneScaffoldState();
+}
+
+class _PhoneScaffoldState extends State<_PhoneScaffold> {
   int _currentIndex = 0;
 
   @override

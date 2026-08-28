@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/track.dart';
 import 'now_playing_presence.dart';
 import 'playback_cursor.dart';
@@ -100,7 +101,53 @@ class AudioPlayerService with ChangeNotifier {
 
   AudioPlayerService({NowPlayingPresence? presence, StreamUrlResolver? resolver})
     : _presence = presence ?? const NoPresence(),
-      _resolver = resolver ?? const NoResolver();
+      _resolver = resolver ?? const NoResolver() {
+    // Fire-and-forget: the modes are cosmetic until something is actually
+    // playing, and this service is constructed before login, so there is
+    // nothing to block on.
+    _restoreModes();
+  }
+
+  // Shuffle and repeat survive a restart. Persisted here rather than in
+  // PlaybackCursor, which is deliberately plain Dart with no plugin
+  // dependencies so it stays testable without a platform channel.
+  static const _prefShuffle = 'playback.shuffleEnabled';
+  static const _prefRepeat = 'playback.repeatMode';
+
+  bool _disposed = false;
+
+  Future<void> _restoreModes() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shuffle = prefs.getBool(_prefShuffle);
+      final repeatName = prefs.getString(_prefRepeat);
+      if (shuffle != null) _cursor.setShuffle(shuffle);
+      if (repeatName != null) {
+        // A value written by a future version we don't know is ignored rather
+        // than crashing — the cursor keeps its own default.
+        for (final mode in RepeatMode.values) {
+          if (mode.name == repeatName) {
+            _cursor.setRepeatMode(mode);
+            break;
+          }
+        }
+      }
+      if (!_disposed) notifyListeners();
+    } catch (_) {
+      // No shared_preferences implementation (widget tests) or unreadable
+      // storage — the cursor's defaults are a perfectly good fallback.
+    }
+  }
+
+  Future<void> _persistModes() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefShuffle, _cursor.isShuffleEnabled);
+      await prefs.setString(_prefRepeat, _cursor.repeatMode.name);
+    } catch (_) {
+      // Best-effort: failing to remember a toggle must never break playback.
+    }
+  }
 
   /// Lazily initialize the AudioPlayer and stream listeners.
   void _ensurePlayerInitialized() {
@@ -513,6 +560,7 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> toggleShuffle() async {
     _cursor.toggleShuffle();
     notifyListeners();
+    await _persistModes();
   }
 
   /// Set shuffle to a known state, rather than flipping it — for callers
@@ -520,11 +568,13 @@ class AudioPlayerService with ChangeNotifier {
   void setShuffle(bool enabled) {
     _cursor.setShuffle(enabled);
     notifyListeners();
+    _persistModes();
   }
 
   void toggleRepeatMode() {
     _cursor.toggleRepeatMode();
     notifyListeners();
+    _persistModes();
   }
 
   /// ReplayGain pre-amp in dB. Middle-ground value picked to balance two
@@ -607,6 +657,7 @@ class AudioPlayerService with ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _loadDebounce?.cancel();
     _playerStateSubscription?.cancel();
     _playingSubscription?.cancel();

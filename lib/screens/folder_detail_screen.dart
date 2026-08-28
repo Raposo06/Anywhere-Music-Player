@@ -26,8 +26,19 @@ class FolderDetailScreen extends StatefulWidget {
 }
 
 class _FolderDetailScreenState extends State<FolderDetailScreen> {
+  /// This folder's own tracks — not its subfolders'. Backs the track list
+  /// when not searching, and normal (non-search) playback.
   List<Track> _tracks = [];
   List<Folder> _subfolders = [];
+
+  /// Every track under this folder, subfolders included — the same set
+  /// `_playAll`/`_shufflePlay` already used. Search spans this, not
+  /// [_tracks]: most browsable folders (e.g. a home-screen entry like
+  /// "Games") hold *zero* direct tracks — everything lives one or more album
+  /// subfolders down — so filtering [_tracks] alone made search return
+  /// nothing for almost every folder in a real library.
+  List<Track> _allTracks = [];
+
   int _totalTrackCount = 0;
 
   bool _isSearching = false;
@@ -64,11 +75,11 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   void _loadContents() {
     final scanner = context.read<LibraryScanner>();
     final contents = scanner.getFolderContents(widget.folderId);
-    final allTracks = scanner.getAllTracksInFolder(widget.folderId);
     setState(() {
       _subfolders = contents.folders;
       _tracks = contents.tracks;
-      _totalTrackCount = allTracks.length;
+      _allTracks = scanner.getAllTracksInFolder(widget.folderId);
+      _totalTrackCount = _allTracks.length;
     });
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _followCurrentTrack());
@@ -108,12 +119,10 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
 
   void _playAll() {
     // Play all tracks recursively (this folder + subfolders)
-    final scanner = context.read<LibraryScanner>();
-    final allTracks = scanner.getAllTracksInFolder(widget.folderId);
-    if (allTracks.isEmpty) return;
+    if (_allTracks.isEmpty) return;
 
     final playerService = context.read<AudioPlayerService>();
-    playerService.play(allTracks);
+    playerService.play(_allTracks);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -121,12 +130,10 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   }
 
   void _shufflePlay() {
-    final scanner = context.read<LibraryScanner>();
-    final allTracks = scanner.getAllTracksInFolder(widget.folderId);
-    if (allTracks.isEmpty) return;
+    if (_allTracks.isEmpty) return;
 
     final playerService = context.read<AudioPlayerService>();
-    playerService.playShuffled(allTracks);
+    playerService.playShuffled(_allTracks);
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerScreen()),
@@ -277,7 +284,8 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
   List<Track> get _filteredTracks {
     if (_searchQuery.isEmpty) return _tracks;
     final q = _searchQuery.toLowerCase();
-    return _tracks.where((t) => t.title.toLowerCase().contains(q)).toList();
+    // Recursive, not [_tracks]: see [_allTracks]'s doc.
+    return _allTracks.where((t) => t.title.toLowerCase().contains(q)).toList();
   }
 
   @override
@@ -384,13 +392,10 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                   label: const Text('Play All'),
                 ),
                 const SizedBox(width: 8),
-                ElevatedButton.icon(
+                OutlinedButton.icon(
                   onPressed: _shufflePlay,
                   icon: const Icon(Icons.shuffle),
                   label: const Text('Shuffle'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                  ),
                 ),
               ],
             ),
@@ -425,7 +430,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                     folder,
                     size: 48,
                     fallbackIcon: Icons.folder,
-                    fallbackIconColor: Colors.blue,
+                    fallbackIconColor: Theme.of(context).colorScheme.primary,
                     showPlaceholder: false,
                   ),
                   title: Text(
@@ -445,15 +450,28 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
               final track = visibleTracks[index];
               return TrackTile(
                 track: track,
-                leadingIndex: _isSearching ? _tracks.indexOf(track) : index,
+                // `index` is already the right position: outside search this
+                // list *is* `_tracks`, and while searching there's no single
+                // "real" position to show — a match can come from any
+                // subfolder — so this numbers by position among the results
+                // themselves, same as the home and all-tracks search results.
+                leadingIndex: index,
                 onTap: () {
                   final playerService = context.read<AudioPlayerService>();
                   // If this track is already the current one, don't restart it
                   // — just open the player and let it keep playing.
                   if (playerService.currentTrack?.id != track.id) {
-                    // Always play from the full folder list so playback
-                    // continues through tracks not matched by the search.
-                    playerService.play(_tracks, from: _tracks.indexOf(track));
+                    if (_isSearching) {
+                      // A search match may live in a subfolder album, not in
+                      // [_tracks] at all — play from the recursive set search
+                      // actually searched, so playback continues into the
+                      // rest of what the search was looking through.
+                      playerService.play(_allTracks, from: _allTracks.indexOf(track));
+                    } else {
+                      // Always play from the full folder list so playback
+                      // continues through tracks not matched by the search.
+                      playerService.play(_tracks, from: _tracks.indexOf(track));
+                    }
                   }
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const PlayerScreen()),

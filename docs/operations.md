@@ -131,6 +131,57 @@ code change here caused.
 `apply_standard_settings` is used (runner + all plugins). The warning still
 prints; the build no longer aborts on it.
 
+### Red screen: "Tried to use `context.select` outside of the `build` method"
+
+**Symptom:** opening a screen throws
+`'package:provider/src/inherited_provider.dart': Failed assertion: line 270 pos 12:
+'widget is LayoutBuilder || debugDoingBuild'`.
+
+**Cause:** a `State` method that calls `context.select` (or `context.watch`) is
+being called from inside a `Selector`/`Consumer`/`Builder` callback. Those
+callbacks run when the *builder widget's* element builds — which is after the
+enclosing `State.build()` has already returned. So the `State`'s own `context`
+is no longer building, and the assertion fires. The bare identifier `context`
+inside such a helper method resolves to `State.context`, not the callback's
+shadowed `context` parameter, which is what makes this easy to write by
+accident.
+
+**Fix:** take `BuildContext` as a parameter and pass the callback's own
+`context` in — see `_watchForErrors` in
+`lib/screens/desktop/desktop_player_screen.dart`. `context.read` is unaffected
+(it never registers a dependency), which is why the neighbouring calls are fine.
+
+### Red screen: `setState()` or `markNeedsBuild()` called during build, from an animation
+
+**Symptom:** a list containing the playing-track glyph throws during build the
+moment playback starts or stops.
+
+**Cause:** calling `AnimationController.repeat()`/`.stop()` inside a `build`
+notifies the controller's listeners *synchronously*. On any rebuild after the
+first, an `AnimatedBuilder` below is already one of those listeners, so it calls
+`markNeedsBuild` while the frame is still building. It survives the first build
+only because nothing is listening yet — which is exactly why this reaches
+runtime instead of being caught immediately.
+
+**Fix:** drive the controller from a post-frame callback, not from `build` — see
+`PlayingBars` in `lib/widgets/desktop/desktop_primitives.dart`.
+
+### Desktop window can't be moved or closed on some screen
+
+**Symptom:** on Windows or Linux a screen appears with no title bar at all —
+no drag region, no close button — and the only way out is the taskbar or
+killing the process.
+
+**Cause:** `main()` calls `windowManager.setTitleBarStyle(TitleBarStyle.hidden)`
+on desktop, so the OS frame is gone app-wide. Anything rendered *outside*
+`DesktopShell` therefore has to draw the replacement itself.
+
+**Fix:** wrap the screen in `DesktopWindowFrame`
+(`lib/widgets/desktop/window_chrome.dart`), which adds `WindowChrome` on desktop
+and is a passthrough elsewhere. The auth-loading state and `LoginScreen` already
+use it; `DesktopShell` and `DesktopPlayerScreen` render `WindowChrome`
+themselves. Any new top-level route needs one of the two.
+
 ### App won't connect
 
 - Check `.env` exists and `API_BASE_URL` is set and reachable **from the device**
@@ -211,6 +262,17 @@ an SDK-bump trap, not something a code change introduced.
 at the import site: `import 'package:flutter/material.dart' hide RepeatMode;`.
 If a new screen starts importing both `material.dart` and something exposing
 this app's `RepeatMode`, it needs the same `hide`.
+
+**The inverse symptom, on an older SDK:** `warning - The library
+'package:flutter/material.dart' doesn't export a member with the hidden name
+'RepeatMode' - undefined_hidden_name`. That is the *same* trap seen from the
+other side: the toolchain predates Flutter's `RepeatMode`, so there is nothing
+to hide. It is a warning, not an error, and the `hide` must stay — removing it
+to silence the warning re-breaks the build on a newer SDK. As of 2026-08-28 this
+tree builds on Flutter 3.38.9, which is old enough to emit it for
+`player_screen.dart` and `tv_player_screen.dart`. **New files should not add a
+`hide` they don't need** — add it only when the analyzer actually reports the
+ambiguity.
 
 ## Server dependency
 

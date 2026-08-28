@@ -34,7 +34,7 @@ class QueueSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey[400],
+                color: Theme.of(context).colorScheme.outline,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -136,7 +136,7 @@ class QueueSheet extends StatelessWidget {
         child: Text(
           text,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Colors.grey,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
               ),
         ),
@@ -165,6 +165,7 @@ class _TrackRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final tile = ListTile(
       leading: CoverArt(track, size: 48, showPlaceholder: false),
       title: Text(
@@ -172,18 +173,19 @@ class _TrackRow extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: highlight
-            ? const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)
+            ? TextStyle(fontWeight: FontWeight.bold, color: scheme.primary)
             : null,
       ),
       subtitle: Text(track.formattedDuration),
       trailing: highlight
-          ? const Icon(Icons.equalizer, color: Colors.blue)
+          ? Icon(Icons.equalizer, color: scheme.primary)
           : (reorderIndex != null
               ? ReorderableDragStartListener(
                   index: reorderIndex!,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Icon(Icons.drag_handle, color: Colors.grey),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(Icons.drag_handle,
+                        color: scheme.onSurfaceVariant),
                   ),
                 )
               : null),

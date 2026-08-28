@@ -21,7 +21,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(LoginScreen), findsOneWidget);
-    expect(find.text('Anywhere Music Player'), findsOneWidget);
+    // Scoped to LoginScreen, not find.text(...) at the tree root: on a
+    // Windows/Linux test host, AuthWrapper wraps this in DesktopWindowFrame,
+    // whose title bar shows the same app name as its own small window-identity
+    // label — a second, legitimate occurrence alongside LoginScreen's hero
+    // title, not a duplicate to remove.
+    expect(
+      find.descendant(
+        of: find.byType(LoginScreen),
+        matching: find.text('Anywhere Music Player'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Username'), findsOneWidget);
   });
 }
