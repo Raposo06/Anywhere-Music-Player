@@ -27,21 +27,40 @@ import '../../widgets/desktop/window_chrome.dart';
 /// resize, re-downloading the same cover repeatedly. One oversized fetch,
 /// scaled down to fit, costs a few KB instead. The precache below uses this
 /// same constant, so the warmed cache key and the rendered one can't drift.
-const _artRequestSize = 640.0;
+const _artRequestSize = 800.0;
 
 /// Layout bounds for the left pane. The design fixes the art at 320px and the
 /// info column at 380px, which is right at its 1240px reference width but
 /// strands a lot of space on a large monitor — so both grow with the pane and
 /// stop before the art starts dwarfing the controls beside it.
-const _minArtDisplaySize = 240.0;
-const _maxArtDisplaySize = 520.0;
-const _minInfoWidth = 340.0;
-const _maxInfoWidth = 620.0;
+///
+/// The minimums are what keeps art and info side by side rather than stacked
+/// (see the [Wrap] below), so they are set as low as the content stays legible
+/// at, not at a comfortable size — the pane is narrow when they bind. The art's
+/// maximum is [_artRequestSize]: past that it would be upscaled from the fetch.
+const _minArtDisplaySize = 200.0;
+const _maxArtDisplaySize = _artRequestSize;
+const _minInfoWidth = 300.0;
+const _maxInfoWidth = 820.0;
 
-/// Gap between the art and the info column, and the pane's padding.
+/// Share of the pane the art takes, and the share of the pane's *height* it is
+/// additionally capped at. 0.38 is the ratio the design's own 320px art
+/// occupies at its reference width; the height cap is what stops a short, wide
+/// window producing a cover taller than the space it sits in.
+const _artWidthFraction = 0.38;
+const _artHeightFraction = 0.72;
+
+/// Gap between the art and the info column, and the pane's padding. All three
+/// tighten on a narrow pane — at 48px they eat a third of the width there,
+/// which is the difference between fitting side by side and stacking.
 const _paneGap = 48.0;
 const _paneHPadding = 48.0;
 const _paneVPadding = 32.0;
+const _minPaneGap = 24.0;
+const _minPaneHPadding = 24.0;
+
+/// Pane width below which the gap and padding scale down to their minimums.
+const _tightPaneWidth = 900.0;
 
 /// What [DesktopPlayerScreen] pops with when the user clicks through to the
 /// track's folder.
@@ -90,13 +109,14 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
     _precachedForTrackId = current.id;
 
     final StreamUrlResolver? resolver = context.read<AuthService>().apiService;
-    final pixelSize =
-        (_artRequestSize * MediaQuery.devicePixelRatioOf(context)).round();
+    final pixelSize = (_artRequestSize * MediaQuery.devicePixelRatioOf(context))
+        .round();
 
     // Immediate next (wrap-aware): decode it so the very next skip is instant.
     final next = ps.peekNextTrack();
-    final nextUrl =
-        next == null ? null : resolver.resolveCoverUrl(next, size: pixelSize);
+    final nextUrl = next == null
+        ? null
+        : resolver.resolveCoverUrl(next, size: pixelSize);
     if (nextUrl != null) {
       precacheImage(
         CachedNetworkImageProvider(
@@ -111,8 +131,10 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
 
     // Window ahead (queued tracks first, then play-order context): download to
     // the disk cache so skipping several forward finds covers already fetched.
-    final window =
-        <Track>[...ps.queue, ...ps.upcomingFromContext].take(_coverPrefetchAhead);
+    final window = <Track>[
+      ...ps.queue,
+      ...ps.upcomingFromContext,
+    ].take(_coverPrefetchAhead);
     for (final track in window) {
       final url = resolver.resolveCoverUrl(track, size: pixelSize);
       if (url != null) {
@@ -135,9 +157,9 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
         ? track.folderName
         : track.folderPath.split('/').last;
     // Close, and let the shell open the folder — see [FolderRequest].
-    Navigator.of(context).pop<FolderRequest>(
-      (path: track.folderPath, name: displayName),
-    );
+    Navigator.of(
+      context,
+    ).pop<FolderRequest>((path: track.folderPath, name: displayName));
   }
 
   @override
@@ -171,7 +193,10 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
                           style: TextStyle(color: AppColors.muted),
                         ),
                       )
-                    : _Body(track: track, onOpenFolder: () => _openFolder(track)),
+                    : _Body(
+                        track: track,
+                        onOpenFolder: () => _openFolder(track),
+                      ),
               ),
             ],
           ),
@@ -225,50 +250,86 @@ class _Body extends StatelessWidget {
             ),
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final available = constraints.maxWidth - _paneHPadding * 2;
-                final height = constraints.maxHeight - _paneVPadding * 2;
+                // Gap and padding are the first things to give on a narrow
+                // pane — see [_tightPaneWidth].
+                final tightness = (constraints.maxWidth / _tightPaneWidth)
+                    .clamp(0.0, 1.0);
+                final gap = _minPaneGap + (_paneGap - _minPaneGap) * tightness;
+                final hPadding =
+                    _minPaneHPadding +
+                    (_paneHPadding - _minPaneHPadding) * tightness;
+
+                final available = constraints.maxWidth - hPadding * 2;
+                final height = math.max(
+                  0.0,
+                  constraints.maxHeight - _paneVPadding * 2,
+                );
 
                 // The art tracks the pane's width but is also capped by its
-                // height, so a short-and-wide window doesn't produce a cover
-                // taller than the space it sits in. 0.38 is the ratio the
-                // design's own 320px art occupies at its reference width, so
-                // this reproduces the mock at that size and grows from there.
-                final artSize = math
-                    .min(available * 0.38, height * 0.66)
+                // height — see [_artWidthFraction]. This reproduces the mock
+                // at its reference width and grows from there.
+                final wanted = math
+                    .min(
+                      available * _artWidthFraction,
+                      height * _artHeightFraction,
+                    )
                     .clamp(_minArtDisplaySize, _maxArtDisplaySize);
 
                 // Whatever's left goes to the controls, within bounds — past
-                // ~620px the 34px title and the transport row just drift apart.
-                final infoWidth = (available - artSize - _paneGap)
-                    .clamp(_minInfoWidth, _maxInfoWidth);
+                // ~820px the 34px title and the transport row just drift apart.
+                final infoWidth = (available - wanted - gap).clamp(
+                  _minInfoWidth,
+                  _maxInfoWidth,
+                );
+
+                // On a wide pane the info column caps out well before the pane
+                // runs out, which used to leave a band of empty pane beside a
+                // cluster sized for a much smaller window. The art takes that
+                // slack instead — still bounded by the pane's height and by
+                // [_maxArtDisplaySize], so it can't outgrow the fetch or the
+                // controls beside it.
+                final artSize = math
+                    .min(
+                      available - infoWidth - gap,
+                      height * _artHeightFraction,
+                    )
+                    .clamp(wanted, _maxArtDisplaySize);
 
                 return SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: _paneHPadding,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: hPadding,
                     vertical: _paneVPadding,
                   ),
-                  // Wrap, not Row: when the pane is too narrow for both at
-                  // their minimums, they stack instead of overflowing.
-                  child: Center(
-                    child: Wrap(
-                      spacing: _paneGap,
-                      runSpacing: 32,
-                      alignment: WrapAlignment.center,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        _AlbumArt(
-                          track: track,
-                          size: artSize,
-                          onTap: onOpenFolder,
-                        ),
-                        SizedBox(
-                          width: infoWidth,
-                          child: _Details(
+                  // The scroll view sizes to its child, so [Center] alone would
+                  // only centre horizontally and leave the cluster pinned to
+                  // the top of a tall pane. Floor the child at the pane's
+                  // height to centre it vertically too — and only floor it, so
+                  // content taller than the pane still scrolls.
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: height),
+                    // Wrap, not Row: when the pane is too narrow for both at
+                    // their minimums, they stack instead of overflowing.
+                    child: Center(
+                      child: Wrap(
+                        spacing: gap,
+                        runSpacing: 32,
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _AlbumArt(
                             track: track,
-                            onOpenFolder: onOpenFolder,
+                            size: artSize,
+                            onTap: onOpenFolder,
                           ),
-                        ),
-                      ],
+                          SizedBox(
+                            width: infoWidth,
+                            child: _Details(
+                              track: track,
+                              onOpenFolder: onOpenFolder,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -440,9 +501,11 @@ class _ScrubBarState extends State<_ScrubBar> {
       _dragStartTrackId = null;
     });
     if (sameTrack && widget.duration > Duration.zero) {
-      ps.seek(Duration(
-        milliseconds: (value * widget.duration.inMilliseconds).round(),
-      ));
+      ps.seek(
+        Duration(
+          milliseconds: (value * widget.duration.inMilliseconds).round(),
+        ),
+      );
     }
   }
 
@@ -458,12 +521,14 @@ class _ScrubBarState extends State<_ScrubBar> {
         final fraction = _isDragging
             ? _dragValue
             : (hasDuration
-                ? streamPosition.inMilliseconds / widget.duration.inMilliseconds
-                : 0.0);
+                  ? streamPosition.inMilliseconds /
+                        widget.duration.inMilliseconds
+                  : 0.0);
         final position = _isDragging
             ? Duration(
-                milliseconds:
-                    (_dragValue * widget.duration.inMilliseconds).round())
+                milliseconds: (_dragValue * widget.duration.inMilliseconds)
+                    .round(),
+              )
             : streamPosition;
 
         return Column(
@@ -564,7 +629,8 @@ class _ShuffleRepeatRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Selector<AudioPlayerService, ({bool shuffle, RepeatMode repeat})>(
-      selector: (_, ps) => (shuffle: ps.isShuffleEnabled, repeat: ps.repeatMode),
+      selector: (_, ps) =>
+          (shuffle: ps.isShuffleEnabled, repeat: ps.repeatMode),
       builder: (context, state, _) {
         final playerService = context.read<AudioPlayerService>();
         return Row(
@@ -652,8 +718,8 @@ class _VolumeRow extends StatelessWidget {
               volume == 0
                   ? Icons.volume_off
                   : volume < 0.5
-                      ? Icons.volume_down
-                      : Icons.volume_up,
+                  ? Icons.volume_down
+                  : Icons.volume_up,
               size: 16,
               color: AppColors.muted,
             ),
@@ -662,9 +728,12 @@ class _VolumeRow extends StatelessWidget {
               child: SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 4,
-                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                  overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 10),
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 5,
+                  ),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 10,
+                  ),
                   padding: EdgeInsets.zero,
                 ),
                 child: Slider(

@@ -526,3 +526,52 @@ multi-server federation. Both are large enough that the client would stop being
 
 **Note.** This is why auth is MD5-salt token auth — it's the Subsonic protocol's
 scheme, not a choice made here.
+
+---
+
+## 2026-08-29 — Picking a track on desktop opens Now Playing
+
+**Decided.** On the desktop shell, choosing a track (or Play All / Shuffle All)
+starts playback *and* pushes `DesktopPlayerScreen`, matching what the phone has
+always done. Tapping the track that is already playing opens the player without
+restarting it. The shell exposes the push through a `DesktopPlayerLauncher`
+`InheritedWidget`, and guards against stacking a second copy of the route.
+
+**Why.** The redesign left the desktop lists silently starting playback with no
+visible confirmation beyond the mini player's 72px strip. The push has to stay
+the shell's: Now Playing lives on the *root* navigator and hands a folder back
+to the shell when closed (`FolderRequest`), so a list screen can't own it.
+
+**What would reverse it.** Wanting the desktop list to be a browsing surface you
+can queue from without losing your place — in which case the right answer is
+probably a preference, not removing the navigation.
+
+---
+
+## 2026-08-29 — Now Playing's left pane fills the window it is given
+
+**Decided.** Three changes, all aimed at the pane having no dead space at any
+window size:
+
+- **Gutters scale.** The gap and horizontal padding interpolate from 48px down
+  to 24px as the pane narrows past 900px.
+- **The art absorbs the leftover width.** The info column is sized first and
+  capped at 820px; the art then takes whatever the pane has left, bounded by
+  the pane's height and by the 800px fetch size (so it is never upscaled).
+- **The cluster centres vertically.** The scroll view's child is floored at the
+  pane height, so `Center` centres on both axes instead of pinning the cluster
+  to the top.
+
+**Why.** The old fixed 48px gutters plus 240/340 minimums needed ~724px before
+art and info fit side by side, so a merely-narrow window stacked them. At the
+other end, the info column capped out long before the pane did and the art was
+sized from a fraction of the pane rather than from what was actually left over,
+which on a 1600px pane stranded ~170px of empty width beside the cluster and
+~400px of empty height below it. Sizing info first and giving the art the
+remainder means the two together consume the pane exactly.
+
+**What would reverse it.** A redesign that gives the pane a fixed content width
+instead of tracking the window. Note the art's ceiling is deliberately tied to
+`_artRequestSize`: raising one without the other either upscales a smaller
+fetch or downloads pixels that are never drawn.
+

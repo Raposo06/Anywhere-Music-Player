@@ -11,6 +11,7 @@ import '../../widgets/cover_art.dart';
 import '../../widgets/desktop/desktop_primitives.dart';
 import '../../widgets/desktop/desktop_track_row.dart';
 import 'desktop_search_field.dart';
+import 'desktop_shell.dart';
 
 /// A folder's contents: subfolders ("Albums") above its own tracks.
 ///
@@ -36,10 +37,8 @@ class DesktopFolderScreen extends StatefulWidget {
   }) {
     return MaterialPageRoute(
       settings: RouteSettings(name: folderName),
-      builder: (_) => DesktopFolderScreen(
-        folderPath: folderPath,
-        folderName: folderName,
-      ),
+      builder: (_) =>
+          DesktopFolderScreen(folderPath: folderPath, folderName: folderName),
     );
   }
 
@@ -112,7 +111,9 @@ class _DesktopFolderScreenState extends State<DesktopFolderScreen> {
     if (_query.isEmpty) return _tracks;
     final needle = _query.toLowerCase();
     // Recursive, not [_tracks]: see [_allTracks]'s doc.
-    return _allTracks.where((t) => t.title.toLowerCase().contains(needle)).toList();
+    return _allTracks
+        .where((t) => t.title.toLowerCase().contains(needle))
+        .toList();
   }
 
   bool get _showSubfolders => _query.isEmpty && _subfolders.isNotEmpty;
@@ -164,13 +165,16 @@ class _DesktopFolderScreenState extends State<DesktopFolderScreen> {
     } else {
       player.play(_allTracks);
     }
+    DesktopPlayerLauncher.openPlayer(context);
   }
 
   void _openSubfolder(Folder folder) {
-    Navigator.of(context).push(DesktopFolderScreen.route(
-      folderPath: folder.folderPath,
-      folderName: folder.displayName,
-    ));
+    Navigator.of(context).push(
+      DesktopFolderScreen.route(
+        folderPath: folder.folderPath,
+        folderName: folder.displayName,
+      ),
+    );
   }
 
   /// Open an ancestor by full path. Always pushes rather than popping back,
@@ -186,19 +190,20 @@ class _DesktopFolderScreenState extends State<DesktopFolderScreen> {
       _goHome();
       return;
     }
-    Navigator.of(context).push(DesktopFolderScreen.route(
-      folderPath: fullPath,
-      folderName: displayName,
-    ));
+    Navigator.of(context).push(
+      DesktopFolderScreen.route(folderPath: fullPath, folderName: displayName),
+    );
   }
 
   void _goHome() => Navigator.of(context).popUntil((route) => route.isFirst);
 
   void _playTrack(Track track) {
     final player = context.read<AudioPlayerService>();
-    // Already the current track — don't restart it; the mini player is right
-    // there and still playing it.
-    if (player.currentTrack?.id == track.id) return;
+    // Already the current track — don't restart it, just show it.
+    if (player.currentTrack?.id == track.id) {
+      DesktopPlayerLauncher.openPlayer(context);
+      return;
+    }
     if (_query.isEmpty) {
       // This folder's own "Tracks" section — continue through the rest of it.
       player.play(_tracks, from: _tracks.indexOf(track));
@@ -210,6 +215,7 @@ class _DesktopFolderScreenState extends State<DesktopFolderScreen> {
       // from.
       player.play(_allTracks, from: _allTracks.indexOf(track));
     }
+    DesktopPlayerLauncher.openPlayer(context);
   }
 
   @override
@@ -235,10 +241,12 @@ class _DesktopFolderScreenState extends State<DesktopFolderScreen> {
                   ? '$_totalTrackCount track(s)'
                   : '${visible.length} result(s)',
               onQueryChanged: (q) => setState(() => _query = q),
-              onPlayAll:
-                  _totalTrackCount > 0 ? () => _playAll(shuffled: false) : null,
-              onShuffle:
-                  _totalTrackCount > 0 ? () => _playAll(shuffled: true) : null,
+              onPlayAll: _totalTrackCount > 0
+                  ? () => _playAll(shuffled: false)
+                  : null,
+              onShuffle: _totalTrackCount > 0
+                  ? () => _playAll(shuffled: true)
+                  : null,
             ),
             const SizedBox(height: 16),
             Expanded(child: _buildContent(visible)),
@@ -251,14 +259,18 @@ class _DesktopFolderScreenState extends State<DesktopFolderScreen> {
   Widget _buildContent(List<Track> visible) {
     if (_tracks.isEmpty && _subfolders.isEmpty) {
       return const Center(
-        child:
-            Text('No content found', style: TextStyle(color: AppColors.muted)),
+        child: Text(
+          'No content found',
+          style: TextStyle(color: AppColors.muted),
+        ),
       );
     }
     if (_query.isNotEmpty && visible.isEmpty) {
       return const Center(
-        child: Text('No tracks match your search',
-            style: TextStyle(color: AppColors.muted)),
+        child: Text(
+          'No tracks match your search',
+          style: TextStyle(color: AppColors.muted),
+        ),
       );
     }
 
@@ -343,8 +355,9 @@ class _Breadcrumb extends StatelessWidget {
 
     var accumulated = '';
     for (var i = 0; i < segments.length; i++) {
-      accumulated =
-          accumulated.isEmpty ? segments[i] : '$accumulated/${segments[i]}';
+      accumulated = accumulated.isEmpty
+          ? segments[i]
+          : '$accumulated/${segments[i]}';
       // The auto-flattened root is already what "Library" points at —
       // rendering it again would be two crumbs for one destination.
       if (scanner.isFlattenedRoot(accumulated)) continue;
@@ -355,13 +368,15 @@ class _Breadcrumb extends StatelessWidget {
 
       children
         ..add(const _Separator())
-        ..add(isLast
-            ? _Crumb(label: name, color: AppColors.text, bold: true)
-            : _Crumb(
-                label: name,
-                color: AppColors.accentText,
-                onTap: () => onOpenPath(path, name),
-              ));
+        ..add(
+          isLast
+              ? _Crumb(label: name, color: AppColors.text, bold: true)
+              : _Crumb(
+                  label: name,
+                  color: AppColors.accentText,
+                  onTap: () => onOpenPath(path, name),
+                ),
+        );
     }
 
     return SingleChildScrollView(
@@ -408,10 +423,9 @@ class _Separator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 6),
-        child:
-            Text('/', style: TextStyle(fontSize: 12.5, color: AppColors.faint)),
-      );
+    padding: EdgeInsets.symmetric(horizontal: 6),
+    child: Text('/', style: TextStyle(fontSize: 12.5, color: AppColors.faint)),
+  );
 }
 
 class _Header extends StatelessWidget {

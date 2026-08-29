@@ -90,19 +90,29 @@ class _DesktopShellState extends State<DesktopShell> {
     setState(() => _destination = destination);
   }
 
+  /// True while Now Playing is on screen, so a second request — a queue jump,
+  /// a stray call from a list still mounted behind it — doesn't stack another
+  /// copy of it on the root navigator.
+  bool _playerOpen = false;
+
   Future<void> _openPlayer() async {
+    if (_playerOpen) return;
+    _playerOpen = true;
     final navigator = Navigator.of(context, rootNavigator: true);
     // The player covers the whole window and so lives outside this shell; it
     // hands back a folder to open when the user clicks the track's path.
     final request = await navigator.push<FolderRequest>(
       MaterialPageRoute(builder: (_) => const DesktopPlayerScreen()),
     );
+    _playerOpen = false;
     if (request == null || !mounted) return;
     setState(() => _destination = SidebarDestination.library);
-    _libraryNavigator.currentState?.push(DesktopFolderScreen.route(
-      folderPath: request.path,
-      folderName: request.name,
-    ));
+    _libraryNavigator.currentState?.push(
+      DesktopFolderScreen.route(
+        folderPath: request.path,
+        folderName: request.name,
+      ),
+    );
   }
 
   /// The context line in the title bar: the folder you're in, or the
@@ -112,58 +122,86 @@ class _DesktopShellState extends State<DesktopShell> {
       SidebarDestination.allTracks => 'All Tracks',
       SidebarDestination.library => libraryRoute,
     };
-    return context_ == null
-        ? appDisplayName
-        : '$context_ — $appDisplayName';
+    return context_ == null ? appDisplayName : '$context_ — $appDisplayName';
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.win,
-      body: Column(
-        children: [
-          ValueListenableBuilder<String?>(
-            valueListenable: _libraryRouteName,
-            builder: (context, libraryRoute, _) =>
-                WindowChrome(label: _chromeLabel(libraryRoute)),
-          ),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Sidebar(
-                  selected: _destination,
-                  onSelect: _select,
-                  onSignOut: _handleSignOut,
-                ),
-                Expanded(
-                  child: IndexedStack(
-                    index: switch (_destination) {
-                      SidebarDestination.library => 0,
-                      SidebarDestination.allTracks => 1,
-                    },
-                    children: [
-                      Navigator(
-                        key: _libraryNavigator,
-                        observers: [_routeObserver],
-                        onGenerateRoute: (settings) => MaterialPageRoute(
-                          settings: settings,
-                          builder: (_) => const DesktopLibraryScreen(),
-                        ),
-                      ),
-                      const DesktopAllTracksScreen(),
-                    ],
-                  ),
-                ),
-              ],
+    return DesktopPlayerLauncher(
+      open: _openPlayer,
+      child: Scaffold(
+        backgroundColor: AppColors.win,
+        body: Column(
+          children: [
+            ValueListenableBuilder<String?>(
+              valueListenable: _libraryRouteName,
+              builder: (context, libraryRoute, _) =>
+                  WindowChrome(label: _chromeLabel(libraryRoute)),
             ),
-          ),
-          DesktopMiniPlayer(onOpenPlayer: _openPlayer),
-        ],
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Sidebar(
+                    selected: _destination,
+                    onSelect: _select,
+                    onSignOut: _handleSignOut,
+                  ),
+                  Expanded(
+                    child: IndexedStack(
+                      index: switch (_destination) {
+                        SidebarDestination.library => 0,
+                        SidebarDestination.allTracks => 1,
+                      },
+                      children: [
+                        Navigator(
+                          key: _libraryNavigator,
+                          observers: [_routeObserver],
+                          onGenerateRoute: (settings) => MaterialPageRoute(
+                            settings: settings,
+                            builder: (_) => const DesktopLibraryScreen(),
+                          ),
+                        ),
+                        const DesktopAllTracksScreen(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            DesktopMiniPlayer(onOpenPlayer: _openPlayer),
+          ],
+        ),
       ),
     );
   }
+}
+
+/// Hands everything under [DesktopShell] the shell's "open Now Playing"
+/// action.
+///
+/// The list screens are what know a track was just picked, but they can't push
+/// Now Playing themselves: it goes on the *root* navigator and hands a folder
+/// back to the shell when closed (see [FolderRequest]), so the shell has to own
+/// the push. This is the wire between the two.
+class DesktopPlayerLauncher extends InheritedWidget {
+  final VoidCallback open;
+
+  const DesktopPlayerLauncher({
+    super.key,
+    required this.open,
+    required super.child,
+  });
+
+  /// Opens Now Playing from anywhere under the shell. A no-op outside it, so a
+  /// screen reused off-shell (or in a test) still works.
+  static void openPlayer(BuildContext context) {
+    context.getInheritedWidgetOfExactType<DesktopPlayerLauncher>()?.open();
+  }
+
+  @override
+  bool updateShouldNotify(DesktopPlayerLauncher oldWidget) =>
+      open != oldWidget.open;
 }
 
 /// Publishes the name of whatever route is currently on top of the navigator

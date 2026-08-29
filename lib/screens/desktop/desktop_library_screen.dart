@@ -70,10 +70,9 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
     _scannerForListener!.clearRefreshError();
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 3),
-      ));
+      ..showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
+      );
   }
 
   void _onQueryChanged(String query) {
@@ -118,8 +117,9 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
 
       setState(() {
         _searchFolders = scanner.searchFolders(query);
-        _searchTracks =
-            result.songs.map((t) => canonicalById[t.id] ?? t).toList();
+        _searchTracks = result.songs
+            .map((t) => canonicalById[t.id] ?? t)
+            .toList();
         _isSearching = false;
       });
     } on SubsonicApiException catch (e) {
@@ -134,10 +134,9 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
   void _openFolder(Folder folder) {
     final id = folder.id ?? folder.folderPath;
     if (id.isEmpty) return;
-    Navigator.of(context).push(DesktopFolderScreen.route(
-      folderPath: id,
-      folderName: folder.displayName,
-    ));
+    Navigator.of(context).push(
+      DesktopFolderScreen.route(folderPath: id, folderName: folder.displayName),
+    );
   }
 
   void _playFolder(Folder folder) {
@@ -154,9 +153,12 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
   }
 
   void _playTrack(Track track, List<Track> playlist) {
-    context
-        .read<AudioPlayerService>()
-        .play(playlist, from: playlist.indexOf(track));
+    final player = context.read<AudioPlayerService>();
+    // Already the current track — don't restart it, just show it.
+    if (player.currentTrack?.id != track.id) {
+      player.play(playlist, from: playlist.indexOf(track));
+    }
+    DesktopPlayerLauncher.openPlayer(context);
   }
 
   @override
@@ -204,8 +206,7 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 16),
-            Text('Scanning library…',
-                style: TextStyle(color: AppColors.muted)),
+            Text('Scanning library…', style: TextStyle(color: AppColors.muted)),
           ],
         ),
       );
@@ -220,18 +221,22 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
 
     if (folders.isEmpty && rootTracks.isEmpty) {
       return const Center(
-        child: Text('No content found', style: TextStyle(color: AppColors.muted)),
+        child: Text(
+          'No content found',
+          style: TextStyle(color: AppColors.muted),
+        ),
       );
     }
 
     return ListView(
       padding: EdgeInsets.zero,
       children: [
-        if (folders.isNotEmpty) _FolderGrid(
-          folders: folders,
-          onOpen: _openFolder,
-          onPlay: _playFolder,
-        ),
+        if (folders.isNotEmpty)
+          _FolderGrid(
+            folders: folders,
+            onOpen: _openFolder,
+            onPlay: _playFolder,
+          ),
         if (rootTracks.isNotEmpty) ...[
           const SizedBox(height: 28),
           const SectionLabel('Tracks'),
@@ -257,7 +262,10 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
     }
     if (_searchFolders.isEmpty && _searchTracks.isEmpty) {
       return const Center(
-        child: Text('No results found', style: TextStyle(color: AppColors.muted)),
+        child: Text(
+          'No results found',
+          style: TextStyle(color: AppColors.muted),
+        ),
       );
     }
 

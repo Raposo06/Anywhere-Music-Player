@@ -133,11 +133,15 @@ class _DesktopAllTracksScreenState extends State<DesktopAllTracksScreen> {
 
   void _playTrack(Track track) {
     final player = context.read<AudioPlayerService>();
-    // Already the current track — don't restart it.
-    if (player.currentTrack?.id == track.id) return;
+    // Already the current track — don't restart it, just show it.
+    if (player.currentTrack?.id == track.id) {
+      DesktopPlayerLauncher.openPlayer(context);
+      return;
+    }
     // Always play from the full library so playback continues past tracks
     // that didn't match the current search.
     player.play(_allTracks, from: _allTracks.indexOf(track));
+    DesktopPlayerLauncher.openPlayer(context);
   }
 
   void _playAll({required bool shuffled}) {
@@ -148,6 +152,7 @@ class _DesktopAllTracksScreenState extends State<DesktopAllTracksScreen> {
     } else {
       player.play(_tracks);
     }
+    DesktopPlayerLauncher.openPlayer(context);
   }
 
   @override
@@ -199,8 +204,9 @@ class _DesktopAllTracksScreenState extends State<DesktopAllTracksScreen> {
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
-                  onPressed:
-                      _tracks.isEmpty ? null : () => _playAll(shuffled: true),
+                  onPressed: _tracks.isEmpty
+                      ? null
+                      : () => _playAll(shuffled: true),
                   icon: const Icon(Icons.shuffle, size: 16),
                   label: const Text('Shuffle'),
                 ),
