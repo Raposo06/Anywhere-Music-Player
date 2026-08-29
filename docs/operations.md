@@ -109,6 +109,87 @@ that hasn't been turned on for the SDK yet. The built binary lands at
 `build/linux/x64/release/bundle/anywhere_music_player` (`x64/debug/` for a
 debug build) — run it from there, or `flutter run -d linux` for a dev loop.
 
+### Linux/Windows: the app dumps core *after* the window closes
+
+**Symptom:** closing the app looks normal — the window goes away — but the
+process exits on a signal instead of cleanly. On Linux `coredumpctl list` shows
+a dump for `anywhere_music_player` timestamped at the moment you closed it,
+SIGSEGV from a release build or SIGABRT from a debug one. Nothing is logged in
+the app itself. Only happens if something was actually played first. This has
+had **two distinct causes** so far — check the signature before assuming it's
+the one already fixed.
+
+**Signature 1 — an mpv thread, dead isolate.** The crashing thread is one of
+libmpv's, never the UI thread:
+
+```
+#0  n/a (n/a + 0x0)          <- release: an address that is no longer mapped
+#1  libmpv.so + 0xcf9b1      <- (debug: abort() out of libflutter_linux_gtk)
+#2  libmpv.so + 0xd7377
+#3  libmpv.so + 0xa6db9      <- mpv's own event thread, started via pthread
+```
+
+The frame between mpv and the abort sits in anonymous memory with no library
+name — a Dart FFI callback trampoline, not native code. **Cause:** closing the
+window tore down the Flutter engine and the Dart isolate immediately; libmpv's
+event thread was still running and still holding FFI callbacks into Dart. The
+next event it delivered called a trampoline whose isolate was gone.
+`AudioPlayerService.dispose()` couldn't intervene — it's a Provider dispose,
+synchronous, and Provider is never torn down on desktop close anyway, since the
+process just exits under the widget tree. **Fixed** by
+`AudioPlayerService.shutdown()`: an awaitable teardown that closing now waits on
+before doing anything else, so mpv's thread is stopped while the isolate is
+still alive to receive its last events.
+
+**Signature 2 — the main thread, inside GTK/GLib itself.** Surfaced by the fix
+above: waiting for the player first *and then* calling
+`windowManager.destroy()` moved the crash from mpv onto GTK's own teardown:
+
+```
+main → g_application_run → g_main_context_iteration → (flutter_linux_gtk) → g_list_remove_link   [SEGV]
+```
+
+Dozens of mpv threads are alive and idle in this dump — the mpv race above is
+genuinely fixed; this is a separate bug. **Cause:** traced through
+`window_manager`'s Linux plugin source — `destroy()` doesn't tear the window
+down directly, it re-invokes `gtk_window_close()` with prevent-close cleared,
+which re-fires `delete-event` and lets GTK's default destroy path run
+synchronously from inside the very platform-channel dispatch that invoked
+`destroy()`. `windowManager.destroy()` on Linux is independently documented as
+flaky on modern Flutter:
+https://github.com/leanflutter/window_manager/issues/478. **Fixed** by not
+routing the exit through GTK at all: once the player is confirmed stopped,
+`_DesktopCloseGuard.onWindowClose` calls `exit(0)` directly instead of
+`windowManager.destroy()`.
+
+**Consequence:** cosmetic in practice — it happens after the last frame, so
+there is no user-visible failure and nothing to lose (settings and the library
+cache are written as they change, not at exit). It does mean a non-zero exit
+code, a core dump per close, and real crashes hiding in the noise.
+
+**The fix as it stands** — `_DesktopCloseGuard` in `lib/main.dart` holds the
+window open (`setPreventClose(true)`) until `AudioPlayerService.shutdown()` has
+awaited the native player's disposal (bounded by a 2 s timeout — a player that
+won't die must not leave the window unclosable), then calls `exit(0)`. The
+listener must still be registered *before* `setPreventClose(true)`, or a close
+landing in between leaves the window with no way to shut itself.
+
+**Don't reach for `windowManager.destroy()` again** on this codepath without
+re-reading signature 2 above — it's the thing that was removed, not an
+oversight.
+
+`FlutterEngineRemoveView ... The implicit view cannot be removed` on the way out
+(when the old `destroy()` path was still in use) was unrelated embedder noise,
+not a failure — worth knowing if it shows up again elsewhere.
+
+**Verification note:** confirmed close-with-no-track-played is crash-free after
+this fix (`coredumpctl list` clean, exit code 0). Close-*while-playing* — the
+case both crash signatures actually require — has not been re-verified after
+the signature-2 fix; there was no way to drive playback through the GUI from
+the environment that made this fix (no pointer/click automation available).
+Play a track, close the window, and check `coredumpctl list` before considering
+this fully closed.
+
 ### Linux build fails: `identifier '_json' preceded by whitespace ... deprecated-literal-operator`
 
 **Symptom:** `flutter build linux` fails to compile with errors like

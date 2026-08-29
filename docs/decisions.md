@@ -575,3 +575,42 @@ instead of tracking the window. Note the art's ceiling is deliberately tied to
 `_artRequestSize`: raising one without the other either upscales a smaller
 fetch or downloads pixels that are never drawn.
 
+---
+
+## 2026-08-29 — Desktop window close is intercepted to stop the player first
+
+**Decided.** On Windows and Linux the window no longer closes directly:
+`_DesktopCloseGuard` (in `main.dart`) sets `setPreventClose(true)`, and on close
+awaits `AudioPlayerService.shutdown()` before ending the process with `exit(0)`.
+`AudioPlayerService` is therefore constructed in `main()` and handed to `MyApp`
+by value, rather than being created inside its provider — Provider must not own
+something whose lifetime is now the process's. `shutdown()` is a new awaitable
+teardown; `dispose()` delegates to the same once-only `_teardown()`.
+
+**Why.** Closing the window tore down the engine and the Dart isolate while
+mpv's event thread was still holding FFI callbacks into Dart, so the next event
+landed in a dead isolate: SIGSEGV in release builds, SIGABRT in debug, on every
+close after something had played. Four core dumps with an identical signature.
+`dispose()` could not fix it twice over — it is synchronous, so it can't wait for
+mpv, and Provider never runs it on desktop anyway, because the process exits out
+from under the widget tree.
+
+The exit itself went through `windowManager.destroy()` first, which promptly
+surfaced a *second*, unrelated crash — a `g_list_remove_link` SEGV inside GTK's
+own main loop, with the mpv race genuinely fixed (dozens of mpv threads alive
+and idle in that dump). Traced to `destroy()` re-entering GTK's
+`delete-event`/close machinery and letting it tear the window down synchronously
+from inside that same dispatch — independently documented as flaky on Linux for
+modern Flutter (leanflutter/window_manager#478). Superseded within the same
+change: `onWindowClose` now calls `exit(0)` once the player is confirmed
+stopped, instead of asking `windowManager` for a clean GTK teardown it can't
+reliably deliver. See the Traps entry in `docs/operations.md` for both
+signatures.
+
+**What would reverse it.** media_kit fixing its shutdown race upstream, or
+window_manager fixing `destroy()` on Linux, would remove the *reason* for this,
+but not necessarily the mechanism — `exit()` after confirmed cleanup is a
+reasonable steady state either way. Note the guard is what makes the window
+closable at all now — deleting the listener while leaving `setPreventClose(true)`
+would strand the user in an unclosable window, which is why the install order
+and the 2 s shutdown timeout are both deliberate.

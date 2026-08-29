@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, exit;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -77,7 +77,8 @@ void main() async {
   // Initialize audio service for Android/iOS background playback and
   // lock screen controls. Skip on Windows — SMTC handles media controls there.
   MusicAudioHandler? audioHandler;
-  final bool isDesktop = !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+  final bool isDesktop =
+      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
   if (!isDesktop) {
     try {
       audioHandler = await AudioService.init(
@@ -107,22 +108,88 @@ void main() async {
   final NowPlayingPresence presence = (!kIsWeb && Platform.isWindows)
       ? WindowsPresence(resolver: resolver)
       : audioHandler != null
-          ? AndroidPresence(audioHandler)
-          : (!kIsWeb && Platform.isLinux)
-              ? LinuxPresence(resolver: resolver)
-              : const NoPresence();
+      ? AndroidPresence(audioHandler)
+      : (!kIsWeb && Platform.isLinux)
+      ? LinuxPresence(resolver: resolver)
+      : const NoPresence();
 
-  runApp(MyApp(presence: presence, resolver: resolver));
+  // Built here rather than inside the provider below so window close can get
+  // at it — see [_DesktopCloseGuard]. It already belongs with the other
+  // once-per-process services above.
+  final playerService = AudioPlayerService(
+    presence: presence,
+    resolver: resolver,
+  );
+
+  if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+    await _DesktopCloseGuard(playerService).install();
+  }
+
+  runApp(MyApp(presence: presence, resolver: resolver, player: playerService));
+}
+
+/// Stops the audio player before the process is allowed to go away.
+///
+/// Closing a desktop window otherwise tears down the Flutter engine and the
+/// Dart isolate immediately, while mpv's event thread is still running and
+/// still holding FFI callbacks into Dart — the next event it delivers lands in
+/// a dead isolate and the process dumps core. The window is *cosmetically*
+/// gone by then, which is why this looks like "it crashes on exit" rather than
+/// a visible failure. See the shutdown-crash trap in `docs/operations.md`.
+///
+/// Nothing else can do this: [AudioPlayerService.dispose] is Provider's, and
+/// Provider is never torn down on desktop close — the process just exits under
+/// the widget tree.
+///
+/// The actual exit is a hard [exit], not `windowManager.destroy()`. On Linux
+/// `destroy()` re-enters GTK's own `delete-event`/close machinery and lets it
+/// tear the window down synchronously from inside that same dispatch — which
+/// crashes on its own (a `g_list_remove_link` SEGV deep in
+/// `libflutter_linux_gtk`, hit while testing this fix) and is independently
+/// documented as flaky on modern Flutter
+/// (https://github.com/leanflutter/window_manager/issues/478). Once the player
+/// is confirmed stopped there is nothing left worth a clean GTK teardown for —
+/// settings and the library cache are written as they change, not at exit — so
+/// this skips that path rather than trusting it.
+class _DesktopCloseGuard with WindowListener {
+  final AudioPlayerService player;
+
+  _DesktopCloseGuard(this.player);
+
+  /// Order matters: the listener has to be registered *before* close is
+  /// prevented, or a close landing in between would leave the window with no
+  /// way to shut itself.
+  Future<void> install() async {
+    windowManager.addListener(this);
+    await windowManager.setPreventClose(true);
+  }
+
+  @override
+  void onWindowClose() async {
+    // Bounded: a player that won't die must not leave the window unclosable.
+    // Timing out exits anyway rather than hanging forever.
+    await player.shutdown().timeout(
+      const Duration(seconds: 2),
+      onTimeout: () => debugPrint('Player shutdown timed out; exiting anyway'),
+    );
+    exit(0);
+  }
 }
 
 class MyApp extends StatelessWidget {
   final NowPlayingPresence presence;
   final StreamUrlResolver resolver;
 
+  /// The player, when the caller owns it — desktop does, so that window close
+  /// can shut it down (see [_DesktopCloseGuard]). Null means "make your own",
+  /// which is what mobile and the widget tests do.
+  final AudioPlayerService? player;
+
   const MyApp({
     super.key,
     this.presence = const NoPresence(),
     this.resolver = const NoResolver(),
+    this.player,
   });
 
   @override
@@ -146,10 +213,16 @@ class MyApp extends StatelessWidget {
           },
         ),
 
-        // Audio Player Service
-        ChangeNotifierProvider<AudioPlayerService>(
-          create: (_) => AudioPlayerService(presence: presence, resolver: resolver),
-        ),
+        // Audio Player Service. A caller-supplied player is provided by
+        // value: its lifetime is main()'s, not this tree's, so Provider must
+        // not dispose it out from under the close guard.
+        if (player case final player?)
+          ChangeNotifierProvider<AudioPlayerService>.value(value: player)
+        else
+          ChangeNotifierProvider<AudioPlayerService>(
+            create: (_) =>
+                AudioPlayerService(presence: presence, resolver: resolver),
+          ),
 
         // Library Scanner - depends on AuthService for the API connection.
         // Provided at the top level so it's accessible to all routes
@@ -234,11 +307,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       // Wrapped, like the login screen below, because both render before the
       // desktop shell exists and the native window frame is already hidden.
       return const DesktopWindowFrame(
-        child: Scaffold(
-          body: Center(
-            child: CircularProgressIndicator(),
-          ),
-        ),
+        child: Scaffold(body: Center(child: CircularProgressIndicator())),
       );
     }
 

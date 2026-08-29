@@ -99,9 +99,11 @@ class AudioPlayerService with ChangeNotifier {
 
   bool get _isAndroid => !kIsWeb && Platform.isAndroid;
 
-  AudioPlayerService({NowPlayingPresence? presence, StreamUrlResolver? resolver})
-    : _presence = presence ?? const NoPresence(),
-      _resolver = resolver ?? const NoResolver() {
+  AudioPlayerService({
+    NowPlayingPresence? presence,
+    StreamUrlResolver? resolver,
+  }) : _presence = presence ?? const NoPresence(),
+       _resolver = resolver ?? const NoResolver() {
     // Fire-and-forget: the modes are cosmetic until something is actually
     // playing, and this service is constructed before login, so there is
     // nothing to block on.
@@ -330,7 +332,9 @@ class AudioPlayerService with ChangeNotifier {
       // retrying here would clobber the current track's source with this
       // stale one.
       if (token != _loadToken) return;
-      debugPrint('AudioPlayerService: load stalled, retrying trackId=${track.id}');
+      debugPrint(
+        'AudioPlayerService: load stalled, retrying trackId=${track.id}',
+      );
       await _player!.setAudioSource(_buildSource(track)).timeout(loadTimeout);
     }
   }
@@ -384,7 +388,11 @@ class AudioPlayerService with ChangeNotifier {
   /// rapid successive calls. Pass [resumeFrom] to seek there once loaded —
   /// [_handleStreamError] uses this to resume a dropped stream where it left
   /// off; a fresh track selection never passes one.
-  Future<void> _loadAndPlay(Track track, int token, {Duration? resumeFrom}) async {
+  Future<void> _loadAndPlay(
+    Track track,
+    int token, {
+    Duration? resumeFrom,
+  }) async {
     try {
       _logStreamParams(track);
       await _setSourceWithRetry(track, token);
@@ -655,15 +663,40 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Tear everything down and *wait* for the native player to actually stop.
+  ///
+  /// [dispose] cannot do this: it is `ChangeNotifier`'s, and it is synchronous,
+  /// so it can only fire-and-forget the player's disposal. On desktop the
+  /// native player (mpv, via media_kit) runs its own thread holding FFI
+  /// callbacks into Dart — if the process exits while that thread is alive, the
+  /// next event it delivers calls into a dead isolate and the app dumps core on
+  /// close. See the shutdown-crash trap in `docs/operations.md`.
+  ///
+  /// Idempotent, and safe to call before [dispose] — which is exactly what
+  /// happens on desktop: this runs on window close, Provider's [dispose] never
+  /// runs at all.
+  Future<void> shutdown() => _teardown() ?? Future.value();
+
   @override
   void dispose() {
+    _teardown();
+    super.dispose();
+  }
+
+  /// Releases everything held here exactly once. Returns the native player's
+  /// disposal future so [shutdown] can await it, or null if there is nothing
+  /// left to release.
+  Future<void>? _teardown() {
+    if (_disposed) return null;
     _disposed = true;
     _loadDebounce?.cancel();
     _playerStateSubscription?.cancel();
     _playingSubscription?.cancel();
     _playbackEventSubscription?.cancel();
-    _player?.dispose();
     _presence.dispose();
-    super.dispose();
+    // Cleared before the await so nothing can reach a half-disposed player.
+    final player = _player;
+    _player = null;
+    return player?.dispose();
   }
 }
