@@ -1,4 +1,7 @@
-import 'package:flutter/material.dart';
+// `RepeatMode` collides with Flutter's own (unrelated) animation-builder
+// symbol added in 3.47 — hide it so this app's enum resolves. See
+// docs/operations.md.
+import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:provider/provider.dart';
 
 import '../../models/track.dart';

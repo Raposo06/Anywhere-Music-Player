@@ -1,7 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/material.dart';
+// `RepeatMode` collides with Flutter's own (unrelated) animation-builder
+// symbol added in 3.47 — hide it so this app's enum resolves. See
+// docs/operations.md.
+import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:provider/provider.dart';
 

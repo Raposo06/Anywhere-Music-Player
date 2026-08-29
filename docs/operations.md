@@ -268,11 +268,16 @@ this app's `RepeatMode`, it needs the same `hide`.
 'RepeatMode' - undefined_hidden_name`. That is the *same* trap seen from the
 other side: the toolchain predates Flutter's `RepeatMode`, so there is nothing
 to hide. It is a warning, not an error, and the `hide` must stay — removing it
-to silence the warning re-breaks the build on a newer SDK. As of 2026-08-28 this
-tree builds on Flutter 3.38.9, which is old enough to emit it for
-`player_screen.dart` and `tv_player_screen.dart`. **New files should not add a
-`hide` they don't need** — add it only when the analyzer actually reports the
-ambiguity.
+to silence the warning re-breaks the build on a newer SDK. **New files should not
+add a `hide` they don't need** — add it only when the analyzer actually reports
+the ambiguity.
+
+As of 2026-08-28 this tree builds on Flutter 3.47.1, which is new enough that the
+`hide` is *required* (a hard error otherwise, per the symptom above), not merely
+tolerated. The desktop redesign's `desktop_player_screen.dart` and
+`desktop_mini_player.dart` were added without it and broke `flutter build linux`;
+both now carry the `hide`. On an older SDK (≤ 3.38.x) the same files instead emit
+the harmless `undefined_hidden_name` warning.
 
 ## Server dependency
 
