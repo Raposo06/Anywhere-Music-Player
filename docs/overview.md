@@ -108,9 +108,9 @@ no backend of its own.
   app; a "now playing" announcement drives its live panel
 - Desktop keyboard shortcuts: space, arrow-key seek/volume, Ctrl+arrow skip,
   Alt+← (or Escape) to go back a folder / leave Now Playing
-- Playlists (desktop + phone): create, rename, delete, and add tracks to
-  server-side playlists — shared with Navidrome's web UI. Removing a track is
-  not implemented yet, see [decisions](decisions.md)
+- Playlists (desktop + phone): create, rename, delete, add and remove tracks on
+  server-side playlists — shared with Navidrome's web UI. Reordering is not
+  supported, see [decisions](decisions.md)
 - Favourites: star songs from any track row, the mini player or Now Playing,
   with a dedicated list on both desktop (sidebar) and phone (tab, pull to
   refresh). Server-side, so it stays in sync with Navidrome's web UI
@@ -171,7 +171,7 @@ library + stream + cover caching, drop recovery, Android TV UI, Windows SMTC and
 wakelock, Windows installer, Linux MPRIS media keys, Arch packaging (PKGBUILD),
 the desktop redesign (theme + sidebar shell + custom window chrome), scrobbling,
 desktop keyboard shortcuts, favourites (desktop + phone), and playlists
-(desktop + phone, add-only).
+(desktop + phone).
 
 **Test suite:** 35 test files under `test/` (~5,500 lines including support
 fakes) covering the models, services, the screens and the shared widgets.
@@ -195,9 +195,8 @@ cache on Android), so a green suite says nothing about either backend.
   otherwise covers the phone widgets and the services beneath both.
 - Favourites and playlists are not on Android TV — desktop and phone have both,
   but the TV's D-pad screens have neither.
-- Removing a track from a playlist is not implemented; two Subsonic behaviours
-  have to be confirmed against a real server first — see
-  [decisions](decisions.md).
+- Playlists cannot be reordered — Subsonic has no reorder parameter, so it
+  means rewriting the whole playlist plus a drag surface on both layouts.
 - No Ctrl+F to focus search on desktop — see [decisions](decisions.md) for why
   it needs a focus registry rather than a one-liner.
 - Library cache is a single file per install, wiped on logout — no per-account

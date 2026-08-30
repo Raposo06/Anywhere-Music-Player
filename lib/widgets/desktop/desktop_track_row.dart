@@ -23,11 +23,17 @@ class DesktopTrackRow extends StatelessWidget {
   /// 1-based number shown in the left column. Null hides the column.
   final int? number;
 
+  /// When set, the context menu offers "Remove from playlist" — only the
+  /// playlist detail screen passes this, since it is the one place where
+  /// removing a track means anything.
+  final VoidCallback? onRemoveFromPlaylist;
+
   const DesktopTrackRow({
     super.key,
     required this.track,
     required this.onTap,
     this.number,
+    this.onRemoveFromPlaylist,
   });
 
   @override
@@ -39,6 +45,7 @@ class DesktopTrackRow extends StatelessWidget {
 
         return _QueueContextMenu(
           track: track,
+          onRemoveFromPlaylist: onRemoveFromPlaylist,
           child: HoverRow(
             onTap: onTap,
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
@@ -109,8 +116,13 @@ class DesktopTrackRow extends StatelessWidget {
 class _QueueContextMenu extends StatelessWidget {
   final Track track;
   final Widget child;
+  final VoidCallback? onRemoveFromPlaylist;
 
-  const _QueueContextMenu({required this.track, required this.child});
+  const _QueueContextMenu({
+    required this.track,
+    required this.child,
+    this.onRemoveFromPlaylist,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -135,8 +147,8 @@ class _QueueContextMenu extends StatelessWidget {
         position & Size.zero,
         Offset.zero & overlay.size,
       ),
-      items: const [
-        PopupMenuItem(
+      items: [
+        const PopupMenuItem(
           value: 'queue',
           child: Row(
             children: [
@@ -146,7 +158,7 @@ class _QueueContextMenu extends StatelessWidget {
             ],
           ),
         ),
-        PopupMenuItem(
+        const PopupMenuItem(
           value: 'playlist',
           child: Row(
             children: [
@@ -156,9 +168,24 @@ class _QueueContextMenu extends StatelessWidget {
             ],
           ),
         ),
+        if (onRemoveFromPlaylist != null)
+          const PopupMenuItem(
+            value: 'remove',
+            child: Row(
+              children: [
+                Icon(Icons.playlist_remove, size: 18),
+                SizedBox(width: 10),
+                Text('Remove from playlist'),
+              ],
+            ),
+          ),
       ],
     );
 
+    if (selected == 'remove') {
+      onRemoveFromPlaylist?.call();
+      return;
+    }
     if (selected == 'playlist') {
       if (context.mounted) await AddToPlaylist.show(context, [track]);
       return;

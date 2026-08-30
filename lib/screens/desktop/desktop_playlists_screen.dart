@@ -301,6 +301,22 @@ class _DesktopPlaylistScreenState extends State<DesktopPlaylistScreen> {
     DesktopPlayerLauncher.openPlayer(context);
   }
 
+  /// Whether this playlist accepts edits. Playlists owned by someone else are
+  /// visible but not modifiable — see [Playlist.isEditableBy].
+  bool get _editable {
+    final playlist = context.read<PlaylistsService>().byId(widget.playlistId);
+    final username = context.read<AuthService>().currentUser?.username;
+    return playlist?.isEditableBy(username) ?? false;
+  }
+
+  Future<void> _remove(Track track, int index) async {
+    await context.read<PlaylistsService>().removeTrack(
+      widget.playlistId,
+      index,
+      trackId: track.id,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final service = context.watch<PlaylistsService>();
@@ -385,6 +401,7 @@ class _DesktopPlaylistScreenState extends State<DesktopPlaylistScreen> {
         track: tracks[i],
         number: i + 1,
         onTap: () => _playTrack(tracks[i], tracks),
+        onRemoveFromPlaylist: _editable ? () => _remove(tracks[i], i) : null,
       ),
     );
   }

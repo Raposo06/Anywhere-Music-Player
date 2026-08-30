@@ -146,6 +146,51 @@ class PlaylistsService with ChangeNotifier {
     }
   }
 
+  /// Remove [trackId] from [playlistId], where the UI showed it at [index].
+  ///
+  /// Subsonic removes by *position*, so this re-reads the playlist first and
+  /// then locates the track by id: [index] is only a hint, used to pick the
+  /// right one when a playlist contains the same track twice. If the server's
+  /// order changed since the screen was drawn, the id is what keeps this from
+  /// deleting the wrong track.
+  Future<bool> removeTrack(
+    String playlistId,
+    int index, {
+    required String trackId,
+  }) async {
+    final api = _api;
+    if (api == null) return false;
+
+    try {
+      // Fresh order, immediately before computing the position to delete.
+      await loadTracks(playlistId, force: true);
+      final tracks = _tracks[playlistId];
+      if (tracks == null) return false;
+
+      // Prefer the hinted index when it still holds the expected track (which
+      // is what disambiguates duplicates); otherwise find it afresh.
+      final position =
+          index >= 0 && index < tracks.length && tracks[index].id == trackId
+          ? index
+          : tracks.indexWhere((t) => t.id == trackId);
+      if (position < 0) {
+        // Someone else already removed it — the desired state, so re-reading
+        // is enough and this is not an error worth showing.
+        return true;
+      }
+
+      await api.removeFromPlaylist(playlistId, [position]);
+      _error = null;
+      await loadTracks(playlistId, force: true);
+      return true;
+    } catch (e) {
+      _error = 'Could not remove from playlist: $e';
+      debugPrint('PlaylistsService: removeTrack failed: $e');
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> rename(String playlistId, String name) async {
     final api = _api;
     if (api == null) return false;

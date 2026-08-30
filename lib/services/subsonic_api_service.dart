@@ -256,6 +256,24 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
     }, 'Could not add to playlist');
   }
 
+  /// Remove the tracks at [indexes] from a playlist.
+  ///
+  /// **Zero-based**, confirmed against Navidrome's implementation
+  /// (`core/playlists/playlists.go` converts with `idx + 1` internally). The
+  /// Subsonic spec does not state the base, so this is a behavioural
+  /// dependency, not a documented one — see docs/decisions.md.
+  ///
+  /// Positions refer to the playlist's *current server-side* order, so a
+  /// caller must re-read immediately beforehand rather than trusting a cached
+  /// list. [PlaylistsService.removeTrack] is the safe way in.
+  Future<void> removeFromPlaylist(String playlistId, List<int> indexes) async {
+    if (indexes.isEmpty) return;
+    await _request('updatePlaylist', {
+      'playlistId': playlistId,
+      'songIndexToRemove': [for (final i in indexes) i.toString()],
+    }, 'Could not remove from playlist');
+  }
+
   /// Rename a playlist.
   Future<void> renamePlaylist(String playlistId, String name) async {
     await _request('updatePlaylist', {

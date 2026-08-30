@@ -896,3 +896,38 @@ full-rewrite path, which would also settle the `createPlaylist` question. Note
 that `_buildUri` was widened to accept `List<String>` values so repeated
 parameters (`songId=a&songId=b`) work — that is how Subsonic takes lists, and
 there is a test asserting the encoding.
+
+---
+
+## 2026-08-30 — Playlist track removal, settled from Navidrome's source
+
+**Supersedes the "add-only" part of the playlists entry above.** Removing a
+track is now implemented; the two behaviours that gated it were answered by
+reading Navidrome's implementation rather than probing a live server:
+
+| Question | Answer | Where |
+|---|---|---|
+| Is `songIndexToRemove` 0- or 1-based? | **Zero-based** | `core/playlists/playlists.go` — `positions[i] = strconv.Itoa(idx + 1)` |
+| Does `createPlaylist` with a `playlistId` replace or append? | **Replaces** | same file — `pls.Tracks = nil; pls.AddMediaFilesByID(ids)` |
+
+Both are *behavioural* dependencies on Navidrome, not documented guarantees:
+the Subsonic spec states neither. A different Subsonic server could differ, and
+this is the first place to look if removal ever deletes the wrong track.
+
+**How removal stays safe.** `PlaylistsService.removeTrack` takes the index the
+UI drew *and* the track id. It re-reads the playlist immediately beforehand,
+then uses the index only when it still holds the expected track — which is what
+disambiguates a playlist containing the same song twice — and otherwise
+locates the track afresh by id. A track already gone counts as success: the
+desired state holds, and reporting an error for it would be noise.
+
+**What would reverse it.** Nothing likely. Note that reordering is now
+*unblocked* by the same finding — `createPlaylist` replacing contents is
+exactly the primitive a reorder needs — but it is still not built, because it
+also needs a drag-and-drop surface on both layouts.
+
+**On the discarded probe.** A script was written to determine the two answers
+empirically against a live server. Reading the source was faster, needed no
+credentials, and gave a citable answer, so the script was not kept. Recorded
+here because the *questions* remain the right ones to ask of any future
+Subsonic-behaviour uncertainty — check the server's source first.

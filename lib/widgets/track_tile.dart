@@ -25,13 +25,52 @@ class TrackTile extends StatelessWidget {
   /// two already had, closing the drift rather than parameterizing around it.
   final bool swipeToQueue;
 
+  /// When set, long-press offers "Remove from playlist" alongside "Add to
+  /// playlist" — only the playlist detail screen passes this.
+  final VoidCallback? onRemoveFromPlaylist;
+
   const TrackTile({
     super.key,
     required this.track,
     required this.onTap,
     this.leadingIndex,
     this.swipeToQueue = true,
+    this.onRemoveFromPlaylist,
   });
+
+  /// Long-press action. With nothing to remove from, it goes straight to the
+  /// playlist picker; inside a playlist it has to ask which of the two the
+  /// user meant.
+  Future<void> _onLongPress(BuildContext context) async {
+    if (onRemoveFromPlaylist == null) {
+      await AddToPlaylist.show(context, [track]);
+      return;
+    }
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.playlist_add),
+              title: const Text('Add to playlist…'),
+              onTap: () => Navigator.of(sheetContext).pop('add'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.playlist_remove),
+              title: const Text('Remove from this playlist'),
+              onTap: () => Navigator.of(sheetContext).pop('remove'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    if (choice == 'add') await AddToPlaylist.show(context, [track]);
+    if (choice == 'remove') onRemoveFromPlaylist!.call();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -89,7 +128,7 @@ class TrackTile extends StatelessWidget {
           onTap: onTap,
           // Swipe-right is already "add to queue", so long-press is where
           // "add to playlist" goes — the only gesture left free on a tile.
-          onLongPress: () => AddToPlaylist.show(context, [track]),
+          onLongPress: () => _onLongPress(context),
         );
 
         if (!swipeToQueue) return tile;

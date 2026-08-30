@@ -188,6 +188,21 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     ).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
   }
 
+  /// Whether this playlist accepts edits — see [Playlist.isEditableBy].
+  bool get _editable {
+    final playlist = context.read<PlaylistsService>().byId(widget.playlistId);
+    final username = context.read<AuthService>().currentUser?.username;
+    return playlist?.isEditableBy(username) ?? false;
+  }
+
+  Future<void> _remove(Track track, int index) async {
+    await context.read<PlaylistsService>().removeTrack(
+      widget.playlistId,
+      index,
+      trackId: track.id,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final service = context.watch<PlaylistsService>();
@@ -240,6 +255,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       itemBuilder: (context, i) => TrackTile(
         track: tracks[i],
         leadingIndex: i,
+        onRemoveFromPlaylist: _editable ? () => _remove(tracks[i], i) : null,
         onTap: () => _playTrack(tracks[i], tracks),
       ),
     );

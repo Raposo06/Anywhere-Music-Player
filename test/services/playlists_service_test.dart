@@ -322,6 +322,127 @@ void main() {
     });
   });
 
+  group('removeTrack', () {
+    /// A server holding [songs], which removes by *zero-based* position —
+    /// Navidrome's actual behaviour (core/playlists/playlists.go converts with
+    /// `idx + 1` internally). Modelling it faithfully is what lets these tests
+    /// prove the right track goes.
+    ({
+      PlaylistsService playlists,
+      List<Uri> requests,
+      List<String> Function() ids,
+    })
+    server(List<String> songs) {
+      final state = [...songs];
+      final requests = <Uri>[];
+      final client = MockClient((request) async {
+        requests.add(request.url);
+        final endpoint = request.url.path.split('/').last;
+        if (endpoint == 'updatePlaylist') {
+          final remove = request.url.queryParametersAll['songIndexToRemove'];
+          if (remove != null) {
+            for (final i
+                in remove.map(int.parse).toList()..sort((a, b) => b - a)) {
+              state.removeAt(i);
+            }
+          }
+          return _ok({});
+        }
+        if (endpoint == 'getPlaylist') {
+          return _ok({
+            'playlist': {
+              ..._playlistJson('1', 'Roadtrip', songCount: state.length),
+              'entry': [for (final id in state) _songJson(id, 'Song $id')],
+            },
+          });
+        }
+        return _ok({});
+      });
+      return (
+        playlists: PlaylistsService(
+          SubsonicApiService(
+            serverUrl: 'https://navidrome.example.com',
+            username: 'alice',
+            password: 'p',
+            httpClient: client,
+          ),
+        ),
+        requests: requests,
+        ids: () => List.of(state),
+      );
+    }
+
+    test('removes the track at the given position', () async {
+      final (:playlists, :requests, :ids) = server(['a', 'b', 'c']);
+      await playlists.loadTracks('1');
+
+      final ok = await playlists.removeTrack('1', 1, trackId: 'b');
+
+      expect(ok, isTrue);
+      expect(ids(), ['a', 'c']);
+      final update = requests.firstWhere(
+        (u) => u.path.endsWith('updatePlaylist'),
+      );
+      // Zero-based, per Navidrome's implementation.
+      expect(update.queryParametersAll['songIndexToRemove'], ['1']);
+      expect(playlists.tracksOf('1')!.map((t) => t.id), ['a', 'c']);
+    });
+
+    test('a stale index still removes the right track', () async {
+      // The screen was drawn when the track sat at index 2, but the playlist
+      // has since changed on the server. Removing by the stale position would
+      // delete someone else's track; the id is what prevents that.
+      final (:playlists, requests: _, :ids) = server(['x', 'a', 'b', 'c']);
+      await playlists.loadTracks('1');
+
+      final ok = await playlists.removeTrack('1', 2, trackId: 'c');
+
+      expect(ok, isTrue);
+      expect(ids(), ['x', 'a', 'b'], reason: 'c went, not b');
+    });
+
+    test('the hinted index picks the right one of a duplicate pair', () async {
+      final (:playlists, requests: _, :ids) = server(['a', 'b', 'a']);
+      await playlists.loadTracks('1');
+
+      // Remove the *second* copy of 'a'.
+      final ok = await playlists.removeTrack('1', 2, trackId: 'a');
+
+      expect(ok, isTrue);
+      expect(ids(), ['a', 'b']);
+    });
+
+    test('a track already gone is a success, not an error', () async {
+      final (:playlists, requests: _, :ids) = server(['a', 'b']);
+      await playlists.loadTracks('1');
+
+      final ok = await playlists.removeTrack('1', 0, trackId: 'zzz');
+
+      expect(ok, isTrue, reason: 'the desired state already holds');
+      expect(playlists.error, isNull);
+      expect(ids(), ['a', 'b']);
+    });
+
+    test('a rejected removal reports it', () async {
+      final (:playlists, requests: _) = build(
+        (uri) => uri.path.endsWith('getPlaylist')
+            ? _ok({
+                'playlist': {
+                  ..._playlistJson('1', 'Roadtrip'),
+                  'entry': [_songJson('a', 'First')],
+                },
+              })
+            : _failed('read-only'),
+      );
+      await playlists.loadTracks('1');
+
+      final ok = await playlists.removeTrack('1', 0, trackId: 'a');
+
+      expect(ok, isFalse);
+      expect(playlists.error, contains('Could not remove from playlist'));
+    });
+  });
+
   group('rename and delete', () {
     test('rename sends the new name and re-lists', () async {
       final (:playlists, :requests) = build(
