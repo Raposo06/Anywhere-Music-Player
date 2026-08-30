@@ -158,7 +158,7 @@ class _Controls extends StatelessWidget {
         TransportButton(
           icon: Icons.skip_previous,
           size: 18,
-          tooltip: 'Previous',
+          tooltip: 'Previous (Ctrl+←)',
           onPressed: playerService.playPrevious,
         ),
         StreamBuilder<bool>(
@@ -169,7 +169,7 @@ class _Controls extends StatelessWidget {
             return AccentCircleButton(
               size: 38,
               icon: isPlaying ? Icons.pause : Icons.play_arrow,
-              tooltip: isPlaying ? 'Pause' : 'Play',
+              tooltip: isPlaying ? 'Pause (Space)' : 'Play (Space)',
               onPressed: playerService.togglePlayPause,
             );
           },
@@ -177,7 +177,7 @@ class _Controls extends StatelessWidget {
         TransportButton(
           icon: Icons.skip_next,
           size: 18,
-          tooltip: 'Next',
+          tooltip: 'Next (Ctrl+→)',
           onPressed: playerService.playNext,
         ),
         const _RepeatToggle(),

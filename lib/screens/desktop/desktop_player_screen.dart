@@ -596,7 +596,7 @@ class _Transport extends StatelessWidget {
             TransportButton(
               icon: Icons.skip_previous,
               size: 26,
-              tooltip: 'Previous',
+              tooltip: 'Previous (Ctrl+←)',
               onPressed: canSkip ? playerService.playPrevious : null,
             ),
             const SizedBox(width: 22),
@@ -609,7 +609,7 @@ class _Transport extends StatelessWidget {
                   size: 60,
                   glow: true,
                   icon: isPlaying ? Icons.pause : Icons.play_arrow,
-                  tooltip: isPlaying ? 'Pause' : 'Play',
+                  tooltip: isPlaying ? 'Pause (Space)' : 'Play (Space)',
                   onPressed: playerService.togglePlayPause,
                 );
               },
@@ -618,7 +618,7 @@ class _Transport extends StatelessWidget {
             TransportButton(
               icon: Icons.skip_next,
               size: 26,
-              tooltip: 'Next',
+              tooltip: 'Next (Ctrl+→)',
               onPressed: canSkip ? playerService.playNext : null,
             ),
           ],

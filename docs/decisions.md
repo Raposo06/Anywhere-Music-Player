@@ -694,3 +694,29 @@ nested navigator whose folder screens have their own search fields — so "focus
 the search box" has no single correct target without a focus registry keyed on
 the active destination. Deferred rather than half-built.
 
+---
+
+## 2026-08-30 — Keyboard shortcuts are advertised in tooltips, not a shortcuts overlay
+
+**Decided.** The desktop transport buttons' tooltips carry their key: "Play
+(Space)", "Previous (Ctrl+←)", "Next (Ctrl+→)", in both the mini player and Now
+Playing. There is no `?` shortcuts overlay and no settings page listing them.
+
+**Why.** The shortcuts shipped with zero discoverability — nothing on screen
+said they existed, so in practice nobody would find them. Tooltips put the hint
+exactly where the cursor already is, on the control the user was about to click
+anyway, and cost one string each. An overlay is a new surface that has to be
+discovered by a binding that is itself undiscovered, so it mostly serves people
+who already suspect shortcuts exist.
+
+Only the three keys with a matching button are advertised. Seek (←/→) and volume
+(↑/↓) have no button to hang a tooltip on — they map to the sliders, which have
+no tooltip — so they remain undocumented in-app.
+
+The arrow glyphs are safe to use here: `WorkSans-Regular.ttf`'s cmap was checked
+directly and covers U+2190–U+2193, so they render from the bundled font rather
+than falling back (or showing tofu).
+
+**What would reverse it.** Enough shortcuts to make per-button hints impractical,
+or wanting the seek/volume keys discoverable too — either would justify the
+overlay, with the tooltips kept as the first-contact hint.
