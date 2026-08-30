@@ -18,7 +18,8 @@ const _volumeStep = 0.05;
 /// | ← / → | Seek back / forward 10s |
 /// | Ctrl + ← / → | Previous / next track |
 /// | ↑ / ↓ | Volume up / down |
-/// | Escape | Close Now Playing (only where [onEscape] is given) |
+/// | Alt + ← | Go back — up a folder, or out of Now Playing |
+/// | Escape | Same as Alt + ← |
 ///
 /// Wrapped around *both* desktop roots — [DesktopShell] and
 /// [DesktopPlayerScreen] — because Now Playing is pushed on the root
@@ -32,15 +33,17 @@ const _volumeStep = 0.05;
 class DesktopPlaybackShortcuts extends StatelessWidget {
   final Widget child;
 
-  /// What Escape does here, if anything. Null on the shell — there is nothing
-  /// to back out of — and "close the player" on Now Playing.
-  final VoidCallback? onEscape;
+  /// Where "go back" leads, if anywhere: up one folder in the shell, out of
+  /// Now Playing on the player screen. Bound to both Alt + ← and Escape —
+  /// Alt + ← is the desktop convention, Escape is what the player screen
+  /// already taught. Null means neither key does anything here.
+  ///
+  /// Alt + ← does not collide with the Ctrl + ← above: [SingleActivator]
+  /// matches modifiers exactly, so each fires only for its own combination
+  /// (which is also why plain ← still seeks).
+  final VoidCallback? onBack;
 
-  const DesktopPlaybackShortcuts({
-    super.key,
-    required this.child,
-    this.onEscape,
-  });
+  const DesktopPlaybackShortcuts({super.key, required this.child, this.onBack});
 
   /// True while a text field owns the keyboard.
   ///
@@ -103,10 +106,14 @@ class DesktopPlaybackShortcuts extends StatelessWidget {
             _play(context, (p) => _nudgeVolume(p, _volumeStep)),
         const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
             _play(context, (p) => _nudgeVolume(p, -_volumeStep)),
-        if (onEscape case final onEscape?)
-          const SingleActivator(LogicalKeyboardKey.escape): () {
-            if (!_isTyping) onEscape();
+        if (onBack case final onBack?) ...{
+          const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): () {
+            if (!_isTyping) onBack();
           },
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            if (!_isTyping) onBack();
+          },
+        },
       },
       // Key events reach a CallbackShortcuts only by bubbling up from the
       // focused node. The enclosing route's FocusScope sits *above* this

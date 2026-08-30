@@ -106,7 +106,7 @@ no backend of its own.
   four minutes), so Navidrome's play counts and "recently played" reflect this
   app; a "now playing" announcement drives its live panel
 - Desktop keyboard shortcuts: space, arrow-key seek/volume, Ctrl+arrow skip,
-  Escape to close Now Playing
+  Alt+← (or Escape) to go back a folder / leave Now Playing
 - Favourites: star songs from any track row, the mini player or Now Playing,
   with a dedicated list on both desktop (sidebar) and phone (tab, pull to
   refresh). Server-side, so it stays in sync with Navidrome's web UI

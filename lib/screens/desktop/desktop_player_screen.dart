@@ -178,9 +178,9 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
         _watchForErrors(context);
 
         return DesktopPlaybackShortcuts(
-          // Escape backs out of Now Playing — the same plain pop the chrome's
-          // back chevron does, so it can't strand a FolderRequest.
-          onEscape: () => Navigator.of(context).pop(),
+          // Alt+← / Escape back out of Now Playing — the same plain pop the
+          // chrome's back chevron does, so it can't strand a FolderRequest.
+          onBack: () => Navigator.of(context).pop(),
           child: Scaffold(
             backgroundColor: AppColors.win,
             body: Column(

@@ -72,14 +72,14 @@ void main() {
   Future<void> pumpShortcuts(
     WidgetTester tester, {
     Widget? child,
-    VoidCallback? onEscape,
+    VoidCallback? onBack,
   }) async {
     await tester.pumpWidget(
       ChangeNotifierProvider<AudioPlayerService>.value(
         value: service,
         child: MaterialApp(
           home: DesktopPlaybackShortcuts(
-            onEscape: onEscape,
+            onBack: onBack,
             child: child ?? const Scaffold(body: SizedBox.expand()),
           ),
         ),
@@ -215,22 +215,55 @@ void main() {
     disposeService();
   });
 
-  testWidgets('escape runs onEscape where one is given', (tester) async {
-    var escaped = 0;
-    await pumpShortcuts(tester, onEscape: () => escaped++);
+  testWidgets('escape goes back where a handler is given', (tester) async {
+    var back = 0;
+    await pumpShortcuts(tester, onBack: () => back++);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump();
 
-    expect(escaped, 1);
+    expect(back, 1);
     disposeService();
   });
 
-  testWidgets('escape is inert where no onEscape is given', (tester) async {
-    // The shell passes none — Escape must not throw there.
+  testWidgets('alt+left goes back too', (tester) async {
+    var back = 0;
+    await pumpShortcuts(tester, onBack: () => back++);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pump();
+
+    expect(back, 1);
+    disposeService();
+  });
+
+  testWidgets('alt+left goes back rather than seeking', (tester) async {
+    // SingleActivator matches modifiers exactly, so the plain-arrow seek
+    // binding must not also fire — that is what keeps the two apart.
+    var back = 0;
+    await pumpShortcuts(tester, onBack: () => back++);
+    await startTrack(tester);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await settle(tester);
+
+    expect(back, 1);
+    expect(fakePlatform.player.lastSeekPosition, isNull);
+    disposeService();
+  });
+
+  testWidgets('back keys are inert where no handler is given', (tester) async {
+    // A destination with nothing to go back through passes none.
     await pumpShortcuts(tester);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
     await tester.pump();
 
     expect(tester.takeException(), isNull);
@@ -252,11 +285,11 @@ void main() {
     /// reliably win, and the test would pass for the wrong reason.
     Future<void> pumpFocusedField(
       WidgetTester tester, {
-      VoidCallback? onEscape,
+      VoidCallback? onBack,
     }) async {
       await pumpShortcuts(
         tester,
-        onEscape: onEscape,
+        onBack: onBack,
         child: Scaffold(body: TextField(focusNode: fieldFocus)),
       );
       fieldFocus.requestFocus();
@@ -298,14 +331,17 @@ void main() {
       disposeService();
     });
 
-    testWidgets('escape does not close the player', (tester) async {
-      var escaped = 0;
-      await pumpFocusedField(tester, onEscape: () => escaped++);
+    testWidgets('the back keys do not fire', (tester) async {
+      var back = 0;
+      await pumpFocusedField(tester, onBack: () => back++);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
       await tester.pump();
 
-      expect(escaped, 0);
+      expect(back, 0);
       disposeService();
     });
   });

@@ -78,7 +78,7 @@ class WindowChrome extends StatelessWidget {
                       if (onBack case final back?)
                         _ChromeIconButton(
                           onPressed: back,
-                          tooltip: 'Back',
+                          tooltip: 'Back (Esc)',
                           size: const Size(32, AppMetrics.titlebarHeight),
                           child: const Icon(
                             Icons.chevron_left,

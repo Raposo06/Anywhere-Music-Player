@@ -103,6 +103,22 @@ class _DesktopShellState extends State<DesktopShell> {
     setState(() => _destination = destination);
   }
 
+  /// Go up one folder in the library trail.
+  ///
+  /// Only the Library destination has anything to go back through — All Tracks
+  /// and Favourites are flat — so this is a no-op elsewhere rather than doing
+  /// something surprising.
+  ///
+  /// [NavigatorState.canPop] is checked explicitly instead of using
+  /// `maybePop`: this navigator is nested, so popping its *first* route would
+  /// leave the shell with an empty navigator rather than being harmlessly
+  /// refused.
+  void _goBack() {
+    if (_destination != SidebarDestination.library) return;
+    final navigator = _libraryNavigator.currentState;
+    if (navigator != null && navigator.canPop()) navigator.pop();
+  }
+
   /// True while Now Playing is on screen, so a second request — a queue jump,
   /// a stray call from a list still mounted behind it — doesn't stack another
   /// copy of it on the root navigator.
@@ -144,6 +160,7 @@ class _DesktopShellState extends State<DesktopShell> {
     return DesktopPlayerLauncher(
       open: _openPlayer,
       child: DesktopPlaybackShortcuts(
+        onBack: _goBack,
         child: Scaffold(
           backgroundColor: AppColors.win,
           body: Column(

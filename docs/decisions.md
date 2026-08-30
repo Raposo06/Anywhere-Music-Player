@@ -799,3 +799,39 @@ here: an in-flight load could call `notifyListeners()` *after* `dispose()`
 despite `_teardown()` being so — `ChangeNotifier.dispose` asserts on a second
 call, which matters because the desktop close guard calls `shutdown()` and
 Provider may dispose afterwards.
+
+---
+
+## 2026-08-30 — Alt + ← and Escape go back on desktop
+
+**Decided.** `DesktopPlaybackShortcuts` gained an `onBack` handler (replacing
+the narrower `onEscape`), bound to **both Alt + ←** and **Escape**. The shell
+wires it to popping one level off the library navigator; Now Playing wires it
+to the same plain pop its back chevron does. The chevron's tooltip now names
+the key, matching what the transport buttons do.
+
+**Why.** Folder drill-down was the one place you go deep and the only way out
+was the mouse — breadcrumbs, or clicking the active sidebar item to jump to the
+root. Alt + ← is the desktop convention; Escape carries over the muscle memory
+Now Playing already taught.
+
+Two things this leans on, both deliberate:
+
+- **No collision with Ctrl + ← (previous track) or plain ← (seek).**
+  `SingleActivator` matches modifiers *exactly*, so each combination fires only
+  its own binding. There is a test asserting Alt + ← does not also seek.
+- **`canPop()` is checked before popping.** The library navigator is nested, so
+  popping its first route would leave the shell with an empty navigator rather
+  than being harmlessly refused. `maybePop` is not enough here.
+
+Back is a no-op on All Tracks and Favourites — they are flat, so there is
+nothing to go back through and doing something else would be surprising.
+
+**What would reverse it.** Wanting a full forward/back history across
+destinations rather than "up one folder", which would need a navigation stack
+the shell does not currently keep.
+
+**Not covered by a test:** the shell's `_goBack` itself — the key bindings are
+tested at the widget level, but there is no `DesktopShell` widget test to drive
+a real folder pop through, and drilling into a folder needs a pointer, which
+the environment this was written in cannot drive.
