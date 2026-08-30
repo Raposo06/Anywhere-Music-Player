@@ -12,7 +12,8 @@ import 'package:just_audio_platform_interface/just_audio_platform_interface.dart
 /// Trimmed down from the shape of just_audio's own test double
 /// (MockAudioPlayer in its package tests) to what AudioPlayerService
 /// actually calls, plus test hooks — [FakeAudioPlayerPlatform.failNextLoadWith],
-/// [FakeAudioPlayerPlatform.completeTrack], [FakeAudioPlayerPlatform.injectStreamError] —
+/// [FakeAudioPlayerPlatform.completeTrack], [FakeAudioPlayerPlatform.injectStreamError],
+/// [FakeAudioPlayerPlatform.reportPosition] —
 /// that let tests drive the scenarios AudioPlayerService is meant to handle
 /// (a load failure, natural end-of-track, a mid-stream drop).
 class FakeJustAudioPlatform extends JustAudioPlatform {
@@ -161,13 +162,24 @@ class FakeAudioPlayerPlatform extends AudioPlayerPlatform {
   /// what AudioPlayerService._handleStreamError reacts to.
   void injectStreamError(Object error) => _eventController.addError(error);
 
-  void _emit() {
+  /// Test hook: report [position] as where playback has reached.
+  ///
+  /// just_audio derives `positionStream` from the last event's
+  /// `updatePosition` plus elapsed wall time, so this is how a test crosses a
+  /// position threshold — the scrobble point, at half of [_defaultDuration] —
+  /// without waiting 90 real seconds for it.
+  void reportPosition(Duration position) {
+    _processingState = ProcessingStateMessage.ready;
+    _emit(position);
+  }
+
+  void _emit([Duration position = Duration.zero]) {
     _eventController.add(
       PlaybackEventMessage(
         processingState: _processingState,
         updateTime: DateTime.now(),
-        updatePosition: Duration.zero,
-        bufferedPosition: Duration.zero,
+        updatePosition: position,
+        bufferedPosition: position,
         duration: _defaultDuration,
         icyMetadata: null,
         currentIndex: 0,

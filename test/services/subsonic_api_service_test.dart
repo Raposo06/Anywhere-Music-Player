@@ -177,4 +177,76 @@ void main() {
       );
     });
   });
+
+  group('scrobble', () {
+    /// Captures the single request an API call makes, so a test can assert on
+    /// the query it built.
+    ({SubsonicApiService api, List<Uri> requests}) buildApi() {
+      final requests = <Uri>[];
+      final client = MockClient((request) async {
+        requests.add(request.url);
+        return _ok({});
+      });
+      return (
+        api: SubsonicApiService(
+          serverUrl: 'https://navidrome.example.com',
+          username: 'a',
+          password: 'p',
+          httpClient: client,
+        ),
+        requests: requests,
+      );
+    }
+
+    test('nowPlaying posts submission=false', () async {
+      final (:api, :requests) = buildApi();
+
+      await api.nowPlaying('song-1');
+
+      final uri = requests.single;
+      expect(uri.path, '/rest/scrobble');
+      expect(uri.queryParameters['id'], 'song-1');
+      expect(uri.queryParameters['submission'], 'false');
+      // An announcement carries no play time — it isn't a play.
+      expect(uri.queryParameters, isNot(contains('time')));
+    });
+
+    test('scrobble posts submission=true with the listen start time', () async {
+      final (:api, :requests) = buildApi();
+      final startedAt = DateTime.utc(2026, 8, 30, 12, 34, 56);
+
+      await api.scrobble('song-1', startedAt: startedAt);
+
+      final uri = requests.single;
+      expect(uri.path, '/rest/scrobble');
+      expect(uri.queryParameters['id'], 'song-1');
+      expect(uri.queryParameters['submission'], 'true');
+      expect(uri.queryParameters['time'],
+          startedAt.millisecondsSinceEpoch.toString());
+    });
+
+    test('scrobble omits time when no start is given', () async {
+      final (:api, :requests) = buildApi();
+
+      await api.scrobble('song-1');
+
+      expect(requests.single.queryParameters, isNot(contains('time')));
+    });
+
+    test('a server that rejects the scrobble throws, for the caller to swallow',
+        () async {
+      final client = MockClient(
+        (request) async => _subsonicError('Not implemented', code: 30),
+      );
+      final api = SubsonicApiService(
+        serverUrl: 'https://navidrome.example.com',
+        username: 'a',
+        password: 'p',
+        httpClient: client,
+      );
+
+      // AudioPlayerService is what swallows this — see its _report().
+      expect(() => api.scrobble('song-1'), throwsA(isA<SubsonicApiException>()));
+    });
+  });
 }

@@ -614,3 +614,45 @@ reasonable steady state either way. Note the guard is what makes the window
 closable at all now — deleting the listener while leaving `setPreventClose(true)`
 would strand the user in an unclosable window, which is why the install order
 and the 2 s shutdown timeout are both deliberate.
+
+---
+
+## 2026-08-30 — Scrobbling: position-based threshold, best-effort delivery
+
+**Decided.** The app now reports listening to the server over `/rest/scrobble`:
+a `submission=false` "now playing" announcement when a track starts, and a
+`submission=true` play once playback passes **half the track or four minutes,
+whichever comes first** (the Last.fm rule). The submission carries `time` — when
+the *listen* began, not when the threshold was crossed.
+
+The trigger is **playback position**, not accumulated listening time. Scrubbing
+to the end therefore counts as a play.
+
+Delivery is **best-effort**: `AudioPlayerService._report` swallows every failure
+to a debug line. A server that is slow, down, or doesn't implement the endpoint
+must never surface as a playback error.
+
+Wired as a seam (`PlaybackReporter`, with `NoPlaybackReporter` as the default
+and `RotatingPlaybackReporter` following the session), exactly mirroring
+`StreamUrlResolver` — `AudioPlayerService` gains no knowledge of the transport,
+and tests get a no-op by default.
+
+**Why.** Navidrome keeps play counts, "recently played" and "most played", and
+can bridge to Last.fm / ListenBrainz — all of which saw *nothing* from this app,
+because `/rest/scrobble` was never called. Every discovery feature that could be
+built on play history needs the history to exist first.
+
+Position-based is the simpler rule, it is what most Subsonic clients do, and
+over-counting a track you deliberately seeked through is the benign direction to
+err in. Accumulated-playtime would need delta accounting on the position stream
+to distinguish a seek from playback.
+
+A listen is identified by a counter bumped in `_selectAndPlay`, which is what
+makes the edges correct: repeat-one re-selects, so a looped track counts each
+time; mid-stream drop recovery re-enters `_loadAndPlay` *without* re-selecting,
+so a dropped-and-resumed track counts once. Both are covered by tests.
+
+**What would reverse it.** Scrub-to-end false positives becoming annoying in
+practice — then switch the trigger to accumulated playtime, keeping the same
+threshold and the same session identity. Nothing else about the design needs to
+change for that.

@@ -4,7 +4,7 @@
 > *meaningful* changes (architecture, stack, platform support, major features,
 > or implemented/remaining status) — not on every commit. Migrated from WikiJS
 > (`projects/anywhere-music-player`) on 2026-08-17 so the docs live next to the
-> code they describe. Last reviewed: 2026-08-28.
+> code they describe. Last reviewed: 2026-08-30.
 
 Self-hosted, cross-platform music streaming: **write once (Flutter), host
 anywhere (Navidrome), play everywhere**. A private client for a personal music
@@ -54,6 +54,7 @@ no backend of its own.
 | Search | `GET /rest/search3` |
 | Stream audio | `GET /rest/stream?id=X` |
 | Cover art | `GET /rest/getCoverArt?id=X` |
+| Now playing / scrobble | `GET /rest/scrobble?id=X&submission=false\|true` |
 
 ## Platform support
 
@@ -100,6 +101,9 @@ no backend of its own.
 - ReplayGain volume normalization — attenuate-only, clipping impossible
 - Caching: on-disk library cache for instant cold start, Android on-disk stream
   cache (seekable replay, 2 GB cap), cover-art prefetching
+- Scrobbling: plays are reported back to the server (past half the track or
+  four minutes), so Navidrome's play counts and "recently played" reflect this
+  app; a "now playing" announcement drives its live panel
 - Automatic recovery from mid-stream connection drops
 - Lock screen / notification controls (Android); SMTC + keep-awake (Windows);
   MPRIS media keys (Linux)
@@ -155,9 +159,10 @@ library mode (the caches accelerate a working setup, they don't replace it).
 **Implemented:** browsing, search, streaming, queue, shuffle/repeat, ReplayGain,
 library + stream + cover caching, drop recovery, Android TV UI, Windows SMTC and
 wakelock, Windows installer, Linux MPRIS media keys, Arch packaging (PKGBUILD),
-the desktop redesign (theme + sidebar shell + custom window chrome).
+the desktop redesign (theme + sidebar shell + custom window chrome), and
+scrobbling.
 
-**Test suite:** 27 test files under `test/` (~3,500 lines including support
+**Test suite:** 29 test files under `test/` (~3,900 lines including support
 fakes) covering the models, services, the screens and the shared widgets.
 Playback is exercised against a fake `just_audio` platform
 (`test/support/fake_just_audio.dart`) rather than a live backend. Sequencing

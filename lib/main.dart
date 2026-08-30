@@ -13,6 +13,7 @@ import 'services/audio_handler.dart';
 import 'services/android_presence.dart';
 import 'services/linux_presence.dart';
 import 'services/now_playing_presence.dart';
+import 'services/playback_reporter.dart';
 import 'services/stream_url_resolver.dart';
 import 'services/windows_presence.dart';
 import 'services/library_scanner.dart';
@@ -74,6 +75,11 @@ void main() async {
   // across logout/re-login. MyApp wires it to AuthService's changes.
   final resolver = RotatingStreamUrlResolver();
 
+  // Same rotating-reference trick as [resolver], for the same reason: the
+  // player is built once, before login, but scrobbles have to reach whatever
+  // session is current. See RotatingPlaybackReporter.
+  final reporter = RotatingPlaybackReporter();
+
   // Initialize audio service for Android/iOS background playback and
   // lock screen controls. Skip on Windows — SMTC handles media controls there.
   MusicAudioHandler? audioHandler;
@@ -119,13 +125,21 @@ void main() async {
   final playerService = AudioPlayerService(
     presence: presence,
     resolver: resolver,
+    reporter: reporter,
   );
 
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
     await _DesktopCloseGuard(playerService).install();
   }
 
-  runApp(MyApp(presence: presence, resolver: resolver, player: playerService));
+  runApp(
+    MyApp(
+      presence: presence,
+      resolver: resolver,
+      reporter: reporter,
+      player: playerService,
+    ),
+  );
 }
 
 /// Stops the audio player before the process is allowed to go away.
@@ -180,6 +194,10 @@ class MyApp extends StatelessWidget {
   final NowPlayingPresence presence;
   final StreamUrlResolver resolver;
 
+  /// Where scrobbles go. Kept pointed at the current session alongside
+  /// [resolver] below; null in tests, which don't report anywhere.
+  final RotatingPlaybackReporter? reporter;
+
   /// The player, when the caller owns it — desktop does, so that window close
   /// can shut it down (see [_DesktopCloseGuard]). Null means "make your own",
   /// which is what mobile and the widget tests do.
@@ -189,6 +207,7 @@ class MyApp extends StatelessWidget {
     super.key,
     this.presence = const NoPresence(),
     this.resolver = const NoResolver(),
+    this.reporter,
     this.player,
   });
 
@@ -208,6 +227,12 @@ class MyApp extends StatelessWidget {
             if (resolver is RotatingStreamUrlResolver) {
               resolver.updateFrom(auth.apiService);
               auth.addListener(() => resolver.updateFrom(auth.apiService));
+            }
+            // SubsonicApiService is both the resolver and the reporter, so
+            // the two rotate together off the same session change.
+            if (reporter case final reporter?) {
+              reporter.updateFrom(auth.apiService);
+              auth.addListener(() => reporter.updateFrom(auth.apiService));
             }
             return auth;
           },

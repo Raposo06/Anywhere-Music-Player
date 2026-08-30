@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/track.dart';
 import 'now_playing_presence.dart';
 import 'playback_cursor.dart';
+import 'playback_reporter.dart';
 import 'stream_url_resolver.dart';
 
 export 'playback_cursor.dart' show RepeatMode;
@@ -25,6 +26,7 @@ class AudioPlayerService with ChangeNotifier {
   AudioPlayer? _player;
   final NowPlayingPresence _presence;
   final StreamUrlResolver _resolver;
+  final PlaybackReporter _reporter;
 
   final PlaybackCursor _cursor = PlaybackCursor();
   // The track currently coming out of the speakers — may be a playlist item
@@ -57,6 +59,21 @@ class AudioPlayerService with ChangeNotifier {
   String? _resumeTrackId;
   DateTime? _lastResumeAt;
 
+  // Scrobbling: report a play once it passes the Last.fm-style threshold —
+  // half the track, or four minutes, whichever comes first.
+  static const double _scrobbleFraction = 0.5;
+  static const Duration _scrobbleAfter = Duration(minutes: 4);
+
+  // Identifies one *listen*. Bumped by _selectAndPlay — i.e. by every fresh
+  // selection, including repeat-one relooping the same track, so a replay
+  // counts again. Mid-stream drop recovery deliberately re-enters
+  // _loadAndPlay *without* going through _selectAndPlay, so a dropped-and-
+  // resumed track stays one listen and scrobbles once.
+  int _listenSession = 0;
+  int? _scrobbledSession;
+  DateTime _listenStartedAt = DateTime.now();
+
+  StreamSubscription<Duration>? _scrobbleSubscription;
   StreamSubscription<PlayerState>? _playerStateSubscription;
   StreamSubscription<bool>? _playingSubscription;
   StreamSubscription<PlaybackEvent>? _playbackEventSubscription;
@@ -102,8 +119,10 @@ class AudioPlayerService with ChangeNotifier {
   AudioPlayerService({
     NowPlayingPresence? presence,
     StreamUrlResolver? resolver,
+    PlaybackReporter? reporter,
   }) : _presence = presence ?? const NoPresence(),
-       _resolver = resolver ?? const NoResolver() {
+       _resolver = resolver ?? const NoResolver(),
+       _reporter = reporter ?? const NoPlaybackReporter() {
     // Fire-and-forget: the modes are cosmetic until something is actually
     // playing, and this service is constructed before login, so there is
     // nothing to block on.
@@ -183,6 +202,59 @@ class AudioPlayerService with ChangeNotifier {
     _playbackEventSubscription = _player!.playbackEventStream.listen(
       (event) {},
       onError: (Object e, StackTrace st) => _handleStreamError(e),
+    );
+
+    _scrobbleSubscription = _player!.positionStream.listen(_maybeScrobble);
+  }
+
+  // -------- Scrobbling --------
+
+  /// Submit the current track once playback passes the threshold.
+  ///
+  /// Driven off the position stream rather than track completion, so a track
+  /// the user skips away from *after* hearing most of it still counts —
+  /// waiting for `completed` would miss exactly those.
+  ///
+  /// Position, not accumulated listening time: scrubbing to the end therefore
+  /// counts as a play. That is the simpler rule, it is what most Subsonic
+  /// clients do, and over-counting a track you deliberately seeked through is
+  /// the benign direction to err in. See docs/decisions.md.
+  void _maybeScrobble(Duration position) {
+    final track = _currentTrack;
+    if (track == null || _scrobbledSession == _listenSession) return;
+
+    // The player's own duration is authoritative once loaded; the track's
+    // metadata covers the window before that where it is still null.
+    final total =
+        _player?.duration ??
+        (track.durationSeconds != null
+            ? Duration(seconds: track.durationSeconds!)
+            : null);
+    if (total == null || total <= Duration.zero) return;
+
+    final half = Duration(
+      microseconds: (total.inMicroseconds * _scrobbleFraction).round(),
+    );
+    final threshold = half < _scrobbleAfter ? half : _scrobbleAfter;
+    if (position < threshold) return;
+
+    _scrobbledSession = _listenSession;
+    _report(
+      'scrobble',
+      () => _reporter.scrobble(track.id, startedAt: _listenStartedAt),
+    );
+  }
+
+  /// Fire-and-forget a report to the server.
+  ///
+  /// Reporting is telemetry: a server that is slow, down, or simply doesn't
+  /// implement the endpoint must never surface as a playback error, so this
+  /// swallows everything to a debug line.
+  void _report(String what, Future<void> Function() send) {
+    unawaited(
+      send().catchError((Object e) {
+        debugPrint('AudioPlayerService: $what failed: $e');
+      }),
     );
   }
 
@@ -366,6 +438,11 @@ class AudioPlayerService with ChangeNotifier {
   /// at once, so a superseded track never reaches play().
   void _selectAndPlay(Track track, {required bool immediate}) {
     final token = ++_loadToken;
+    // A fresh selection is a new listen — see [_listenSession]. Stamped here
+    // rather than at load time so the server gets when the user *chose* the
+    // track, not when its stream finished opening.
+    _listenSession++;
+    _listenStartedAt = DateTime.now();
     _currentTrack = track;
     _isLoading = true;
     _lastError = null;
@@ -403,6 +480,10 @@ class AudioPlayerService with ChangeNotifier {
       }
       await _player!.play();
       _presence.show(track);
+      // Same moment we tell the OS, tell the server — this drives Navidrome's
+      // "now playing" panel. Re-sent on drop recovery, which is fine: it is a
+      // heartbeat, not a play count.
+      _report('now-playing', () => _reporter.nowPlaying(track.id));
       unawaited(_evictAudioCacheIfNeeded());
     } catch (e) {
       if (token != _loadToken) return;
@@ -690,6 +771,7 @@ class AudioPlayerService with ChangeNotifier {
     if (_disposed) return null;
     _disposed = true;
     _loadDebounce?.cancel();
+    _scrobbleSubscription?.cancel();
     _playerStateSubscription?.cancel();
     _playingSubscription?.cancel();
     _playbackEventSubscription?.cancel();

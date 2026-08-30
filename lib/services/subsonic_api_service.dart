@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/track.dart';
 import '../models/folder.dart';
+import 'playback_reporter.dart';
 import 'stream_url_resolver.dart';
 
 class SubsonicApiException implements Exception {
@@ -17,7 +18,7 @@ class SubsonicApiException implements Exception {
   String toString() => message;
 }
 
-class SubsonicApiService implements StreamUrlResolver {
+class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
   final String serverUrl;
   final String username;
   final String password;
@@ -166,6 +167,35 @@ class SubsonicApiService implements StreamUrlResolver {
       if (e is SubsonicApiException) rethrow;
       throw SubsonicApiException('$failureContext: $e');
     }
+  }
+
+  /// Announce that [songId] is playing now (`submission=false`).
+  ///
+  /// Feeds the server's "now playing" panel only — it does not count as a
+  /// play. See [scrobble] for that.
+  @override
+  Future<void> nowPlaying(String songId) async {
+    await _request('scrobble', {
+      'id': songId,
+      'submission': 'false',
+    }, 'Now-playing report failed');
+  }
+
+  /// Record a completed listen of [songId] (`submission=true`), which is what
+  /// increments the server's play count.
+  ///
+  /// [startedAt] is sent as `time` in milliseconds since the epoch — Subsonic
+  /// 1.8+, and understood by Navidrome. It is when the listen *began*, so a
+  /// play submitted partway through a long track is still timed correctly.
+  /// Omitting it lets the server stamp the play at receipt instead.
+  @override
+  Future<void> scrobble(String songId, {DateTime? startedAt}) async {
+    await _request('scrobble', {
+      'id': songId,
+      'submission': 'true',
+      if (startedAt != null)
+        'time': startedAt.millisecondsSinceEpoch.toString(),
+    }, 'Scrobble failed');
   }
 
   /// Ping the server to verify credentials.
