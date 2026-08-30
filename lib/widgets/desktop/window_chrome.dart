@@ -36,7 +36,8 @@ class DesktopWindowFrame extends StatelessWidget {
   }
 }
 
-/// The app-drawn 40px title bar that replaces the OS window frame on desktop.
+/// The app-drawn title bar that replaces the OS window frame on desktop, at
+/// [AppMetrics.titlebarHeight].
 ///
 /// `main()` hides the native frame (`TitleBarStyle.hidden`) on desktop, so
 /// this bar is the *only* way to move, maximise or close the window — every
@@ -78,10 +79,10 @@ class WindowChrome extends StatelessWidget {
                         _ChromeIconButton(
                           onPressed: back,
                           tooltip: 'Back',
-                          size: const Size(28, 40),
+                          size: const Size(32, AppMetrics.titlebarHeight),
                           child: const Icon(
                             Icons.chevron_left,
-                            size: 18,
+                            size: 20,
                             color: AppColors.muted,
                           ),
                         )
@@ -94,7 +95,7 @@ class WindowChrome extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 12,
+                            fontSize: 13,
                             color: AppColors.faint,
                           ),
                         ),
@@ -112,7 +113,7 @@ class WindowChrome extends StatelessWidget {
   }
 }
 
-/// The 18px rounded accent square with a white music-note glyph — the app
+/// The 20px rounded accent square with a white music-note glyph — the app
 /// mark from the design, drawn rather than shipped as an asset so it picks up
 /// the accent colour.
 class _AppGlyph extends StatelessWidget {
@@ -121,13 +122,13 @@ class _AppGlyph extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 18,
-      height: 18,
+      width: 20,
+      height: 20,
       decoration: BoxDecoration(
         color: AppColors.accent,
-        borderRadius: BorderRadius.circular(5),
+        borderRadius: BorderRadius.circular(6),
       ),
-      child: const Icon(Icons.music_note, size: 13, color: Colors.white),
+      child: const Icon(Icons.music_note, size: 14, color: Colors.white),
     );
   }
 }
@@ -166,8 +167,8 @@ class _WindowControls extends StatelessWidget {
   }
 }
 
-/// A 44x40 hit target in the chrome. Close uses [hoverColor] to go red; the
-/// others lighten to [AppColors.surface2].
+/// A full-height, 44px-wide hit target in the chrome. Close uses [hoverColor]
+/// to go red; the others lighten to [AppColors.surface2].
 class _ChromeIconButton extends StatefulWidget {
   final VoidCallback onPressed;
   final String tooltip;

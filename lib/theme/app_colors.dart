@@ -115,7 +115,11 @@ abstract final class AppShadows {
 /// once live at their use site; these are the ones two or more widgets have
 /// to agree on.
 abstract final class AppMetrics {
-  static const double titlebarHeight = 40;
+  /// Title bar height. The design's own figure was 40; this is a little
+  /// roomier without eating into the content. Everything in the bar derives
+  /// from it — the window-control hit targets and the back chevron are sized
+  /// against it, so changing this here is enough.
+  static const double titlebarHeight = 48;
   static const double sidebarWidth = 224;
   static const double upNextWidth = 300;
   static const double miniPlayerHeight = 72;
