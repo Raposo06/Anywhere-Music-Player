@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/track.dart';
 import '../models/folder.dart';
+import '../models/playlist.dart';
 import 'playback_reporter.dart';
 import 'stream_url_resolver.dart';
 
@@ -24,6 +25,7 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
   final String password;
 
   static const String _apiVersion = '1.16.1';
+
   /// Sent as Subsonic's `c` param on every request. This is the name the
   /// server shows for the client — Navidrome's "now playing" panel and play
   /// history both display it — so it is the app's real name, not an
@@ -89,8 +91,13 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
   }
 
   /// Build the full URI for a Subsonic API endpoint.
-  Uri _buildUri(String endpoint, [Map<String, String>? extraParams]) {
-    final params = _authParams();
+  ///
+  /// [extraParams] values may be a `String` or a `List<String>`; a list becomes
+  /// a *repeated* query parameter (`songId=a&songId=b`), which is how Subsonic
+  /// expresses multi-valued arguments like `songId` and `songIdToAdd`. `Uri`
+  /// handles that natively for `Iterable<String>` values.
+  Uri _buildUri(String endpoint, [Map<String, dynamic>? extraParams]) {
+    final params = <String, dynamic>{..._authParams()};
     if (extraParams != null) {
       params.addAll(extraParams);
     }
@@ -160,7 +167,7 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
   /// to add that guard itself.
   Future<Map<String, dynamic>> _request(
     String endpoint,
-    Map<String, String>? params,
+    Map<String, dynamic>? params,
     String failureContext,
   ) async {
     try {
@@ -171,6 +178,96 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
       if (e is SubsonicApiException) rethrow;
       throw SubsonicApiException('$failureContext: $e');
     }
+  }
+
+  // -------- Playlists --------
+
+  /// Every playlist visible to the current user (their own, plus public ones).
+  Future<List<Playlist>> getPlaylists() async {
+    final data = await _request(
+      'getPlaylists',
+      null,
+      'Could not load playlists',
+    );
+    final playlists = data['playlists'] as Map<String, dynamic>?;
+    final list = playlists?['playlist'];
+    if (list == null) return <Playlist>[];
+    final items = list is List ? list : [list];
+    return [
+      for (final item in items)
+        Playlist.fromSubsonic(item as Map<String, dynamic>),
+    ];
+  }
+
+  /// One playlist with its tracks, in playlist order.
+  ///
+  /// Order matters beyond display: Subsonic removes tracks by *position*, so
+  /// the indices a caller derives from this list are what an edit is built
+  /// from. See docs/decisions.md.
+  Future<({Playlist playlist, List<Track> tracks})> getPlaylist(
+    String playlistId,
+  ) async {
+    final data = await _request('getPlaylist', {
+      'id': playlistId,
+    }, 'Could not load playlist');
+    final json = data['playlist'] as Map<String, dynamic>?;
+    if (json == null) {
+      throw SubsonicApiException('Playlist $playlistId not found');
+    }
+    final entries = json['entry'];
+    final items = entries == null
+        ? const []
+        : (entries is List ? entries : [entries]);
+    return (
+      playlist: Playlist.fromSubsonic(json),
+      tracks: [
+        for (final item in items)
+          Track.fromSubsonic(item as Map<String, dynamic>),
+      ],
+    );
+  }
+
+  /// Create a playlist called [name], optionally seeded with [songIds].
+  ///
+  /// Returns the new playlist. Subsonic's response for this is inconsistent
+  /// across servers — some echo the playlist, some return an empty envelope —
+  /// so a caller that needs it should re-list rather than trust the return.
+  Future<Playlist?> createPlaylist(
+    String name, {
+    List<String> songIds = const [],
+  }) async {
+    final data = await _request('createPlaylist', {
+      'name': name,
+      if (songIds.isNotEmpty) 'songId': songIds,
+    }, 'Could not create playlist');
+    final json = data['playlist'] as Map<String, dynamic>?;
+    return json == null ? null : Playlist.fromSubsonic(json);
+  }
+
+  /// Append [songIds] to an existing playlist.
+  ///
+  /// Adding is by **song id**, so unlike removal it needs no knowledge of the
+  /// playlist's current order and is safe against concurrent edits.
+  Future<void> addToPlaylist(String playlistId, List<String> songIds) async {
+    if (songIds.isEmpty) return;
+    await _request('updatePlaylist', {
+      'playlistId': playlistId,
+      'songIdToAdd': songIds,
+    }, 'Could not add to playlist');
+  }
+
+  /// Rename a playlist.
+  Future<void> renamePlaylist(String playlistId, String name) async {
+    await _request('updatePlaylist', {
+      'playlistId': playlistId,
+      'name': name,
+    }, 'Could not rename playlist');
+  }
+
+  Future<void> deletePlaylist(String playlistId) async {
+    await _request('deletePlaylist', {
+      'id': playlistId,
+    }, 'Could not delete playlist');
   }
 
   /// Mark [songId] as a favourite (Subsonic "starred").

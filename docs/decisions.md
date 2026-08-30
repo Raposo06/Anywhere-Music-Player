@@ -835,3 +835,64 @@ the shell does not currently keep.
 tested at the widget level, but there is no `DesktopShell` widget test to drive
 a real folder pop through, and drilling into a folder needs a pointer, which
 the environment this was written in cannot drive.
+
+---
+
+## 2026-08-30 — Playlists: server-side, not optimistic, add-only for now
+
+**Decided.** Server playlists over Subsonic's five endpoints, as a fourth
+destination on both layouts (sidebar item on desktop, fourth tab on phone).
+`PlaylistsService` mirrors `FavouritesService`'s shape — rebound to the live
+session by a proxy provider — but differs from it in three deliberate ways.
+
+**1. Nothing is optimistic.** Favourites apply locally and roll back; playlist
+edits wait for the server and then re-read. A playlist is shared, structural,
+server-owned data, and — critically — **Subsonic removes tracks by *position*,
+not by id** (`songIndexToRemove`). Acting on a stale local copy can therefore
+delete the wrong track. Adding is by id (`songIdToAdd`) and has no such hazard,
+which is why adding shipped and removing did not.
+
+**2. Removing a track is not implemented yet.** Two things the Subsonic spec
+leaves undefined decide how it must be written, and both are
+implementation-defined per server:
+
+- is `songIndexToRemove` 0- or 1-based?
+- does `createPlaylist` with an existing `playlistId` *replace* the contents or
+  *append* to them? (This is also the only way to reorder — there is no reorder
+  parameter at all.)
+
+`packaging`-adjacent scratch script `probe_playlists.sh` (in the session
+scratchpad, not committed) answers both against a real server in one run.
+**Do not guess these.** Guessing wrong deletes the wrong track or silently
+duplicates a playlist.
+
+**3. Editing is gated on ownership.** Subsonic only lets the *owner* modify a
+playlist, so `Playlist.isEditableBy` hides rename/delete and disables the row
+in the add-to picker for playlists owned by someone else. Unknown ownership is
+treated as editable — the server is the real authority, and hiding controls on
+a playlist the user *can* edit is a silent dead end, whereas showing one that
+fails at least says why.
+
+This cannot detect Navidrome **smart playlists** (`.nsp`): they are read-only
+even to their owner and carry no flag in the Subsonic response, so editing one
+fails server-side and surfaces as an error message.
+
+**On naming.** `PlaybackCursor` already calls the browsing context feeding
+playback "the playlist". Rather than rename that — it is load-bearing
+sequencing code, and the gain would be cosmetic — the new concepts are named
+unambiguously (`Playlist`, `PlaylistsService`, `playlists_screen.dart`) and the
+distinction is documented on the model. If the collision ever causes a real
+mistake, rename the cursor's field, not these.
+
+**On placement.** Playlists is its own destination rather than a container that
+also holds All Tracks. All Tracks is a *view of the library* — not user-created,
+not stored on the server, not editable — and putting it in a list where every
+other entry can be renamed, reordered and deleted invites "why can't I remove a
+song from this one?". Four destinations fit both layouts comfortably (Material
+allows 3–5 fixed bottom tabs).
+
+**What would reverse it.** Wanting reorder badly enough to take the
+full-rewrite path, which would also settle the `createPlaylist` question. Note
+that `_buildUri` was widened to accept `List<String>` values so repeated
+parameters (`songId=a&songId=b`) work — that is how Subsonic takes lists, and
+there is a test asserting the encoding.

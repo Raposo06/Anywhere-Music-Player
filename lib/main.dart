@@ -18,6 +18,7 @@ import 'services/stream_url_resolver.dart';
 import 'services/windows_presence.dart';
 import 'services/favourites_service.dart';
 import 'services/library_scanner.dart';
+import 'services/playlists_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/tv_home_screen.dart';
@@ -265,6 +266,18 @@ class MyApp extends StatelessWidget {
               return previous;
             }
             return LibraryScanner(auth.apiService);
+          },
+        ),
+
+        // Server playlists — rebound to the live session for exactly the same
+        // reason the scanner above is.
+        ChangeNotifierProxyProvider<AuthService, PlaylistsService>(
+          create: (_) => PlaylistsService(null),
+          update: (_, auth, previous) {
+            if (previous != null && identical(previous.api, auth.apiService)) {
+              return previous;
+            }
+            return PlaylistsService(auth.apiService);
           },
         ),
 

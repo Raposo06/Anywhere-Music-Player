@@ -14,6 +14,7 @@ import '../../widgets/desktop/window_chrome.dart';
 import 'desktop_all_tracks_screen.dart';
 import 'desktop_favourites_screen.dart';
 import 'desktop_folder_screen.dart';
+import 'desktop_playlists_screen.dart';
 import 'desktop_library_screen.dart';
 import 'desktop_player_screen.dart';
 
@@ -42,6 +43,11 @@ class _DesktopShellState extends State<DesktopShell> {
   /// unwinds it) survives a trip to All Tracks and back. All Tracks has
   /// nothing to drill into, so it is a plain screen.
   final _libraryNavigator = GlobalKey<NavigatorState>();
+
+  /// Playlists drills down too (list → one playlist), so it gets its own
+  /// navigator for the same reason: the trail survives a trip to another
+  /// destination and back.
+  final _playlistsNavigator = GlobalKey<NavigatorState>();
 
   /// Name of the top route in the library navigator — the folder you are
   /// looking at, or null at the library root. Kept by [_TopRouteObserver]
@@ -91,8 +97,8 @@ class _DesktopShellState extends State<DesktopShell> {
     if (destination == _destination) {
       // Clicking the active destination returns it to its root — the only way
       // out of a deep folder trail without walking back up it.
-      if (destination == SidebarDestination.library) {
-        _libraryNavigator.currentState?.popUntil((route) => route.isFirst);
+      if (_activeNavigator case final navigator?) {
+        navigator.currentState?.popUntil((route) => route.isFirst);
       } else if (destination == SidebarDestination.favourites) {
         // Nothing to unwind here, so re-clicking re-syncs instead — the list
         // can go stale if you starred something from another client.
@@ -114,10 +120,17 @@ class _DesktopShellState extends State<DesktopShell> {
   /// leave the shell with an empty navigator rather than being harmlessly
   /// refused.
   void _goBack() {
-    if (_destination != SidebarDestination.library) return;
-    final navigator = _libraryNavigator.currentState;
+    final navigator = _activeNavigator?.currentState;
     if (navigator != null && navigator.canPop()) navigator.pop();
   }
+
+  /// The nested navigator behind the current destination, or null for the flat
+  /// ones (All Tracks, Favourites) which have nothing to go back through.
+  GlobalKey<NavigatorState>? get _activeNavigator => switch (_destination) {
+    SidebarDestination.library => _libraryNavigator,
+    SidebarDestination.playlists => _playlistsNavigator,
+    SidebarDestination.allTracks || SidebarDestination.favourites => null,
+  };
 
   /// True while Now Playing is on screen, so a second request — a queue jump,
   /// a stray call from a list still mounted behind it — doesn't stack another
@@ -150,6 +163,7 @@ class _DesktopShellState extends State<DesktopShell> {
     final context_ = switch (_destination) {
       SidebarDestination.allTracks => 'All Tracks',
       SidebarDestination.favourites => 'Favourites',
+      SidebarDestination.playlists => 'Playlists',
       SidebarDestination.library => libraryRoute,
     };
     return context_ == null ? appDisplayName : '$context_ — $appDisplayName';
@@ -185,6 +199,7 @@ class _DesktopShellState extends State<DesktopShell> {
                           SidebarDestination.library => 0,
                           SidebarDestination.allTracks => 1,
                           SidebarDestination.favourites => 2,
+                          SidebarDestination.playlists => 3,
                         },
                         children: [
                           Navigator(
@@ -197,6 +212,13 @@ class _DesktopShellState extends State<DesktopShell> {
                           ),
                           const DesktopAllTracksScreen(),
                           const DesktopFavouritesScreen(),
+                          Navigator(
+                            key: _playlistsNavigator,
+                            onGenerateRoute: (settings) => MaterialPageRoute(
+                              settings: settings,
+                              builder: (_) => const DesktopPlaylistsScreen(),
+                            ),
+                          ),
                         ],
                       ),
                     ),

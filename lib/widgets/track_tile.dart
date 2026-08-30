@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
+import 'add_to_playlist.dart';
 import 'cover_art.dart';
 import 'favourite_button.dart';
 
@@ -86,6 +87,9 @@ class TrackTile extends StatelessWidget {
             ],
           ),
           onTap: onTap,
+          // Swipe-right is already "add to queue", so long-press is where
+          // "add to playlist" goes — the only gesture left free on a tile.
+          onLongPress: () => AddToPlaylist.show(context, [track]),
         );
 
         if (!swipeToQueue) return tile;

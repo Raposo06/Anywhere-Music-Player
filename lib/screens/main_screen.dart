@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/favourites_service.dart';
+import '../services/playlists_service.dart';
 import '../utils/platform_detector.dart';
 import '../widgets/favourites_error_listener.dart';
 import '../widgets/mini_player.dart';
 import 'all_tracks_screen.dart';
 import 'desktop/desktop_shell.dart';
 import 'favourites_screen.dart';
+import 'playlists_screen.dart';
 import 'home_screen.dart';
 
 /// Picks the layout for the form factor.
@@ -43,7 +45,11 @@ class _PhoneScaffoldState extends State<_PhoneScaffold> {
     // "no" — so the hearts on the other tabs would be wrong until you visited
     // it. The desktop shell does the same.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<FavouritesService>().load();
+      if (!mounted) return;
+      context.read<FavouritesService>().load();
+      // Loaded up front so "add to playlist" can offer the list immediately,
+      // wherever it is opened from.
+      context.read<PlaylistsService>().load();
     });
   }
 
@@ -52,7 +58,12 @@ class _PhoneScaffoldState extends State<_PhoneScaffold> {
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: const [HomeScreen(), AllTracksScreen(), FavouritesScreen()],
+        children: const [
+          HomeScreen(),
+          AllTracksScreen(),
+          FavouritesScreen(),
+          PlaylistsScreen(),
+        ],
       ),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
@@ -83,6 +94,10 @@ class _PhoneScaffoldState extends State<_PhoneScaffold> {
               BottomNavigationBarItem(
                 icon: Icon(Icons.favorite),
                 label: 'Favourites',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.queue_music),
+                label: 'Playlists',
               ),
             ],
           ),

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/track.dart';
 import '../../services/audio_player_service.dart';
 import '../../theme/app_colors.dart';
+import '../add_to_playlist.dart';
 import '../cover_art.dart';
 import 'desktop_primitives.dart';
 import '../favourite_button.dart';
@@ -145,9 +146,23 @@ class _QueueContextMenu extends StatelessWidget {
             ],
           ),
         ),
+        PopupMenuItem(
+          value: 'playlist',
+          child: Row(
+            children: [
+              Icon(Icons.playlist_add, size: 18),
+              SizedBox(width: 10),
+              Text('Add to playlist…'),
+            ],
+          ),
+        ),
       ],
     );
 
+    if (selected == 'playlist') {
+      if (context.mounted) await AddToPlaylist.show(context, [track]);
+      return;
+    }
     if (selected != 'queue') return;
     await playerService.addToQueue(track);
     // With nothing playing, addToQueue starts the track instead of queueing

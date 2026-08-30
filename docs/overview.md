@@ -56,6 +56,7 @@ no backend of its own.
 | Cover art | `GET /rest/getCoverArt?id=X` |
 | Now playing / scrobble | `GET /rest/scrobble?id=X&submission=false\|true` |
 | Favourites | `GET /rest/star`, `/rest/unstar`, `/rest/getStarred2` — songs only, see [decisions](decisions.md) |
+| Playlists | `GET /rest/getPlaylists`, `/rest/getPlaylist`, `/rest/createPlaylist`, `/rest/updatePlaylist`, `/rest/deletePlaylist` |
 
 ## Platform support
 
@@ -107,6 +108,9 @@ no backend of its own.
   app; a "now playing" announcement drives its live panel
 - Desktop keyboard shortcuts: space, arrow-key seek/volume, Ctrl+arrow skip,
   Alt+← (or Escape) to go back a folder / leave Now Playing
+- Playlists (desktop + phone): create, rename, delete, and add tracks to
+  server-side playlists — shared with Navidrome's web UI. Removing a track is
+  not implemented yet, see [decisions](decisions.md)
 - Favourites: star songs from any track row, the mini player or Now Playing,
   with a dedicated list on both desktop (sidebar) and phone (tab, pull to
   refresh). Server-side, so it stays in sync with Navidrome's web UI
@@ -122,8 +126,8 @@ Three layouts over one set of services. `MainScreen` picks between the first two
 
 | Form factor | Entry point | Navigation | Player |
 |---|---|---|---|
-| Desktop (Windows/Linux) | `screens/desktop/desktop_shell.dart` | 224px sidebar (Library / All Tracks / Favourites) + a nested navigator for folder drill-down | Full-window `DesktopPlayerScreen` with a docked "Up Next" panel |
-| Android phone | `MainScreen`'s `_PhoneScaffold` | Bottom tab bar (Folders / All Tracks / Favourites) | `PlayerScreen` + modal `QueueSheet` |
+| Desktop (Windows/Linux) | `screens/desktop/desktop_shell.dart` | 224px sidebar (Library / All Tracks / Favourites / Playlists) + a nested navigator per drill-down destination | Full-window `DesktopPlayerScreen` with a docked "Up Next" panel |
+| Android phone | `MainScreen`'s `_PhoneScaffold` | Bottom tab bar (Folders / All Tracks / Favourites / Playlists) | `PlayerScreen` + modal `QueueSheet` |
 | Android TV | `screens/tv_home_screen.dart` | D-pad focus traversal | `TvPlayerScreen` |
 
 Desktop and phone are **separate screens on purpose** — see
@@ -166,9 +170,10 @@ library mode (the caches accelerate a working setup, they don't replace it).
 library + stream + cover caching, drop recovery, Android TV UI, Windows SMTC and
 wakelock, Windows installer, Linux MPRIS media keys, Arch packaging (PKGBUILD),
 the desktop redesign (theme + sidebar shell + custom window chrome), scrobbling,
-desktop keyboard shortcuts, and favourites (desktop + phone).
+desktop keyboard shortcuts, favourites (desktop + phone), and playlists
+(desktop + phone, add-only).
 
-**Test suite:** 34 test files under `test/` (~5,100 lines including support
+**Test suite:** 35 test files under `test/` (~5,500 lines including support
 fakes) covering the models, services, the screens and the shared widgets.
 Playback is exercised against a fake `just_audio` platform
 (`test/support/fake_just_audio.dart`) rather than a live backend. Sequencing
@@ -188,8 +193,11 @@ cache on Android), so a green suite says nothing about either backend.
 - The desktop *screens* still have no widget tests; the desktop widget tests
   cover only the shortcuts, the favourite heart and the track row, and `test/`
   otherwise covers the phone widgets and the services beneath both.
-- Favourites are not on Android TV — desktop and phone both have them, but the
-  TV's D-pad screens show no hearts.
+- Favourites and playlists are not on Android TV — desktop and phone have both,
+  but the TV's D-pad screens have neither.
+- Removing a track from a playlist is not implemented; two Subsonic behaviours
+  have to be confirmed against a real server first — see
+  [decisions](decisions.md).
 - No Ctrl+F to focus search on desktop — see [decisions](decisions.md) for why
   it needs a focus registry rather than a one-liner.
 - Library cache is a single file per install, wiped on logout — no per-account
