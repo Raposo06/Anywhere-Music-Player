@@ -173,7 +173,7 @@ the desktop redesign (theme + sidebar shell + custom window chrome), scrobbling,
 desktop keyboard shortcuts, favourites (desktop + phone), and playlists
 (desktop + phone).
 
-**Test suite:** 35 test files under `test/` (~5,500 lines including support
+**Test suite:** 39 test files under `test/` (~6,400 lines including support
 fakes) covering the models, services, the screens and the shared widgets.
 Playback is exercised against a fake `just_audio` platform
 (`test/support/fake_just_audio.dart`) rather than a live backend. Sequencing

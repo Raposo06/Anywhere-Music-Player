@@ -931,3 +931,48 @@ empirically against a live server. Reading the source was faster, needed no
 credentials, and gave a citable answer, so the script was not kept. Recorded
 here because the *questions* remain the right ones to ask of any future
 Subsonic-behaviour uncertainty — check the server's source first.
+
+---
+
+## 2026-08-30 — Playlist UI tests, and the three bugs they found
+
+**Decided.** The playlist screens are covered by widget tests
+(`add_to_playlist_test.dart`, `playlists_screen_test.dart`,
+`desktop_playlists_screen_test.dart`) on top of the service tests, closing the
+gap where playlists had service-only coverage while favourites had three
+layers.
+
+They run against `FakePlaylistServer` (test/support/fake_playlists.dart), an
+in-memory Subsonic that **applies writes for real** — including removing by
+zero-based index, as Navidrome does. So the assertions are "the row is gone",
+not "this request was sent", and they stay true if the service changes how it
+gets there.
+
+**They found three real bugs, all fixed here:**
+
+1. **A disposed `TextEditingController`.** The desktop rename dialog created a
+   controller, passed it to a `TextField`, and disposed it as soon as
+   `showDialog` returned — while the dialog's *exit animation* still had the
+   field mounted. Fixed by making `PlaylistNameDialog` stateful and owning its
+   own controller, which both the create and rename paths now share.
+
+2. **A playlist opened directly was never editable.** `loadTracks` fetched a
+   fresh `Playlist` but discarded it unless the list had already been loaded,
+   so `byId` returned null and the detail screen's ownership check failed
+   closed — no remove option. Invisible in the app only because both shells
+   call `load()` at startup. Now the detail fetch keeps what it learned.
+
+3. **Desktop context-menu labels overflowed.** A popup menu constrains its
+   items to ~256px; "Remove from playlist" plus its icon exceeded that and
+   painted an overflow stripe. The labels are now `Flexible` with ellipsis, so
+   a long one degrades instead of overflowing.
+
+**Two test-harness facts worth keeping.** Desktop screens need a desktop-sized
+surface — use `tester.binding.setSurfaceSize`, not `tester.view.physicalSize`,
+whose reset runs while the tree is still mounted and trips a framework
+assertion. And any screen showing a `TrackTile` or `DesktopTrackRow` now needs
+`FavouritesService` in scope, because both carry a favourite heart.
+
+**What would reverse it.** Nothing. Note the pattern these bugs share: each was
+invisible in normal use and only appeared under a slightly different entry
+order — a dialog dismissed, a screen opened directly, a label just too long.

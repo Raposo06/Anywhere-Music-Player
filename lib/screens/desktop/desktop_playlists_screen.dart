@@ -153,26 +153,15 @@ class _PlaylistRow extends StatelessWidget {
   });
 
   Future<void> _rename(BuildContext context) async {
-    final controller = TextEditingController(text: playlist.name);
     final name = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Rename playlist'),
-        content: TextField(controller: controller, autofocus: true),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(controller.text.trim()),
-            child: const Text('Rename'),
-          ),
-        ],
+      // The dialog owns its controller — see PlaylistNameDialog for why.
+      builder: (_) => PlaylistNameDialog(
+        initialName: playlist.name,
+        title: 'Rename playlist',
+        actionLabel: 'Rename',
       ),
     );
-    controller.dispose();
     if (name == null || name.isEmpty || !context.mounted) return;
     await context.read<PlaylistsService>().rename(playlist.id, name);
   }

@@ -154,7 +154,9 @@ class _QueueContextMenu extends StatelessWidget {
             children: [
               Icon(Icons.queue_music, size: 18),
               SizedBox(width: 10),
-              Text('Add to queue'),
+              Flexible(
+                child: Text('Add to queue', overflow: TextOverflow.ellipsis),
+              ),
             ],
           ),
         ),
@@ -164,7 +166,12 @@ class _QueueContextMenu extends StatelessWidget {
             children: [
               Icon(Icons.playlist_add, size: 18),
               SizedBox(width: 10),
-              Text('Add to playlist…'),
+              Flexible(
+                child: Text(
+                  'Add to playlist…',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),
@@ -175,7 +182,12 @@ class _QueueContextMenu extends StatelessWidget {
               children: [
                 Icon(Icons.playlist_remove, size: 18),
                 SizedBox(width: 10),
-                Text('Remove from playlist'),
+                Flexible(
+                  child: Text(
+                    'Remove from playlist',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ),

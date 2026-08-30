@@ -92,9 +92,16 @@ class PlaylistsService with ChangeNotifier {
       final result = await api.getPlaylist(playlistId);
       _tracks[playlistId] = result.tracks;
       // The list's copy carries a stale song count after an edit; the detail
-      // fetch is authoritative, so fold it back in.
+      // fetch is authoritative, so fold it back in. When the playlist isn't
+      // in the list at all — a detail view opened before (or without) a
+      // load() — keep it rather than dropping it, or `byId` stays null and
+      // the screen cannot tell whether the playlist is editable.
       final index = _playlists.indexWhere((p) => p.id == playlistId);
-      if (index >= 0) _playlists[index] = result.playlist;
+      if (index >= 0) {
+        _playlists[index] = result.playlist;
+      } else {
+        _playlists.add(result.playlist);
+      }
       _error = null;
     } catch (e) {
       _error = 'Could not load playlist: $e';

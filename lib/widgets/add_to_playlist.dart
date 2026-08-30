@@ -81,7 +81,7 @@ class _AddToPlaylistBodyState extends State<_AddToPlaylistBody> {
   Future<void> _createAndAdd() async {
     final name = await showDialog<String>(
       context: context,
-      builder: (_) => const _NewPlaylistDialog(),
+      builder: (_) => const PlaylistNameDialog(),
     );
     if (name == null || !mounted) return;
 
@@ -154,16 +154,31 @@ class _AddToPlaylistBodyState extends State<_AddToPlaylistBody> {
   }
 }
 
-/// Asks for a playlist name. Used by the picker and by "save the queue".
-class _NewPlaylistDialog extends StatefulWidget {
-  const _NewPlaylistDialog();
+/// Asks for a playlist name.
+///
+/// Stateful, and owns its controller, deliberately: a caller that created the
+/// controller itself would have to dispose it *after* the dialog's exit
+/// animation finishes, and disposing it as soon as `showDialog` returns
+/// throws "A TextEditingController was used after being disposed".
+class PlaylistNameDialog extends StatefulWidget {
+  /// Pre-filled name — set when renaming, empty when creating.
+  final String initialName;
+  final String title;
+  final String actionLabel;
+
+  const PlaylistNameDialog({
+    super.key,
+    this.initialName = '',
+    this.title = 'New playlist',
+    this.actionLabel = 'Create',
+  });
 
   @override
-  State<_NewPlaylistDialog> createState() => _NewPlaylistDialogState();
+  State<PlaylistNameDialog> createState() => _PlaylistNameDialogState();
 }
 
-class _NewPlaylistDialogState extends State<_NewPlaylistDialog> {
-  final _controller = TextEditingController();
+class _PlaylistNameDialogState extends State<PlaylistNameDialog> {
+  late final _controller = TextEditingController(text: widget.initialName);
 
   @override
   void dispose() {
@@ -180,7 +195,7 @@ class _NewPlaylistDialogState extends State<_NewPlaylistDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('New playlist'),
+      title: Text(widget.title),
       content: TextField(
         controller: _controller,
         autofocus: true,
@@ -193,7 +208,7 @@ class _NewPlaylistDialogState extends State<_NewPlaylistDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(onPressed: _submit, child: const Text('Create')),
+        FilledButton(onPressed: _submit, child: Text(widget.actionLabel)),
       ],
     );
   }
@@ -209,7 +224,7 @@ Future<String?> createPlaylistWithPrompt(
 }) async {
   final name = await showDialog<String>(
     context: context,
-    builder: (_) => const _NewPlaylistDialog(),
+    builder: (_) => const PlaylistNameDialog(),
   );
   if (name == null || !context.mounted) return null;
   final ok = await context.read<PlaylistsService>().create(

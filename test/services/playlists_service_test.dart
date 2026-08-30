@@ -201,6 +201,24 @@ void main() {
       expect(playlists.tracksOf('nope'), isNull);
     });
 
+    test('a detail fetch alone is enough to know the playlist', () async {
+      // Opening a playlist without having listed them first must still leave
+      // byId() answering — the detail screen's edit affordances depend on it.
+      final (:playlists, requests: _) = build(
+        (_) => _ok({
+          'playlist': {
+            ..._playlistJson('1', 'Roadtrip', songCount: 1),
+            'entry': [_songJson('a', 'First')],
+          },
+        }),
+      );
+
+      await playlists.loadTracks('1');
+
+      expect(playlists.byId('1')?.name, 'Roadtrip');
+      expect(playlists.byId('1')?.isEditableBy('alice'), isTrue);
+    });
+
     test('a second open does not refetch, but force does', () async {
       final (:playlists, :requests) = build(
         (_) => _ok({
