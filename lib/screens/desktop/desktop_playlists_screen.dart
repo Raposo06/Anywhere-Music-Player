@@ -130,36 +130,30 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
       );
     }
 
-    // Two sections rather than one mixed grid: the built-ins are a different
-    // kind of thing, and a labelled break says so more clearly than a divider
-    // between cards would.
+    // One grid, All Tracks first. It reads as a playlist even though it is
+    // not one — the difference shows only in what it lacks (no play button,
+    // no overflow menu, absent from the add-to-playlist picker).
     return ListView(
       children: [
-        const SectionLabel('Library'),
-        const SizedBox(height: 10),
-        _grid([_buildAllTracksCard()]),
-        const SizedBox(height: 24),
-        const SectionLabel('Playlists'),
-        const SizedBox(height: 10),
+        _grid([
+          _buildAllTracksCard(),
+          for (final playlist in service.playlists)
+            _PlaylistCard(
+              playlist: playlist,
+              editable: playlist.isEditableBy(username),
+              onOpen: () => _open(playlist),
+              onPlay: () => _playPlaylist(playlist),
+            ),
+        ]),
         if (service.playlists.isEmpty)
           const Padding(
-            padding: EdgeInsets.only(top: 8, bottom: 24),
+            padding: EdgeInsets.only(top: 24),
             child: Text(
               'No playlists yet — create one above, or right-click a track '
               'to add it to one.',
               style: TextStyle(fontSize: 13, color: AppColors.faint),
             ),
-          )
-        else
-          _grid([
-            for (final playlist in service.playlists)
-              _PlaylistCard(
-                playlist: playlist,
-                editable: playlist.isEditableBy(username),
-                onOpen: () => _open(playlist),
-                onPlay: () => _playPlaylist(playlist),
-              ),
-          ]),
+          ),
       ],
     );
   }
