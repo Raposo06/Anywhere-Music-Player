@@ -6,6 +6,7 @@ import '../../services/auth_service.dart';
 import '../../services/library_scanner.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/desktop/desktop_mini_player.dart';
+import '../../widgets/desktop/desktop_shortcuts.dart';
 import '../../widgets/desktop/sidebar.dart';
 import '../../widgets/desktop/window_chrome.dart';
 import 'desktop_all_tracks_screen.dart';
@@ -129,48 +130,50 @@ class _DesktopShellState extends State<DesktopShell> {
   Widget build(BuildContext context) {
     return DesktopPlayerLauncher(
       open: _openPlayer,
-      child: Scaffold(
-        backgroundColor: AppColors.win,
-        body: Column(
-          children: [
-            ValueListenableBuilder<String?>(
-              valueListenable: _libraryRouteName,
-              builder: (context, libraryRoute, _) =>
-                  WindowChrome(label: _chromeLabel(libraryRoute)),
-            ),
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Sidebar(
-                    selected: _destination,
-                    onSelect: _select,
-                    onSignOut: _handleSignOut,
-                  ),
-                  Expanded(
-                    child: IndexedStack(
-                      index: switch (_destination) {
-                        SidebarDestination.library => 0,
-                        SidebarDestination.allTracks => 1,
-                      },
-                      children: [
-                        Navigator(
-                          key: _libraryNavigator,
-                          observers: [_routeObserver],
-                          onGenerateRoute: (settings) => MaterialPageRoute(
-                            settings: settings,
-                            builder: (_) => const DesktopLibraryScreen(),
-                          ),
-                        ),
-                        const DesktopAllTracksScreen(),
-                      ],
-                    ),
-                  ),
-                ],
+      child: DesktopPlaybackShortcuts(
+        child: Scaffold(
+          backgroundColor: AppColors.win,
+          body: Column(
+            children: [
+              ValueListenableBuilder<String?>(
+                valueListenable: _libraryRouteName,
+                builder: (context, libraryRoute, _) =>
+                    WindowChrome(label: _chromeLabel(libraryRoute)),
               ),
-            ),
-            DesktopMiniPlayer(onOpenPlayer: _openPlayer),
-          ],
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Sidebar(
+                      selected: _destination,
+                      onSelect: _select,
+                      onSignOut: _handleSignOut,
+                    ),
+                    Expanded(
+                      child: IndexedStack(
+                        index: switch (_destination) {
+                          SidebarDestination.library => 0,
+                          SidebarDestination.allTracks => 1,
+                        },
+                        children: [
+                          Navigator(
+                            key: _libraryNavigator,
+                            observers: [_routeObserver],
+                            onGenerateRoute: (settings) => MaterialPageRoute(
+                              settings: settings,
+                              builder: (_) => const DesktopLibraryScreen(),
+                            ),
+                          ),
+                          const DesktopAllTracksScreen(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              DesktopMiniPlayer(onOpenPlayer: _openPlayer),
+            ],
+          ),
         ),
       ),
     );

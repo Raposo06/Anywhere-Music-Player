@@ -15,6 +15,7 @@ import '../../services/stream_url_resolver.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/cover_art.dart';
 import '../../widgets/desktop/desktop_primitives.dart';
+import '../../widgets/desktop/desktop_shortcuts.dart';
 import '../../widgets/desktop/up_next_panel.dart';
 import '../../widgets/desktop/window_chrome.dart';
 
@@ -175,30 +176,35 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
         // build() has already returned — `context.select` on it would assert.
         _watchForErrors(context);
 
-        return Scaffold(
-          backgroundColor: AppColors.win,
-          body: Column(
-            children: [
-              WindowChrome(
-                label: track == null
-                    ? appDisplayName
-                    : '${track.title} — $appDisplayName',
-                onBack: () => Navigator.of(context).pop(),
-              ),
-              Expanded(
-                child: track == null
-                    ? const Center(
-                        child: Text(
-                          'No track playing',
-                          style: TextStyle(color: AppColors.muted),
+        return DesktopPlaybackShortcuts(
+          // Escape backs out of Now Playing — the same plain pop the chrome's
+          // back chevron does, so it can't strand a FolderRequest.
+          onEscape: () => Navigator.of(context).pop(),
+          child: Scaffold(
+            backgroundColor: AppColors.win,
+            body: Column(
+              children: [
+                WindowChrome(
+                  label: track == null
+                      ? appDisplayName
+                      : '${track.title} — $appDisplayName',
+                  onBack: () => Navigator.of(context).pop(),
+                ),
+                Expanded(
+                  child: track == null
+                      ? const Center(
+                          child: Text(
+                            'No track playing',
+                            style: TextStyle(color: AppColors.muted),
+                          ),
+                        )
+                      : _Body(
+                          track: track,
+                          onOpenFolder: () => _openFolder(track),
                         ),
-                      )
-                    : _Body(
-                        track: track,
-                        onOpenFolder: () => _openFolder(track),
-                      ),
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         );
       },

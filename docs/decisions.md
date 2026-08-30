@@ -656,3 +656,41 @@ so a dropped-and-resumed track counts once. Both are covered by tests.
 practice — then switch the trigger to accumulated playtime, keeping the same
 threshold and the same session identity. Nothing else about the design needs to
 change for that.
+
+---
+
+## 2026-08-30 — Desktop keyboard shortcuts live on both roots, and yield to text fields
+
+**Decided.** `DesktopPlaybackShortcuts` binds Space (play/pause), ←/→ (seek
+∓10s), Ctrl+←/→ (previous/next), ↑/↓ (volume ±5%), and Escape (close Now
+Playing, where a handler is passed).
+
+It wraps **both** desktop roots — `DesktopShell` *and* `DesktopPlayerScreen` —
+and every binding is a no-op while a text field holds focus.
+
+**Why.** Now Playing is pushed on the root navigator, so it is not inside the
+shell's subtree; wrapping only the shell would leave the player screen — the one
+place a user is most likely to reach for these keys — without them.
+
+The typing guard is not optional: these bindings sit above the whole window, so
+without it a space typed into the search box would pause the music instead of
+typing. Arrow keys happen to be consumed by `EditableText`'s own closer handlers
+first, but the guard covers them rather than depending on that ordering.
+
+Media keys are a separate, system-wide path that already worked (MPRIS on Linux,
+SMTC on Windows); this is in-window only, and the two don't interact.
+
+**What would reverse it.** Nothing likely. Note the widget owns a
+`Focus(autofocus: true)` holder, because key events only reach a
+`CallbackShortcuts` by bubbling up from the focused node and the route's
+`FocusScope` sits above it — with nothing focused inside, the shortcuts would be
+dead until the user clicked something. The cost is that it claims autofocus: a
+desktop screen that later wants an autofocusing field would have to take focus
+explicitly instead. No desktop screen autofocuses today.
+
+**Not included:** Ctrl+F to focus search. Both searchable screens live in an
+`IndexedStack` (so both are mounted at once) *and* the library one sits behind a
+nested navigator whose folder screens have their own search fields — so "focus
+the search box" has no single correct target without a focus registry keyed on
+the active destination. Deferred rather than half-built.
+

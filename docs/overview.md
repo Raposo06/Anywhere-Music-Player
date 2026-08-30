@@ -104,6 +104,8 @@ no backend of its own.
 - Scrobbling: plays are reported back to the server (past half the track or
   four minutes), so Navidrome's play counts and "recently played" reflect this
   app; a "now playing" announcement drives its live panel
+- Desktop keyboard shortcuts: space, arrow-key seek/volume, Ctrl+arrow skip,
+  Escape to close Now Playing
 - Automatic recovery from mid-stream connection drops
 - Lock screen / notification controls (Android); SMTC + keep-awake (Windows);
   MPRIS media keys (Linux)
@@ -159,10 +161,10 @@ library mode (the caches accelerate a working setup, they don't replace it).
 **Implemented:** browsing, search, streaming, queue, shuffle/repeat, ReplayGain,
 library + stream + cover caching, drop recovery, Android TV UI, Windows SMTC and
 wakelock, Windows installer, Linux MPRIS media keys, Arch packaging (PKGBUILD),
-the desktop redesign (theme + sidebar shell + custom window chrome), and
-scrobbling.
+the desktop redesign (theme + sidebar shell + custom window chrome), scrobbling,
+and desktop keyboard shortcuts.
 
-**Test suite:** 29 test files under `test/` (~3,900 lines including support
+**Test suite:** 30 test files under `test/` (~4,200 lines including support
 fakes) covering the models, services, the screens and the shared widgets.
 Playback is exercised against a fake `just_audio` platform
 (`test/support/fake_just_audio.dart`) rather than a live backend. Sequencing
@@ -179,8 +181,11 @@ cache on Android), so a green suite says nothing about either backend.
 
 **Remaining / known gaps:**
 - iOS is scaffolded but never distributed (needs an Apple Developer account).
-- The desktop screens have no widget tests yet; `test/` still covers only the
-  phone widgets and the services beneath both.
+- The desktop *screens* still have no widget tests; the only desktop widget test
+  is `test/widgets/desktop_shortcuts_test.dart`, and `test/` otherwise covers
+  the phone widgets and the services beneath both.
+- No Ctrl+F to focus search on desktop — see [decisions](decisions.md) for why
+  it needs a focus registry rather than a one-liner.
 - Library cache is a single file per install, wiped on logout — no per-account
   scoping, so switching users rebuilds from a full scan.
 
