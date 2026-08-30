@@ -149,25 +149,23 @@ void main() {
       expect(server.playlists.keys, ['2']);
     });
 
-    testWidgets('pins All Tracks above the user\'s own playlists', (
+    testWidgets('a smart playlist the user owns still gets no overflow menu', (
       tester,
     ) async {
+      // All Tracks is a Navidrome smart playlist (.nsp): owned by the user,
+      // but read-only. Ownership alone would wrongly offer rename/delete —
+      // the server's `readonly` flag is what stops it.
+      server.playlists['3'] = (
+        name: 'All Tracks',
+        owner: 'alice',
+        trackIds: ['a'],
+      );
+      server.readonlyIds.add('3');
       await pump(tester, const DesktopPlaylistsScreen());
 
       expect(find.text('All Tracks'), findsOneWidget);
-      // A library view has nothing to rename or delete, so it gets no
-      // overflow menu — only Roadtrip (owned) does.
+      // Still only Roadtrip's — not All Tracks', despite alice owning both.
       expect(find.byIcon(Icons.more_horiz), findsOneWidget);
-    });
-
-    testWidgets('All Tracks is still there when there are no playlists', (
-      tester,
-    ) async {
-      server.playlists.clear();
-      await pump(tester, const DesktopPlaylistsScreen());
-
-      expect(find.text('All Tracks'), findsOneWidget);
-      expect(find.textContaining('No playlists yet'), findsOneWidget);
     });
 
     testWidgets('with none, it says so', (tester) async {
@@ -194,6 +192,23 @@ void main() {
 
       expect(find.text('This playlist is empty.'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    testWidgets('an empty one offers a way to fill it', (tester) async {
+      server.playlists['1'] = (name: 'Roadtrip', owner: 'alice', trackIds: []);
+      await pump(tester, const DesktopPlaylistScreen(playlistId: '1'));
+
+      // Otherwise a new playlist is a dead end: nothing on screen says how to
+      // get songs into it.
+      expect(find.widgetWithText(FilledButton, 'Add songs'), findsOneWidget);
+    });
+
+    testWidgets('a read-only one offers no way to add songs', (tester) async {
+      server.playlists['2'] = (name: 'All Tracks', owner: 'alice', trackIds: []);
+      server.readonlyIds.add('2');
+      await pump(tester, const DesktopPlaylistScreen(playlistId: '2'));
+
+      expect(find.text('Add songs'), findsNothing);
     });
 
     testWidgets('right-click offers removal, and removing works', (

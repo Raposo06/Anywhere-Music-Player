@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/audio_player_service.dart';
+import 'search_focus_scope.dart';
 
 /// How far the arrow keys move. Ten seconds is the near-universal convention
 /// for a media player; 5% gives volume twenty steps end to end, which is fine
@@ -18,6 +19,7 @@ const _volumeStep = 0.05;
 /// | ← / → | Seek back / forward 10s |
 /// | Ctrl + ← / → | Previous / next track |
 /// | ↑ / ↓ | Volume up / down |
+/// | Ctrl + F | Focus the screen's search box |
 /// | Alt + ← | Go back — up a folder, or out of Now Playing |
 /// | Escape | Same as Alt + ← |
 ///
@@ -30,7 +32,7 @@ const _volumeStep = 0.05;
 /// Media keys are a separate path and already work without this (MPRIS on
 /// Linux, SMTC on Windows — see [NowPlayingPresence]); those are system-wide,
 /// this is in-window.
-class DesktopPlaybackShortcuts extends StatelessWidget {
+class DesktopPlaybackShortcuts extends StatefulWidget {
   final Widget child;
 
   /// Where "go back" leads, if anywhere: up one folder in the shell, out of
@@ -44,6 +46,45 @@ class DesktopPlaybackShortcuts extends StatelessWidget {
   final VoidCallback? onBack;
 
   const DesktopPlaybackShortcuts({super.key, required this.child, this.onBack});
+
+  @override
+  State<DesktopPlaybackShortcuts> createState() =>
+      _DesktopPlaybackShortcutsState();
+}
+
+class _DesktopPlaybackShortcutsState extends State<DesktopPlaybackShortcuts> {
+  /// Search fields currently mounted below, oldest first. Ctrl + F takes the
+  /// last one that is still on screen — see [SearchFocusScope].
+  final List<SearchFocusTarget> _searchFields = [];
+
+  void _registerSearch(SearchFocusTarget target) {
+    // Remove-then-add so a re-register moves it to the front of the queue
+    // rather than leaving a duplicate behind it.
+    _searchFields
+      ..remove(target)
+      ..add(target);
+  }
+
+  void _unregisterSearch(SearchFocusTarget target) =>
+      _searchFields.remove(target);
+
+  /// Focus the innermost search field that can actually take focus.
+  ///
+  /// Newest first, because the innermost is the one on screen: a folder screen
+  /// pushed on the library's nested navigator, not the list behind it. Fields
+  /// that decline (a destination parked in the shell's `IndexedStack`) are
+  /// skipped rather than dropped — they become focusable again when their
+  /// destination is selected.
+  void _focusSearch() {
+    // Typing in the search box is not a reason to ignore Ctrl + F — that is
+    // precisely when it should select the query so the next keystroke
+    // replaces it. Typing anywhere else (a rename dialog) is, since yanking
+    // focus out of a modal would be worse than doing nothing.
+    if (_isTyping && !_searchFields.any((f) => f.hasSearchFocus)) return;
+    for (final field in _searchFields.reversed) {
+      if (field.focusSearch()) return;
+    }
+  }
 
   /// True while a text field owns the keyboard.
   ///
@@ -106,7 +147,9 @@ class DesktopPlaybackShortcuts extends StatelessWidget {
             _play(context, (p) => _nudgeVolume(p, _volumeStep)),
         const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
             _play(context, (p) => _nudgeVolume(p, -_volumeStep)),
-        if (onBack case final onBack?) ...{
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+            _focusSearch,
+        if (widget.onBack case final onBack?) ...{
           const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): () {
             if (!_isTyping) onBack();
           },
@@ -127,7 +170,15 @@ class DesktopPlaybackShortcuts extends StatelessWidget {
       // login field) will not reliably win. No desktop screen autofocuses
       // today. skipTraversal keeps the holder out of the Tab order, where it
       // would otherwise be a stop that does nothing.
-      child: Focus(autofocus: true, skipTraversal: true, child: child),
+      child: Focus(
+        autofocus: true,
+        skipTraversal: true,
+        child: SearchFocusScope(
+          register: _registerSearch,
+          unregister: _unregisterSearch,
+          child: widget.child,
+        ),
+      ),
     );
   }
 }

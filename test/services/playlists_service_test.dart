@@ -250,7 +250,7 @@ void main() {
             : _ok({}),
       );
 
-      final ok = await playlists.create(
+      final created = await playlists.create(
         'Roadtrip',
         tracks: [
           sampleTrack(id: 'a'),
@@ -258,7 +258,8 @@ void main() {
         ],
       );
 
-      expect(ok, isTrue);
+      // The newly-listed playlist, not the create call's own (empty) body.
+      expect(created?.id, '9');
       final create = requests.firstWhere(
         (u) => endpointOf(u) == 'createPlaylist',
       );
@@ -288,9 +289,9 @@ void main() {
     test('a rejected create reports and does not claim success', () async {
       final (:playlists, requests: _) = build((_) => _failed('read-only'));
 
-      final ok = await playlists.create('Nope');
+      final created = await playlists.create('Nope');
 
-      expect(ok, isFalse);
+      expect(created, isNull);
       expect(playlists.error, contains('Could not create playlist'));
     });
   });

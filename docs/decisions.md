@@ -693,6 +693,7 @@ explicitly instead. No desktop screen autofocuses today.
 nested navigator whose folder screens have their own search fields — so "focus
 the search box" has no single correct target without a focus registry keyed on
 the active destination. Deferred rather than half-built.
+**(Superseded 2026-08-30 — the registry was built; see the entry at the end.)**
 
 ---
 
@@ -976,3 +977,276 @@ assertion. And any screen showing a `TrackTile` or `DesktopTrackRow` now needs
 **What would reverse it.** Nothing. Note the pattern these bugs share: each was
 invisible in normal use and only appeared under a slightly different entry
 order — a dialog dismissed, a screen opened directly, a label just too long.
+
+## 2026-08-30 — All Tracks is a Navidrome smart playlist, not an app concept
+
+**Decided.** Delete the special-cased "All Tracks" card and its screens from
+both shells. The list is now a `.nsp` smart playlist living at the music-folder
+root on the server, and the app renders it as an ordinary playlist with no
+knowledge that it is special.
+
+`all-tracks.nsp`:
+
+```json
+{
+  "name": "All Tracks",
+  "public": true,
+  "all": [ { "gt": { "duration": -1 } } ],
+  "sort": "title"
+}
+```
+
+**Why.** The pinned card was a permanent seam: it needed `LibraryScanner`
+injected into both playlists screens purely to render a count, it had to be
+excluded from the add-to-playlist picker, it had no cover art, and it sat
+*outside* `service.playlists` so the header read "0 playlists" while a playlist
+was plainly on screen. Every one of those was a symptom of modelling a playlist
+as not-a-playlist. Moving it server-side deleted all of them at once, and
+Navidrome throws in generated cover art for free.
+
+**Two things worth keeping.**
+
+*Why `duration`, not `playCount`.* Navidrome's docs suggest `playCount > -1` as
+the match-everything rule. It silently doesn't. `play_count` arrives via a
+`LEFT JOIN` on `annotation` and is only made NULL-safe in the **select** list
+(`coalesce(play_count, 0) as play_count`, `persistence/sql_annotations.go`); a
+criteria rule lands in the `WHERE`, where an unplayed track's value is NULL and
+`NULL > -1` is NULL. The playlist would have contained only songs already
+played. `duration` is a plain `media_file` column and is never NULL.
+
+*`readonly` replaced the ownership guess.* `Playlist.isEditableBy` previously
+compared owners and carried a comment admitting it could not detect smart
+playlists. Navidrome does report this, via OpenSubsonic's `readonly` field
+(`server/subsonic/playlists.go`), which is authoritative for smart playlists,
+foreign ownership *and* `TracksEditable()` — strictly better than what we
+inferred. Because every consumer already routed through `isEditableBy`, one
+model change fixed the picker, the overflow menu and track removal on both
+platforms. Without it, All Tracks would have been offered as an add-to
+destination and failed server-side after the fact.
+
+**What would reverse it.** Load time. The old screens read `LibraryScanner`'s
+local cache; a playlist fetches `getPlaylist` with all 4,384 entries over the
+network. If that proves slow in practice, the fix is to special-case the
+*fetch* (serve a known-smart playlist's tracks from the library cache), not to
+bring back a special-cased card — the card was the part that hurt.
+
+**Left behind, deliberately.** `screens/all_tracks_screen.dart` and
+`screens/desktop/desktop_all_tracks_screen.dart` are now unreachable. They are
+kept until the load-time question above is settled, since they are exactly what
+a cache-backed path would reuse.
+
+## 2026-08-30 — Filling a playlist is playlist-first, not only track-first
+
+**Decided.** Add `AddSongsToPlaylist` — a search-and-add picker opened *from* a
+playlist — alongside the existing `AddToPlaylist`, which is opened from a track.
+Creating a playlist now also opens it.
+
+**Why.** The only way to fill a playlist was track-first: find a track,
+right-click (desktop) or long-press (phone), pick the playlist. That is fine for
+one song noticed in passing and hopeless for twenty, and it made "New playlist"
+a dead end — you named it, landed back on the grid, and nothing on screen said
+what to do next. The empty state's advice ("Long-press a track anywhere to add
+it here") was accurate and useless.
+
+The two directions are complements, not duplicates: track-first answers "where
+does this song go?", playlist-first answers "what goes in here?".
+
+**Adds are committed one at a time, not batched on close.** The sheet stays
+open, and each tap writes immediately and flips the row to a tick. Batching
+would be fewer requests, but dismissing the sheet mid-way — the single most
+likely thing a user does — would silently discard the work.
+
+**Search filters `LibraryScanner`'s cache, not `search3`.** Results are instant
+and keystroke-by-keystroke with no debounce, no spinner and no failure path.
+The cost is that it only finds what the last scan saw. This reintroduces a
+`LibraryScanner` dependency to the playlist screens, which the entry above had
+just removed — but for a different reason: that one injected a scanner to
+render a *count*, this one genuinely searches the library. Results cap at 100;
+refining the query beats scrolling.
+
+**`PlaylistsService.create` now returns the new `Playlist`, not a bool**, so the
+caller can open it. Which playlist that is gets settled without trusting
+`createPlaylist`'s response body — the id it reports is used when present, and
+the fallback is whichever id is in the list after the re-read and was not
+before. The body varies between servers; the fake server in our own tests
+returns none at all, which is what surfaced this.
+
+**What would reverse it.** If library search needs to match things the cache
+does not hold (genre, year, comments), the filter has to become `search3` and
+grow a debounce and an error state with it.
+
+
+## 2026-08-30 — Ctrl+F focuses search, via a registry of mounted search fields
+
+**Supersedes** the "Not included: Ctrl+F" note in the desktop-shortcuts entry
+above, which deferred it for want of "a focus registry keyed on the active
+destination". This is that registry.
+
+**Decided.** `SearchFocusScope` (an `InheritedWidget` provided by
+`DesktopPlaybackShortcuts`) lets any `DesktopSearchField` below register itself
+on mount. Ctrl+F walks the registrations newest-first and focuses the first one
+that will actually accept focus, also selecting whatever is already typed so the
+next keystroke replaces the query. The field's tooltip advertises it, matching
+the "Action (Ctrl+X)" convention the transport controls already set.
+
+**Why a registry rather than passing the destination down.** The shortcut layer
+sits *above* the screens that own search fields, and inherited widgets only pass
+data downwards — so the field has to announce itself upwards. Keying on the
+active destination, as the deferred note proposed, would have worked too but
+requires the shell to know which destinations are searchable; registration keeps
+that knowledge in the one widget that has it.
+
+**Newest-first is what makes the nested navigator right.** A folder screen
+pushed on the library's navigator registers after the list behind it, so it
+wins; popping it disposes and deregisters, and the one behind takes over.
+
+**What settles the `IndexedStack` problem the old note raised.** The shell keeps
+all three destinations mounted, so the Library's field stays registered while
+Playlists is on screen. `IndexedStack` wraps non-selected children in
+`ExcludeFocus`, which makes requesting focus on them a *silent no-op* — the
+shortcut would have looked broken rather than failed loudly. So a field reports
+itself focusable only if `canRequestFocus` holds and every ancestor has
+`descendantsAreFocusable`; a field that declines is skipped, not unregistered,
+because it becomes focusable again when its destination is selected.
+
+**The typing guard is relaxed for this one binding.** Every other shortcut is
+suppressed while an `EditableText` has focus. Ctrl+F is suppressed only when the
+focused field is *not* a registered search box — so it selects the query when
+you are already in search (what a browser's find bar does) but will not yank
+focus out of a rename dialog.
+
+**What would reverse it.** A second searchable widget on one screen, or a
+searchable surface that is not a `DesktopSearchField` — either would make
+"newest registration" too blunt, and the registry would need an explicit
+priority or scope key.
+
+---
+
+## 2026-08-30 — Window chrome is taller, and the shell's back chevron actually shows
+
+**Decided.** `AppMetrics.titlebarHeight` goes from 48 to 72 — 56 was tried
+first and still read as thin against a real 1080p window, per a screenshot.
+Everything else in the bar scaled up with it rather than just leaving more
+empty padding: the app glyph 20→26px, its icon 14→17, the context label
+13→15px, the window-control glyphs 10→13px, and both the back chevron's icon
+(20→26) and every chrome button's hit target (32/44→50px wide) grew to match.
+More load-bearing than any of those numbers: `DesktopShell` now passes
+`onBack` to its own `WindowChrome`, which it never did — the chevron only ever
+appeared on `DesktopPlayerScreen`. Library and Playlists drill-down have had no
+mouse target at all until now.
+
+**Why.** The "Alt + ← and Escape go back on desktop" entry above solved
+*discoverability* for the keyboard but left the mouse with nothing — the shell
+kept `_goBack` and `canPop()` entirely internal, wired only to key bindings.
+Whether a user reaches for Alt+← at all is a matter of habit, and the chrome
+already had a chevron shape for exactly this job on one screen; it just wasn't
+wired up on the other. Narrowing that one button to 32px while its siblings sat
+at 44px wasn't chosen for any reason tied to how often it gets clicked.
+
+**How the chevron knows when to show itself.** `_TopRouteObserver` is renamed
+`_NavigatorTracker` and now publishes a `canPop` flag alongside the route name,
+one instance per nested navigator (library, playlists — Favourites has neither,
+it never pushes anything). The shell reads both through an `AnimatedBuilder`
+over `Listenable.merge([...])`, replacing the single `ValueListenableBuilder`
+that only ever watched the library's route name. Deriving "show the chevron"
+from `canPop()` directly (read during `build()`) would not have rebuilt when a
+nested navigator changed under it — the same reason the route name was already
+a notifier rather than a live read.
+
+**A side effect worth having.** The title bar's context line now follows into
+an open playlist ("Roadtrip — Anywhere Music Player"), the same way it already
+followed into a folder. It never did before, because nothing was tracking the
+playlists navigator's top route at all.
+
+**A drive-by fix.** Two doc comments in `desktop_shell.dart` still said "All
+Tracks" was a flat destination alongside Favourites — leftover from before All
+Tracks was folded into Playlists (see the smart-playlist entry above).
+Corrected while in the neighbourhood; `SidebarDestination` has had only
+`library`, `favourites`, `playlists` since that merge.
+
+**Test-environment note, correcting the earlier entry.** "Alt + ← and Escape go
+back on desktop" said driving a folder pop through the shell needed a pointer
+the writing environment couldn't simulate. `test/screens/desktop_shell_test.dart`
+does exactly that — pumps the real `DesktopShell`, taps into a playlist, taps
+the chevron, and asserts `DesktopPlaylistScreen` actually leaves the tree. The
+one wrinkle: popping a real `MaterialPageRoute` runs a ~300ms transition, unlike
+the dialogs every other `settle()` in this codebase waits on, so that one
+assertion needs 16 short pumps instead of the usual 8 — first test in the suite
+to push and pop a full screen rather than a dialog.
+
+**What would reverse it.** Wanting the chrome narrower again — a TV-style
+remote-only mode, say, where a mouse target is wasted space. `onBack` staying
+optional on `WindowChrome` means dropping the shell's wiring is a one-line
+revert; the height and button-width bumps are independent of it.
+
+---
+
+## 2026-08-30 — The hand cursor is an explicit opt-in, per button family
+
+**Decided.** Every button theme in `buildAppTheme` sets
+`enabledMouseCursor: pointerCursor` (and `disabledMouseCursor: basic`), and
+`AccentCircleButton` sets `mouseCursor` on its `InkWell` directly. A regression
+test, `test/widgets/pointer_cursor_test.dart`, asserts the resolved cursor for
+each widget family.
+
+**Why this is not redundant.** Material's default is
+`WidgetStateMouseCursor.adaptiveClickable`, which resolves to
+`kIsWeb ? click : basic`. On desktop, Flutter gives buttons the plain arrow *on
+purpose* — native macOS and Windows treat the hand as a hyperlink affordance,
+not a button one. This app disagrees and wants the hand on anything clickable,
+which is what `HoverRow` had always done for rows. That mismatch is what the
+user reported: rows changed the cursor, buttons didn't.
+
+**Why it needs five theme entries plus one widget.** Only `ButtonStyleButton`
+subclasses read a button theme, so elevated, outlined, text, filled and icon
+buttons each need their own. `InkWell` is not one of them, so no theme reaches
+`AccentCircleButton` and it sets the cursor itself.
+
+**Disabled controls keep the arrow.** A hand over something that does nothing
+when clicked misdescribes the control, so `disabledMouseCursor` stays `basic`
+everywhere. There is a test for this on `AccentCircleButton`.
+
+**What makes this worth a test rather than trusting the theme.** The failure is
+silent — no throw, no log, the button still works, and it only shows up under a
+real pointer. A future Flutter upgrade flipping the default, or someone tidying
+these lines away as boilerplate, would go unnoticed until a user complained
+again. Cursor resolution turns out to be testable headlessly via
+`MouseTracker.debugDeviceActiveCursor`, so the test costs nothing to run.
+
+**Two dead ends worth recording, so they aren't retried.** This looked like a
+platform fault for a while: hover was assumed broken, then Wayland was
+suspected, then Tooltip's nested `MouseRegion(cursor: defer)` was suspected and
+`_ChromeIconButton` was briefly rewritten to wrap its Tooltip instead of sitting
+inside it. `GDK_BACKEND=x11` changed nothing, and the Tooltip rewrite was
+reverted after a test proved both orders resolve `click` identically. The clue
+that settled it was the user's own observation that rows worked and buttons did
+not — same cursor value, same app, same session, so nothing below the widget
+tree could be at fault.
+
+**What would reverse it.** Deciding the app should follow native desktop
+convention after all, in which case delete the theme entries and the test
+together rather than one without the other.
+
+---
+
+## 2026-08-30 — One `DesktopErrorState`, not three
+
+**Decided.** `desktop_library_screen.dart`, `desktop_playlists_screen.dart` and
+`desktop_favourites_screen.dart` each carried a private `_ErrorState` — icon,
+message, Retry button — used identically in all three: an error with nothing
+loaded yet is a dead end that needs a retry. They'd drifted apart with no
+reason tied to the screen. Library's was the outlier (red message text, no
+icon, `ElevatedButton`); playlists and favourites already agreed with each
+other (`error_outline` icon, muted text, `OutlinedButton`). Replaced all three
+with `DesktopErrorState` in `desktop_primitives.dart`, standardised on the
+majority style.
+
+**Why the library one moved rather than the other two.** Nothing about a
+library-scan failure is more severe than a playlists-load failure — both are
+"couldn't fetch the list, here's why, try again" — so there was no reason for
+one to read as more alarming than the others. Two screens already agreeing was
+the tie-breaker.
+
+**What would reverse it.** A screen that genuinely needs a different register
+for its errors (blocking vs. transient, say) — then it stops being one shared
+widget and becomes a `severity` parameter on it, not three private copies again.

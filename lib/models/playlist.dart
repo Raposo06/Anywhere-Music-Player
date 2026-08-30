@@ -19,6 +19,15 @@ class Playlist with CoverArtRef {
 
   final bool isPublic;
 
+  /// The server's own verdict on whether this playlist can be edited, from
+  /// OpenSubsonic's `readonly` field.
+  ///
+  /// Authoritative where [owner] is only a guess: Navidrome sets it for smart
+  /// playlists (`.nsp`), for playlists belonging to someone else, and for
+  /// anything else it considers non-editable. Absent on servers that predate
+  /// the field, in which case ownership is all we have.
+  final bool readonly;
+
   @override
   final String? coverArtId;
 
@@ -29,6 +38,7 @@ class Playlist with CoverArtRef {
     this.durationSeconds = 0,
     this.owner,
     this.isPublic = false,
+    this.readonly = false,
     this.coverArtId,
   });
 
@@ -40,21 +50,25 @@ class Playlist with CoverArtRef {
       durationSeconds: (json['duration'] as num?)?.toInt() ?? 0,
       owner: json['owner'] as String?,
       isPublic: json['public'] as bool? ?? false,
+      readonly: json['readonly'] as bool? ?? false,
       coverArtId: json['coverArt']?.toString(),
     );
   }
 
   /// Whether [username] may add to, remove from, rename or delete this.
   ///
-  /// Unknown ownership is treated as editable: the server is the real
-  /// authority and will refuse if we're wrong, whereas hiding the controls on
-  /// a playlist the user *can* edit is a silent dead end.
+  /// [readonly] wins when the server sends it — it is the server's own answer,
+  /// and it is the only way to detect a Navidrome **smart playlist** (`.nsp`),
+  /// which is read-only even to its owner. Editing one otherwise fails
+  /// server-side and surfaces as an error after the fact.
   ///
-  /// This cannot detect Navidrome **smart playlists** (`.nsp`), which are
-  /// read-only even to their owner and are not flagged in the Subsonic
-  /// response — editing one fails server-side and surfaces as an error.
-  bool isEditableBy(String? username) =>
-      owner == null || username == null || owner == username;
+  /// Falling back, unknown ownership is treated as editable: the server is the
+  /// real authority and will refuse if we're wrong, whereas hiding the controls
+  /// on a playlist the user *can* edit is a silent dead end.
+  bool isEditableBy(String? username) {
+    if (readonly) return false;
+    return owner == null || username == null || owner == username;
+  }
 
   /// e.g. "12 tracks · 48 min", or "1 track" — the subtitle every list shows.
   String get summary {

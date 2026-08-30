@@ -151,12 +151,25 @@ void main() {
     expect(service.error, contains('Could not add to playlist'));
   });
 
-  testWidgets('never offers All Tracks as a destination', (tester) async {
-    // It is pinned into the playlists *list* for browsing, but you cannot add
-    // a song to it — it is a view of the library, not a collection.
+  testWidgets('a smart playlist is shown but not pickable', (tester) async {
+    // All Tracks is a Navidrome smart playlist (.nsp): alice owns it, so the
+    // ownership check alone would let her try to add to it, and the write
+    // would fail server-side. `readonly` is what makes the tile inert.
+    server.playlists['3'] = (
+      name: 'All Tracks',
+      owner: 'alice',
+      trackIds: [],
+    );
+    server.readonlyIds.add('3');
     await pumpPicker(tester);
 
-    expect(find.text('All Tracks'), findsNothing);
+    final tile = tester.widget<ListTile>(
+      find.ancestor(
+        of: find.text('All Tracks'),
+        matching: find.byType(ListTile),
+      ),
+    );
+    expect(tile.enabled, isFalse);
   });
 
   testWidgets('with no playlists it still offers to create one', (

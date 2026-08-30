@@ -5,14 +5,12 @@ import '../../models/playlist.dart';
 import '../../models/track.dart';
 import '../../services/audio_player_service.dart';
 import '../../services/auth_service.dart';
-import '../../services/library_scanner.dart';
 import '../../services/playlists_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/add_songs_to_playlist.dart';
 import '../../widgets/add_to_playlist.dart';
-import '../../widgets/cover_art.dart';
 import '../../widgets/desktop/desktop_primitives.dart';
 import '../../widgets/desktop/desktop_track_row.dart';
-import 'desktop_all_tracks_screen.dart';
 import 'desktop_shell.dart';
 
 /// The playlists list — the root of the Playlists destination's navigator.
@@ -37,7 +35,17 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
   }
 
   void _open(Playlist playlist) {
-    Navigator.of(context).push(DesktopPlaylistScreen.route(playlist.id));
+    Navigator.of(
+      context,
+    ).push(DesktopPlaylistScreen.route(playlist.id, name: playlist.name));
+  }
+
+  /// Create, then open it — a new playlist is empty, and the only useful next
+  /// step is putting songs in it.
+  Future<void> _createAndOpen() async {
+    final created = await createPlaylistWithPrompt(context);
+    if (created == null || !mounted) return;
+    _open(created);
   }
 
   /// Play a playlist without opening it.
@@ -52,15 +60,6 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
     if (tracks == null || tracks.isEmpty || !mounted) return;
     context.read<AudioPlayerService>().play(tracks);
     if (mounted) DesktopPlayerLauncher.openPlayer(context);
-  }
-
-  void _openAllTracks() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        settings: const RouteSettings(name: 'All Tracks'),
-        builder: (_) => const DesktopAllTracksScreen(),
-      ),
-    );
   }
 
   @override
@@ -99,7 +98,7 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
                 ),
                 const SizedBox(width: 20),
                 ElevatedButton.icon(
-                  onPressed: () => createPlaylistWithPrompt(context),
+                  onPressed: _createAndOpen,
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('New playlist'),
                 ),
@@ -124,19 +123,15 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (!service.isLoaded && service.error != null) {
-      return _ErrorState(
+      return DesktopErrorState(
         message: service.error!,
         onRetry: () => context.read<PlaylistsService>().load(),
       );
     }
 
-    // One grid, All Tracks first. It reads as a playlist even though it is
-    // not one — the difference shows only in what it lacks (no play button,
-    // no overflow menu, absent from the add-to-playlist picker).
     return ListView(
       children: [
         _grid([
-          _buildAllTracksCard(),
           for (final playlist in service.playlists)
             _PlaylistCard(
               playlist: playlist,
@@ -174,31 +169,10 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
       children: children,
     );
   }
-
-  Widget _buildAllTracksCard() {
-    final count = context.watch<LibraryScanner>().allTracks.length;
-    return _BuiltInCard(
-      icon: Icons.library_music_outlined,
-      name: 'All Tracks',
-      summary: count == 0
-          ? 'Everything in your library'
-          : '${_thousands(count)} tracks',
-      onOpen: _openAllTracks,
-    );
-  }
-
-  static String _thousands(int n) {
-    final digits = n.toString();
-    final buffer = StringBuffer();
-    for (var i = 0; i < digits.length; i++) {
-      if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
-      buffer.write(digits[i]);
-    }
-    return buffer.toString();
-  }
 }
 
-/// A playlist as a cover card, matching the library's folder cards.
+/// A playlist as a [HoverCoverCard], matching the library's folder cards —
+/// plus an overflow menu for rename/delete where the playlist is editable.
 ///
 /// Navidrome generates a mosaic cover for a playlist, so most have real art;
 /// the fallback is the same queue glyph used elsewhere for playlists.
@@ -220,8 +194,6 @@ class _PlaylistCard extends StatefulWidget {
 }
 
 class _PlaylistCardState extends State<_PlaylistCard> {
-  bool _hovered = false;
-
   Future<void> _rename() async {
     final name = await showDialog<String>(
       context: context,
@@ -263,163 +235,38 @@ class _PlaylistCardState extends State<_PlaylistCard> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onOpen,
-        behavior: HitTestBehavior.opaque,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: ColoredBox(
-                      color: AppColors.surface2,
-                      // A stable request size, for the same reason the folder
-                      // cards use one: resizing must not re-mint the URL.
-                      child: CoverArt(
-                        widget.playlist,
-                        size: 384,
-                        expand: true,
-                        radius: 0,
-                        fallbackIcon: Icons.queue_music,
-                        fallbackIconColor: AppColors.faint,
-                        fallbackIconSize: 56,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    right: 10,
-                    bottom: 10,
-                    child: AnimatedScale(
-                      scale: _hovered ? 1.08 : 1,
-                      duration: AppMetrics.stateTransition,
-                      child: AccentCircleButton(
-                        size: 38,
-                        icon: Icons.play_arrow,
-                        tooltip: 'Play this playlist',
-                        onPressed: widget.onPlay,
-                      ),
-                    ),
-                  ),
-                  // Always present rather than hover-gated, like the play
-                  // button: the design keeps card affordances visible.
-                  if (widget.editable)
-                    Positioned(
-                      right: 4,
-                      top: 4,
-                      child: PopupMenuButton<String>(
-                        tooltip: 'More',
-                        icon: const Icon(
-                          Icons.more_horiz,
-                          size: 18,
-                          color: Colors.white,
-                        ),
-                        onSelected: (value) =>
-                            value == 'rename' ? _rename() : _delete(),
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(
-                            value: 'rename',
-                            child: Text('Rename…'),
-                          ),
-                          PopupMenuItem(value: 'delete', child: Text('Delete')),
-                        ],
-                      ),
-                    ),
+    return HoverCoverCard(
+      source: widget.playlist,
+      fallbackIcon: Icons.queue_music,
+      title: widget.playlist.name,
+      subtitle: widget.editable
+          ? widget.playlist.summary
+          : '${widget.playlist.summary} · read-only',
+      playTooltip: 'Play this playlist',
+      onOpen: widget.onOpen,
+      onPlay: widget.onPlay,
+      // Always present rather than hover-gated, like the play button: the
+      // design keeps card affordances visible.
+      overlay: widget.editable
+          ? Positioned(
+              right: 4,
+              top: 4,
+              child: PopupMenuButton<String>(
+                tooltip: 'More',
+                icon: const Icon(
+                  Icons.more_horiz,
+                  size: 18,
+                  color: Colors.white,
+                ),
+                onSelected: (value) =>
+                    value == 'rename' ? _rename() : _delete(),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'rename', child: Text('Rename…')),
+                  PopupMenuItem(value: 'delete', child: Text('Delete')),
                 ],
               ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              widget.playlist.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: AppColors.text,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              widget.editable
-                  ? widget.playlist.summary
-                  : '${widget.playlist.summary} · read-only',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: AppColors.muted),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A library collection as a card — same geometry as a playlist card, but
-/// with a glyph instead of cover art and no play or overflow, because there
-/// is nothing to rename, delete, or (for All Tracks) sensibly play in order.
-class _BuiltInCard extends StatelessWidget {
-  final IconData icon;
-  final String name;
-  final String summary;
-  final VoidCallback onOpen;
-
-  const _BuiltInCard({
-    required this.icon,
-    required this.name,
-    required this.summary,
-    required this.onOpen,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onOpen,
-        behavior: HitTestBehavior.opaque,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: ColoredBox(
-                  color: AppColors.surface2,
-                  child: Center(
-                    child: Icon(icon, size: 56, color: AppColors.faint),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: AppColors.text,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              summary,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: AppColors.muted),
-            ),
-          ],
-        ),
-      ),
+            )
+          : null,
     );
   }
 }
@@ -480,6 +327,9 @@ class _DesktopPlaylistScreenState extends State<DesktopPlaylistScreen> {
     final username = context.read<AuthService>().currentUser?.username;
     return playlist?.isEditableBy(username) ?? false;
   }
+
+  Future<void> _addSongs(Playlist playlist) =>
+      AddSongsToPlaylist.show(context, playlist);
 
   Future<void> _remove(Track track, int index) async {
     await context.read<PlaylistsService>().removeTrack(
@@ -542,28 +392,49 @@ class _DesktopPlaylistScreenState extends State<DesktopPlaylistScreen> {
                   icon: const Icon(Icons.shuffle, size: 16),
                   label: const Text('Shuffle'),
                 ),
+                if (playlist != null && _editable) ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _addSongs(playlist),
+                    icon: const Icon(Icons.playlist_add, size: 16),
+                    label: const Text('Add songs'),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 20),
             const SectionLabel('Tracks'),
             const SizedBox(height: 6),
-            Expanded(child: _buildBody(tracks)),
+            Expanded(child: _buildBody(playlist, tracks)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildBody(List<Track>? tracks) {
+  Widget _buildBody(Playlist? playlist, List<Track>? tracks) {
     // Null means not fetched yet; empty means a genuinely empty playlist.
     if (tracks == null) {
       return const Center(child: CircularProgressIndicator());
     }
     if (tracks.isEmpty) {
-      return const Center(
-        child: Text(
-          'This playlist is empty.',
-          style: TextStyle(color: AppColors.muted),
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'This playlist is empty.',
+              style: TextStyle(color: AppColors.muted),
+            ),
+            if (playlist != null && _editable) ...[
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () => _addSongs(playlist),
+                icon: const Icon(Icons.search, size: 18),
+                label: const Text('Add songs'),
+              ),
+            ],
+          ],
         ),
       );
     }
@@ -605,33 +476,6 @@ class _Crumb extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-
-  const _ErrorState({required this.message, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.error_outline, size: 36, color: AppColors.faint),
-          const SizedBox(height: 12),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 13, color: AppColors.muted),
-          ),
-          const SizedBox(height: 16),
-          OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
-        ],
       ),
     );
   }

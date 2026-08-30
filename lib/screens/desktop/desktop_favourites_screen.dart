@@ -123,7 +123,7 @@ class DesktopFavouritesScreen extends StatelessWidget {
     // *after* a successful load (a rejected star) is surfaced by the toggle
     // site instead, and must not replace a list that is still good.
     if (!favourites.isLoaded && favourites.error != null) {
-      return _ErrorState(
+      return DesktopErrorState(
         message: favourites.error!,
         onRetry: () => context.read<FavouritesService>().load(),
       );
@@ -164,36 +164,6 @@ class DesktopFavouritesScreen extends StatelessWidget {
           onTap: () => _playTrack(context, track, tracks),
         );
       },
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-
-  const _ErrorState({required this.message, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 36, color: AppColors.faint),
-            const SizedBox(height: 12),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13, color: AppColors.muted),
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
-          ],
-        ),
-      ),
     );
   }
 }

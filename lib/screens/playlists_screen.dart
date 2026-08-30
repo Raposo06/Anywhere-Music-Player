@@ -5,13 +5,12 @@ import '../models/playlist.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import '../services/auth_service.dart';
-import '../services/library_scanner.dart';
 import '../services/playlists_service.dart';
 import '../utils/responsive.dart';
+import '../widgets/add_songs_to_playlist.dart';
 import '../widgets/add_to_playlist.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/track_tile.dart';
-import 'all_tracks_screen.dart';
 import 'player_screen.dart';
 
 /// The phone's playlists list. Counterpart to `DesktopPlaylistsScreen`;
@@ -40,32 +39,12 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
     );
   }
 
-  void _openAllTracks() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const AllTracksScreen()));
-  }
-
-  /// The library's own collection, above the user's playlists.
-  ///
-  /// All Tracks is a *view of the library*, not a playlist: nothing to rename
-  /// or delete, and it never appears in the add-to-playlist picker. The
-  /// divider is what makes that visible.
-  Widget _buildBuiltIns(BuildContext context) {
-    final count = context.watch<LibraryScanner>().allTracks.length;
-    return Column(
-      children: [
-        ListTile(
-          leading: const CircleAvatar(child: Icon(Icons.library_music)),
-          title: const Text('All Tracks'),
-          subtitle: Text(
-            count == 0 ? 'Everything in your library' : '$count tracks',
-          ),
-          onTap: _openAllTracks,
-        ),
-        const Divider(height: 1),
-      ],
-    );
+  /// Create, then open it — a new playlist is empty, and the only useful next
+  /// step is putting songs in it.
+  Future<void> _createAndOpen() async {
+    final created = await createPlaylistWithPrompt(context);
+    if (created == null || !mounted) return;
+    _open(created);
   }
 
   Future<void> _confirmDelete(Playlist playlist) async {
@@ -105,7 +84,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'New playlist',
-            onPressed: () => createPlaylistWithPrompt(context),
+            onPressed: _createAndOpen,
           ),
         ],
       ),
@@ -138,28 +117,17 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
       );
     }
     if (service.playlists.isEmpty) {
-      // All Tracks still shows — the list is never truly empty.
-      return ListView(
-        children: [
-          _buildBuiltIns(context),
-          const Padding(
-            padding: EdgeInsets.only(top: 32),
-            child: Text(
-              'No playlists yet',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 15),
-            ),
-          ),
-        ],
+      return const _Message(
+        icon: Icons.queue_music,
+        title: 'No playlists yet',
+        subtitle: 'Create one with +, or long-press a track to add it to one.',
       );
     }
 
     return ListView.builder(
-      // One extra leading row for All Tracks.
-      itemCount: service.playlists.length + 1,
+      itemCount: service.playlists.length,
       itemBuilder: (context, i) {
-        if (i == 0) return _buildBuiltIns(context);
-        final playlist = service.playlists[i - 1];
+        final playlist = service.playlists[i];
         final editable = playlist.isEditableBy(username);
         return ListTile(
           leading: CoverArt(playlist, size: 48, showPlaceholder: false),
@@ -244,6 +212,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     );
   }
 
+  Future<void> _addSongs(Playlist playlist) =>
+      AddSongsToPlaylist.show(context, playlist);
+
   @override
   Widget build(BuildContext context) {
     final service = context.watch<PlaylistsService>();
@@ -267,6 +238,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               onPressed: () => _playAll(tracks, shuffled: true),
             ),
           ],
+          if (playlist != null && _editable)
+            IconButton(
+              icon: const Icon(Icons.playlist_add),
+              tooltip: 'Add songs',
+              onPressed: () => _addSongs(playlist),
+            ),
         ],
       ),
       body: RefreshIndicator(
@@ -274,21 +251,30 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           widget.playlistId,
           force: true,
         ),
-        child: _buildBody(tracks),
+        child: _buildBody(playlist, tracks),
       ),
     );
   }
 
-  Widget _buildBody(List<Track>? tracks) {
+  Widget _buildBody(Playlist? playlist, List<Track>? tracks) {
     // Null means not fetched yet; empty means a genuinely empty playlist.
     if (tracks == null) {
       return const Center(child: CircularProgressIndicator());
     }
     if (tracks.isEmpty) {
-      return const _Message(
+      return _Message(
         icon: Icons.queue_music,
         title: 'This playlist is empty',
-        subtitle: 'Long-press a track anywhere to add it here.',
+        subtitle: playlist != null && _editable
+            ? null
+            : 'Long-press a track anywhere to add it here.',
+        action: playlist != null && _editable
+            ? FilledButton.icon(
+                onPressed: () => _addSongs(playlist),
+                icon: const Icon(Icons.search),
+                label: const Text('Add songs'),
+              )
+            : null,
       );
     }
     return ListView.builder(

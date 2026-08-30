@@ -37,7 +37,7 @@ library — no accounts to create, no catalogue but your own.
 └──────────────────┬─────────────────────┘
                    │ read-only bind mount
                    ▼
-        /mnt/music — Hetzner Storage Box
+   /mnt/storagebox/music — Hetzner Storage Box
         (CIFS mount on the fox-core VPS)
 ```
 
@@ -107,7 +107,9 @@ no backend of its own.
   four minutes), so Navidrome's play counts and "recently played" reflect this
   app; a "now playing" announcement drives its live panel
 - Desktop keyboard shortcuts: space, arrow-key seek/volume, Ctrl+arrow skip,
-  Alt+← (or Escape) to go back a folder / leave Now Playing
+  Ctrl+F to focus search,
+  Alt+← (or Escape) to go back a folder or playlist / leave Now Playing — the
+  title bar's back chevron does the same thing for the mouse
 - Playlists (desktop + phone): create, rename, delete, add and remove tracks on
   server-side playlists — shared with Navidrome's web UI. Reordering is not
   supported, see [decisions](decisions.md)
@@ -126,8 +128,8 @@ Three layouts over one set of services. `MainScreen` picks between the first two
 
 | Form factor | Entry point | Navigation | Player |
 |---|---|---|---|
-| Desktop (Windows/Linux) | `screens/desktop/desktop_shell.dart` | 224px sidebar (Library / Favourites / Playlists) + a nested navigator per drill-down destination; All Tracks is pinned inside Playlists | Full-window `DesktopPlayerScreen` with a docked "Up Next" panel |
-| Android phone | `MainScreen`'s `_PhoneScaffold` | Bottom tab bar (Folders / Favourites / Playlists); All Tracks is pinned inside Playlists | `PlayerScreen` + modal `QueueSheet` |
+| Desktop (Windows/Linux) | `screens/desktop/desktop_shell.dart` | 224px sidebar (Library / Favourites / Playlists) + a nested navigator per drill-down destination; All Tracks is an ordinary (read-only) playlist | Full-window `DesktopPlayerScreen` with a docked "Up Next" panel |
+| Android phone | `MainScreen`'s `_PhoneScaffold` | Bottom tab bar (Folders / Favourites / Playlists); All Tracks is an ordinary (read-only) playlist | `PlayerScreen` + modal `QueueSheet` |
 | Android TV | `screens/tv_home_screen.dart` | D-pad focus traversal | `TvPlayerScreen` |
 
 Desktop and phone are **separate screens on purpose** — see
@@ -158,8 +160,15 @@ Navidrome runs as a Docker service on the **fox-core** Hetzner VPS, managed by
 Coolify:
 
 - **URL:** `https://navidrome.foxcore.dev`
-- **Music volume:** `/mnt/music` — a Hetzner Storage Box mounted via CIFS,
-  bind-mounted read-only into the container as `/music`
+- **Music volume:** `/mnt/storagebox/music` — a Hetzner Storage Box mounted via
+  CIFS (`//u612406.your-storagebox.de/backup` at `/mnt/storagebox`, per
+  `/etc/fstab`), bind-mounted read-only into the container as `/music`. The
+  mount is `nofail`, so when it doesn't come up the library silently reads as
+  empty rather than erroring — see `docs/operations.md`.
+- **All Tracks** is a Navidrome **smart playlist**, not an app feature:
+  `all-tracks.nsp` at the music-folder root. Navidrome imports any `.nsp` under
+  the library because `PlaylistsPath` defaults to empty, which means "every
+  folder".
 
 The app is useless without a reachable Navidrome instance; there is no offline
 library mode (the caches accelerate a working setup, they don't replace it).
@@ -167,6 +176,7 @@ library mode (the caches accelerate a working setup, they don't replace it).
 ## Current state
 
 **Implemented:** browsing, search, streaming, queue, shuffle/repeat, ReplayGain,
+playlists (create, fill by search, reorder-free add/remove, rename, delete),
 library + stream + cover caching, drop recovery, Android TV UI, Windows SMTC and
 wakelock, Windows installer, Linux MPRIS media keys, Arch packaging (PKGBUILD),
 the desktop redesign (theme + sidebar shell + custom window chrome), scrobbling,
@@ -190,15 +200,14 @@ cache on Android), so a green suite says nothing about either backend.
 
 **Remaining / known gaps:**
 - iOS is scaffolded but never distributed (needs an Apple Developer account).
-- The desktop *screens* still have no widget tests; the desktop widget tests
-  cover only the shortcuts, the favourite heart and the track row, and `test/`
-  otherwise covers the phone widgets and the services beneath both.
+- Desktop *screen* test coverage is thin: the playlists screens are covered,
+  but the library, folder and player screens are not. The desktop widget tests
+  cover the shortcuts, the favourite heart and the track row; `test/` otherwise
+  covers the phone widgets and the services beneath both.
 - Favourites and playlists are not on Android TV — desktop and phone have both,
   but the TV's D-pad screens have neither.
 - Playlists cannot be reordered — Subsonic has no reorder parameter, so it
   means rewriting the whole playlist plus a drag surface on both layouts.
-- No Ctrl+F to focus search on desktop — see [decisions](decisions.md) for why
-  it needs a focus registry rather than a one-liner.
 - Library cache is a single file per install, wiped on logout — no per-account
   scoping, so switching users rebuilds from a full scan.
 

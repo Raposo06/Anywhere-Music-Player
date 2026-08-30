@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/platform_detector.dart';
 
 /// The app's name as shown to a person — in the title bar and the taskbar.
@@ -72,30 +73,32 @@ class WindowChrome extends StatelessWidget {
             Expanded(
               child: DragToMoveArea(
                 child: Padding(
-                  padding: const EdgeInsets.only(left: 12),
+                  padding: const EdgeInsets.only(left: 16),
                   child: Row(
                     children: [
                       if (onBack case final back?)
                         _ChromeIconButton(
                           onPressed: back,
                           tooltip: 'Back (Esc)',
-                          size: const Size(32, AppMetrics.titlebarHeight),
+                          // Same width as the window controls — it used to be
+                          // narrower for no reason tied to how often it gets
+                          // clicked. See docs/decisions.md.
                           child: const Icon(
                             Icons.chevron_left,
-                            size: 20,
+                            size: 26,
                             color: AppColors.muted,
                           ),
                         )
                       else
                         const _AppGlyph(),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 10),
                       Flexible(
                         child: Text(
                           label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 13,
+                            fontSize: 15,
                             color: AppColors.faint,
                           ),
                         ),
@@ -113,22 +116,23 @@ class WindowChrome extends StatelessWidget {
   }
 }
 
-/// The 20px rounded accent square with a white music-note glyph — the app
-/// mark from the design, drawn rather than shipped as an asset so it picks up
-/// the accent colour.
+/// The rounded accent square with a white music-note glyph — the app mark
+/// from the design, drawn rather than shipped as an asset so it picks up the
+/// accent colour. Scaled up from the design's original 20px alongside the
+/// rest of the bar — see [AppMetrics.titlebarHeight].
 class _AppGlyph extends StatelessWidget {
   const _AppGlyph();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 20,
-      height: 20,
+      width: 26,
+      height: 26,
       decoration: BoxDecoration(
         color: AppColors.accent,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(7),
       ),
-      child: const Icon(Icons.music_note, size: 14, color: Colors.white),
+      child: const Icon(Icons.music_note, size: 17, color: Colors.white),
     );
   }
 }
@@ -167,21 +171,19 @@ class _WindowControls extends StatelessWidget {
   }
 }
 
-/// A full-height, 44px-wide hit target in the chrome. Close uses [hoverColor]
+/// A full-height, 50px-wide hit target in the chrome. Close uses [hoverColor]
 /// to go red; the others lighten to [AppColors.surface2].
 class _ChromeIconButton extends StatefulWidget {
   final VoidCallback onPressed;
   final String tooltip;
   final Widget child;
   final Color hoverColor;
-  final Size size;
 
   const _ChromeIconButton({
     required this.onPressed,
     required this.tooltip,
     required this.child,
     this.hoverColor = AppColors.surface2,
-    this.size = const Size(44, AppMetrics.titlebarHeight),
   });
 
   @override
@@ -197,15 +199,15 @@ class _ChromeIconButtonState extends State<_ChromeIconButton> {
       message: widget.tooltip,
       waitDuration: const Duration(milliseconds: 600),
       child: MouseRegion(
-        cursor: SystemMouseCursors.click,
+        cursor: pointerCursor,
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
         child: GestureDetector(
           onTap: widget.onPressed,
           child: AnimatedContainer(
             duration: AppMetrics.stateTransition,
-            width: widget.size.width,
-            height: widget.size.height,
+            width: 50,
+            height: AppMetrics.titlebarHeight,
             alignment: Alignment.center,
             color: _hovered ? widget.hoverColor : Colors.transparent,
             child: widget.child,
@@ -217,15 +219,19 @@ class _ChromeIconButtonState extends State<_ChromeIconButton> {
 }
 
 // The three control glyphs. Material's own icons are too heavy and too
-// rounded next to a 10px line, so these are drawn to the design's stroke
-// weights.
+// rounded next to a thin line, so these are drawn to the design's stroke
+// weights — scaled up from the design's original 10px alongside the rest of
+// the bar, see [AppMetrics.titlebarHeight].
 
 class _GlyphMinimise extends StatelessWidget {
   const _GlyphMinimise();
 
   @override
-  Widget build(BuildContext context) =>
-      const SizedBox(width: 10, height: 1.3, child: ColoredBox(color: AppColors.muted));
+  Widget build(BuildContext context) => const SizedBox(
+    width: 13,
+    height: 1.6,
+    child: ColoredBox(color: AppColors.muted),
+  );
 }
 
 class _GlyphMaximise extends StatelessWidget {
@@ -233,20 +239,23 @@ class _GlyphMaximise extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: 10,
-        height: 10,
-        decoration: BoxDecoration(
-          border: Border.all(color: AppColors.muted, width: 1.2),
-        ),
-      );
+    width: 13,
+    height: 13,
+    decoration: BoxDecoration(
+      border: Border.all(color: AppColors.muted, width: 1.4),
+    ),
+  );
 }
 
 class _GlyphClose extends StatelessWidget {
   const _GlyphClose();
 
   @override
-  Widget build(BuildContext context) =>
-      const SizedBox(width: 10, height: 10, child: CustomPaint(painter: _ClosePainter()));
+  Widget build(BuildContext context) => const SizedBox(
+    width: 13,
+    height: 13,
+    child: CustomPaint(painter: _ClosePainter()),
+  );
 }
 
 class _ClosePainter extends CustomPainter {
@@ -256,7 +265,7 @@ class _ClosePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = AppColors.muted
-      ..strokeWidth = 1.3
+      ..strokeWidth = 1.6
       ..isAntiAlias = true;
     canvas.drawLine(Offset.zero, Offset(size.width, size.height), paint);
     canvas.drawLine(Offset(size.width, 0), Offset(0, size.height), paint);

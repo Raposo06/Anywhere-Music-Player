@@ -10,7 +10,6 @@ import '../../services/auth_service.dart';
 import '../../services/library_scanner.dart';
 import '../../services/subsonic_api_service.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/cover_art.dart';
 import '../../widgets/desktop/desktop_primitives.dart';
 import '../../widgets/desktop/desktop_track_row.dart';
 import 'desktop_folder_screen.dart';
@@ -213,7 +212,7 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
     }
 
     if (scanner.error case final error?) {
-      return _ErrorState(message: error, onRetry: scanner.rescan);
+      return DesktopErrorState(message: error, onRetry: scanner.rescan);
     }
 
     final folders = scanner.getTopLevelFolders();
@@ -258,7 +257,10 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_searchError case final error?) {
-      return _ErrorState(message: error, onRetry: () => _search(_query));
+      return DesktopErrorState(
+        message: error,
+        onRetry: () => _search(_query),
+      );
     }
     if (_searchFolders.isEmpty && _searchTracks.isEmpty) {
       return const Center(
@@ -389,7 +391,9 @@ class _FolderGrid extends StatelessWidget {
   }
 }
 
-class _FolderCard extends StatefulWidget {
+/// A folder as a [HoverCoverCard] — just the folder-specific text and icon,
+/// the card itself is shared with the playlists grid.
+class _FolderCard extends StatelessWidget {
   final Folder folder;
   final VoidCallback onOpen;
   final VoidCallback onPlay;
@@ -401,113 +405,15 @@ class _FolderCard extends StatefulWidget {
   });
 
   @override
-  State<_FolderCard> createState() => _FolderCardState();
-}
-
-class _FolderCardState extends State<_FolderCard> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onOpen,
-        behavior: HitTestBehavior.opaque,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: ColoredBox(
-                      color: AppColors.surface2,
-                      // A stable request size (DPI-aware but not tied to the
-                      // live card width) so resizing the window doesn't change
-                      // the URL and force a re-download.
-                      child: CoverArt(
-                        widget.folder,
-                        size: 384,
-                        expand: true,
-                        radius: 0,
-                        fallbackIcon: Icons.folder_outlined,
-                        fallbackIconColor: AppColors.faint,
-                        fallbackIconSize: 56,
-                      ),
-                    ),
-                  ),
-                  // The play button is always present in the design; it just
-                  // gains a little emphasis under the pointer.
-                  Positioned(
-                    right: 10,
-                    bottom: 10,
-                    child: AnimatedScale(
-                      scale: _hovered ? 1.08 : 1,
-                      duration: AppMetrics.stateTransition,
-                      child: AccentCircleButton(
-                        size: 38,
-                        icon: Icons.play_arrow,
-                        tooltip: 'Play all tracks in this folder',
-                        onPressed: widget.onPlay,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              widget.folder.displayName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: AppColors.text,
-              ),
-            ),
-            if (widget.folder.subtitle.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(
-                widget.folder.subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, color: AppColors.muted),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-
-  const _ErrorState({required this.message, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.destructive),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
-        ],
-      ),
+    return HoverCoverCard(
+      source: folder,
+      fallbackIcon: Icons.folder_outlined,
+      title: folder.displayName,
+      subtitle: folder.subtitle,
+      playTooltip: 'Play all tracks in this folder',
+      onOpen: onOpen,
+      onPlay: onPlay,
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 import 'package:provider/provider.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
+import 'package:anywhere_music_player/screens/desktop/desktop_search_field.dart';
 import 'package:anywhere_music_player/widgets/desktop/desktop_shortcuts.dart';
 import '../support/fake_just_audio.dart';
 import '../support/fake_resolver.dart';
@@ -342,6 +343,187 @@ void main() {
       await tester.pump();
 
       expect(back, 0);
+      disposeService();
+    });
+  });
+
+  group('ctrl + F', () {
+    testWidgets('focuses the screen\'s search field', (tester) async {
+      await pumpShortcuts(
+        tester,
+        child: Scaffold(body: DesktopSearchField(onChanged: (_) {})),
+      );
+      final field = find.byType(TextField);
+      expect(
+        tester.widget<TextField>(field).focusNode?.hasFocus,
+        isFalse,
+        reason: 'nothing focused before the shortcut',
+      );
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+
+      expect(tester.widget<TextField>(field).focusNode?.hasFocus, isTrue);
+      disposeService();
+    });
+
+    testWidgets('selects what is already typed, so retyping replaces it', (
+      tester,
+    ) async {
+      await pumpShortcuts(
+        tester,
+        child: Scaffold(body: DesktopSearchField(onChanged: (_) {})),
+      );
+      await tester.enterText(find.byType(TextField), 'vangelis');
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+
+      final controller = tester.widget<TextField>(find.byType(TextField))
+          .controller!;
+      expect(controller.selection.baseOffset, 0);
+      expect(controller.selection.extentOffset, 'vangelis'.length);
+      disposeService();
+    });
+
+    testWidgets('does not steal focus out of a dialog', (tester) async {
+      // A rename dialog is modal; Ctrl + F there must not pull the keyboard
+      // back to the search box behind it.
+      await pumpShortcuts(
+        tester,
+        child: Scaffold(body: DesktopSearchField(onChanged: (_) {})),
+      );
+      final searchField = find.byType(TextField);
+
+      final dialogFocus = FocusNode();
+      addTearDown(dialogFocus.dispose);
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AudioPlayerService>.value(
+          value: service,
+          child: MaterialApp(
+            home: DesktopPlaybackShortcuts(
+              child: Scaffold(
+                body: Column(
+                  children: [
+                    DesktopSearchField(onChanged: (_) {}),
+                    TextField(focusNode: dialogFocus),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      dialogFocus.requestFocus();
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+
+      expect(dialogFocus.hasFocus, isTrue, reason: 'focus stayed put');
+      expect(
+        tester.widget<TextField>(searchField.first).focusNode?.hasFocus,
+        isFalse,
+      );
+      disposeService();
+    });
+
+    testWidgets('ignores a search field parked in a hidden IndexedStack tab', (
+      tester,
+    ) async {
+      // The shell keeps every destination mounted, so the Library's search box
+      // is still registered while Playlists is on screen. Focusing it would
+      // put the caret in an invisible field.
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AudioPlayerService>.value(
+          value: service,
+          child: MaterialApp(
+            home: DesktopPlaybackShortcuts(
+              child: Scaffold(
+                body: IndexedStack(
+                  index: 1,
+                  children: [
+                    DesktopSearchField(onChanged: (_) {}),
+                    const Text('Playlists — no search here'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+
+      // skipOffstage: false — the hidden tab's field is offstage, which is
+      // itself the reason focusing it would be wrong.
+      expect(
+        tester
+            .widget<TextField>(find.byType(TextField, skipOffstage: false))
+            .focusNode
+            ?.hasFocus,
+        isFalse,
+        reason: 'the hidden tab\'s field must not take the caret',
+      );
+      disposeService();
+    });
+
+    testWidgets('takes the field of whichever tab is showing', (tester) async {
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AudioPlayerService>.value(
+          value: service,
+          child: MaterialApp(
+            home: DesktopPlaybackShortcuts(
+              child: Scaffold(
+                body: IndexedStack(
+                  index: 0,
+                  children: [
+                    DesktopSearchField(onChanged: (_) {}),
+                    const Text('Playlists — no search here'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).focusNode?.hasFocus,
+        isTrue,
+      );
+      disposeService();
+    });
+
+    testWidgets('does nothing on a screen with no search field', (
+      tester,
+    ) async {
+      // Playlists and Favourites have none — the key must not throw.
+      await pumpShortcuts(tester);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
       disposeService();
     });
   });

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/playlist.dart';
 import '../models/track.dart';
 import '../services/auth_service.dart';
 import '../services/playlists_service.dart';
@@ -88,10 +89,10 @@ class _AddToPlaylistBodyState extends State<_AddToPlaylistBody> {
     setState(() => _busy = true);
     final service = context.read<PlaylistsService>();
     final navigator = Navigator.of(context);
-    final ok = await service.create(name, tracks: widget.tracks);
+    final created = await service.create(name, tracks: widget.tracks);
     if (!mounted) return;
     setState(() => _busy = false);
-    navigator.pop(ok ? name : null);
+    navigator.pop(created == null ? null : name);
   }
 
   @override
@@ -217,8 +218,10 @@ class _PlaylistNameDialogState extends State<PlaylistNameDialog> {
 /// Asks for a name and creates a playlist holding [tracks].
 ///
 /// Used by "save the queue as a playlist" and by the playlists screens' own
-/// create buttons. Returns the name created, or null.
-Future<String?> createPlaylistWithPrompt(
+/// create buttons. Returns the new playlist, or null if cancelled or refused —
+/// callers that create an *empty* one use it to open the playlist straight
+/// away, since a name on its own leaves the user nowhere to go next.
+Future<Playlist?> createPlaylistWithPrompt(
   BuildContext context, {
   List<Track> tracks = const [],
 }) async {
@@ -227,9 +230,5 @@ Future<String?> createPlaylistWithPrompt(
     builder: (_) => const PlaylistNameDialog(),
   );
   if (name == null || !context.mounted) return null;
-  final ok = await context.read<PlaylistsService>().create(
-    name,
-    tracks: tracks,
-  );
-  return ok ? name : null;
+  return context.read<PlaylistsService>().create(name, tracks: tracks);
 }

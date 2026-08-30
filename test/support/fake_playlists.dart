@@ -19,6 +19,11 @@ class FakePlaylistServer {
   /// Every request this server answered, by endpoint name.
   final List<String> calls = [];
 
+  /// Playlist ids the server reports as `readonly` — Navidrome's OpenSubsonic
+  /// flag, which is how a smart playlist (`.nsp`) announces that it cannot be
+  /// edited even by its owner.
+  final Set<String> readonlyIds = {};
+
   /// When set, every write fails with this Subsonic error message.
   String? failWrites;
 
@@ -65,6 +70,7 @@ class FakePlaylistServer {
       'duration': p.trackIds.length * 60,
       'owner': p.owner,
       'public': false,
+      if (readonlyIds.contains(id)) 'readonly': true,
       if (withEntries)
         'entry': [
           for (final t in p.trackIds)

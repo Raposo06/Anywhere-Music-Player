@@ -298,6 +298,63 @@ removes the race outright.
 artifacts; add `android/.kotlin/` to `.gitignore` rather than checking the
 stack traces in.
 
+### Navidrome shows an empty library; the app shows 0 folders and 0 tracks
+
+**Symptom.** The library and playlists go empty across every client at once —
+app and Navidrome's own web UI. Nothing was deleted; `du -sh` on the music path
+reports a few KB instead of tens of GB, and the directory looks like an empty
+folder rather than a missing one.
+
+**Cause.** The CIFS mount for the Hetzner Storage Box is not attached, so
+`/mnt/storagebox/music` is an empty directory on the VPS's own root disk, and
+the container's `/music` bind mount happily follows it. `nofail` in `/etc/fstab`
+is what makes this silent: the mount is *designed* to be skipped when it can't
+be established at boot, so nothing fails loudly and nothing alerts.
+
+The underlying failure is a missing kernel module. The fstab entry specifies
+`iocharset=utf8`, and `nls_utf8` ships in `linux-modules-extra-$(uname -r)`,
+which is **not** installed by default on Hetzner's Ubuntu cloud image — the base
+kernel carries only `nls_iso8859-1` and `nls_ucs2_utils`. A kernel upgrade
+therefore reintroduces this on the next reboot unless the module is pinned.
+
+`mount.cifs` reports this uselessly as:
+
+```
+mount error(79): Can not access a needed shared library
+```
+
+which points at a linker problem that isn't there — `ldd $(which mount.cifs)`
+is clean. The real message is in the kernel log:
+
+```
+# dmesg | grep -i cifs
+CIFS: VFS: CIFS mount error: iocharset utf8 not found
+```
+
+**Diagnose.** `findmnt -T /mnt/storagebox/music` is the fastest tell: if it
+reports `/dev/sda1 ext4` instead of `cifs`, the share is detached and you are
+looking at the local disk. `findmnt | grep cifs` returning nothing confirms it
+system-wide.
+
+**Fix.**
+
+```bash
+apt install -y linux-modules-extra-$(uname -r)
+modprobe nls_utf8
+mount -a
+echo nls_utf8 > /etc/modules-load.d/cifs.conf   # survives the next kernel bump
+docker restart $(docker ps -qf name=navidrome)  # its index cached the empty dir
+```
+
+The last line matters: Navidrome will have indexed the empty directory, so the
+library stays empty until it rescans. It does **not** delete files it can't see
+— it marks them missing in its own database and waits for a human — so the
+music itself is never at risk from this.
+
+**Do not** diagnose this by writing test files to the music path. While
+unmounted, those writes land on the root disk and then vanish under the share
+when it remounts, which looks alarmingly like data loss and proves nothing.
+
 ### `flutter test` hangs forever on a widget that calls `LibraryScanner.scan()`
 
 **Symptom:** a `testWidgets()` test hangs indefinitely (real wall-clock
@@ -359,6 +416,48 @@ tolerated. The desktop redesign's `desktop_player_screen.dart` and
 `desktop_mini_player.dart` were added without it and broke `flutter build linux`;
 both now carry the `hide`. On an older SDK (≤ 3.38.x) the same files instead emit
 the harmless `undefined_hidden_name` warning.
+
+### Buttons show the arrow cursor, not the hand — but rows show the hand
+
+**Symptom.** On desktop, hovering "Play All", "Shuffle", the round play/pause
+button, or a window control leaves the pointer as a plain arrow. Hovering a
+track row or a sidebar item correctly turns it into a hand. Nothing throws, the
+buttons still click, and it looks like a broken hover handler.
+
+**It is not a hover bug, a Wayland bug, or a cursor-theme bug.** Material's
+buttons default their cursor to `WidgetStateMouseCursor.adaptiveClickable`,
+which is literally:
+
+```dart
+return kIsWeb ? SystemMouseCursors.click : SystemMouseCursors.basic;
+```
+
+So on every desktop platform Flutter deliberately gives buttons the arrow,
+copying the native macOS/Windows convention that a hand means a hyperlink. Rows
+work because `HoverRow` sets `SystemMouseCursors.click` itself. Chasing this as
+a platform problem is a dead end — `GDK_BACKEND=x11` changes nothing, because
+nothing is broken at the platform layer.
+
+**The fix** is an explicit opt-in per button family, in `buildAppTheme`:
+`enabledMouseCursor: pointerCursor` on the elevated / outlined / text / filled /
+icon button themes. `InkWell` is not a `ButtonStyleButton`, so no button theme
+reaches it — `AccentCircleButton` sets `mouseCursor` directly.
+`test/widgets/pointer_cursor_test.dart` locks all of this in.
+
+**How to check it without a display.** Cursor resolution is testable headlessly,
+which is how this was diagnosed:
+
+```dart
+final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+await gesture.addPointer(location: Offset.zero);
+await tester.pump();
+await gesture.moveTo(tester.getCenter(find.text('Play All')));
+await tester.pumpAndSettle();
+RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1); // the real answer
+```
+
+One gesture per test — a second `addPointer` with the same device id trips an
+assertion inside `MouseTracker` that reads like a framework bug and isn't.
 
 ## Server dependency
 

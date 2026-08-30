@@ -39,8 +39,7 @@ class _DesktopShellState extends State<DesktopShell> {
   SidebarDestination _destination = SidebarDestination.library;
 
   /// Library keeps its own navigator so folder drill-down (and the back that
-  /// unwinds it) survives a trip to All Tracks and back. All Tracks has
-  /// nothing to drill into, so it is a plain screen.
+  /// unwinds it) survives a trip to another destination and back.
   final _libraryNavigator = GlobalKey<NavigatorState>();
 
   /// Playlists drills down too (list → one playlist), so it gets its own
@@ -49,18 +48,33 @@ class _DesktopShellState extends State<DesktopShell> {
   final _playlistsNavigator = GlobalKey<NavigatorState>();
 
   /// Name of the top route in the library navigator — the folder you are
-  /// looking at, or null at the library root. Kept by [_TopRouteObserver]
-  /// rather than published by each screen, so the screens stay unaware of the
-  /// window chrome.
+  /// looking at, or null at the library root — and whether that navigator can
+  /// currently pop. Kept by [_NavigatorTracker] rather than published by each
+  /// screen, so the screens stay unaware of the window chrome. The chrome uses
+  /// the name for its context label and the pop flag for whether to show a
+  /// back chevron.
   final _libraryRouteName = ValueNotifier<String?>(null);
-  late final _routeObserver = _TopRouteObserver(_libraryRouteName);
+  final _libraryCanPop = ValueNotifier<bool>(false);
+  late final _libraryRouteObserver = _NavigatorTracker(
+    _libraryRouteName,
+    _libraryCanPop,
+  );
+
+  /// Same as above, for the playlists navigator — the playlist you have open,
+  /// or null at the list root.
+  final _playlistsRouteName = ValueNotifier<String?>(null);
+  final _playlistsCanPop = ValueNotifier<bool>(false);
+  late final _playlistsRouteObserver = _NavigatorTracker(
+    _playlistsRouteName,
+    _playlistsCanPop,
+  );
 
   @override
   void initState() {
     super.initState();
     // The phone home screen kicks the first scan off in its own initState.
-    // Doing it at the shell level means it still runs if the user lands on
-    // All Tracks first.
+    // Doing it at the shell level means it still runs no matter which
+    // destination the user lands on first.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<LibraryScanner>().scan();
@@ -73,10 +87,14 @@ class _DesktopShellState extends State<DesktopShell> {
 
   @override
   void dispose() {
-    // Order matters: the observer defers its writes to the end of a frame, so
-    // it has to be silenced before the notifier it writes to goes away.
-    _routeObserver.detach();
+    // Order matters: each observer defers its writes to the end of a frame,
+    // so both are silenced before any notifier they write to goes away.
+    _libraryRouteObserver.detach();
+    _playlistsRouteObserver.detach();
     _libraryRouteName.dispose();
+    _libraryCanPop.dispose();
+    _playlistsRouteName.dispose();
+    _playlistsCanPop.dispose();
     super.dispose();
   }
 
@@ -108,27 +126,38 @@ class _DesktopShellState extends State<DesktopShell> {
     setState(() => _destination = destination);
   }
 
-  /// Go up one folder in the library trail.
+  /// Go up one level in the active destination's trail — a folder in Library,
+  /// a playlist in Playlists.
   ///
-  /// Only the Library destination has anything to go back through — All Tracks
-  /// and Favourites are flat — so this is a no-op elsewhere rather than doing
-  /// something surprising.
+  /// Favourites is flat and has nothing to go back through, so this is a
+  /// no-op there rather than doing something surprising.
   ///
   /// [NavigatorState.canPop] is checked explicitly instead of using
-  /// `maybePop`: this navigator is nested, so popping its *first* route would
-  /// leave the shell with an empty navigator rather than being harmlessly
+  /// `maybePop`: these navigators are nested, so popping the *first* route
+  /// would leave the shell with an empty one rather than being harmlessly
   /// refused.
   void _goBack() {
     final navigator = _activeNavigator?.currentState;
     if (navigator != null && navigator.canPop()) navigator.pop();
   }
 
-  /// The nested navigator behind the current destination, or null for the flat
-  /// ones (All Tracks, Favourites) which have nothing to go back through.
+  /// The nested navigator behind the current destination, or null for
+  /// Favourites, which has nothing to go back through.
   GlobalKey<NavigatorState>? get _activeNavigator => switch (_destination) {
     SidebarDestination.library => _libraryNavigator,
     SidebarDestination.playlists => _playlistsNavigator,
     SidebarDestination.favourites => null,
+  };
+
+  /// Whether the chrome should show a back chevron: only when the active
+  /// destination has actually drilled somewhere a pop would leave. Reads the
+  /// tracked flags rather than calling `canPop()` directly, because this is
+  /// read from `build()` and only a [ValueNotifier] triggers a rebuild when a
+  /// nested navigator changes out from under it.
+  bool get _canGoBack => switch (_destination) {
+    SidebarDestination.library => _libraryCanPop.value,
+    SidebarDestination.playlists => _playlistsCanPop.value,
+    SidebarDestination.favourites => false,
   };
 
   /// True while Now Playing is on screen, so a second request — a queue jump,
@@ -156,13 +185,13 @@ class _DesktopShellState extends State<DesktopShell> {
     );
   }
 
-  /// The context line in the title bar: the folder you're in, or the
-  /// destination name, ahead of the app name.
-  String _chromeLabel(String? libraryRoute) {
+  /// The context line in the title bar: the folder or playlist you're in, or
+  /// the destination name, ahead of the app name.
+  String get _chromeLabel {
     final context_ = switch (_destination) {
       SidebarDestination.favourites => 'Favourites',
-      SidebarDestination.playlists => 'Playlists',
-      SidebarDestination.library => libraryRoute,
+      SidebarDestination.playlists => _playlistsRouteName.value ?? 'Playlists',
+      SidebarDestination.library => _libraryRouteName.value,
     };
     return context_ == null ? appDisplayName : '$context_ — $appDisplayName';
   }
@@ -177,10 +206,17 @@ class _DesktopShellState extends State<DesktopShell> {
           backgroundColor: AppColors.win,
           body: Column(
             children: [
-              ValueListenableBuilder<String?>(
-                valueListenable: _libraryRouteName,
-                builder: (context, libraryRoute, _) =>
-                    WindowChrome(label: _chromeLabel(libraryRoute)),
+              AnimatedBuilder(
+                animation: Listenable.merge([
+                  _libraryRouteName,
+                  _libraryCanPop,
+                  _playlistsRouteName,
+                  _playlistsCanPop,
+                ]),
+                builder: (context, _) => WindowChrome(
+                  label: _chromeLabel,
+                  onBack: _canGoBack ? _goBack : null,
+                ),
               ),
               Expanded(
                 child: Row(
@@ -201,7 +237,7 @@ class _DesktopShellState extends State<DesktopShell> {
                         children: [
                           Navigator(
                             key: _libraryNavigator,
-                            observers: [_routeObserver],
+                            observers: [_libraryRouteObserver],
                             onGenerateRoute: (settings) => MaterialPageRoute(
                               settings: settings,
                               builder: (_) => const DesktopLibraryScreen(),
@@ -210,6 +246,7 @@ class _DesktopShellState extends State<DesktopShell> {
                           const DesktopFavouritesScreen(),
                           Navigator(
                             key: _playlistsNavigator,
+                            observers: [_playlistsRouteObserver],
                             onGenerateRoute: (settings) => MaterialPageRoute(
                               settings: settings,
                               builder: (_) => const DesktopPlaylistsScreen(),
@@ -259,31 +296,35 @@ class DesktopPlayerLauncher extends InheritedWidget {
 }
 
 /// Publishes the name of whatever route is currently on top of the navigator
-/// it observes.
+/// it observes, and whether that navigator can currently pop.
 ///
-/// Folder routes carry their title in `RouteSettings.name` (see
-/// [DesktopFolderScreen.route]); the library root has none, which reads as
-/// "no context" and leaves the chrome showing just the app name.
-class _TopRouteObserver extends NavigatorObserver {
+/// Folder and playlist routes carry their title in `RouteSettings.name` (see
+/// [DesktopFolderScreen.route], `DesktopPlaylistScreen.route`); each root has
+/// none, which reads as "no context" and leaves the chrome showing just the
+/// app name — and not coincidentally, "no context" and "cannot pop" land on
+/// the same routes, since a root is exactly where both are true.
+class _NavigatorTracker extends NavigatorObserver {
   final ValueNotifier<String?> name;
+  final ValueNotifier<bool> canPop;
   bool _attached = true;
 
-  _TopRouteObserver(this.name);
+  _NavigatorTracker(this.name, this.canPop);
 
-  /// Stop writing to [name] — call before disposing it.
+  /// Stop writing to [name] and [canPop] — call before disposing them.
   void detach() => _attached = false;
 
-  // The notifier is read during a build (ValueListenableBuilder), and these
-  // fire mid-navigation — deferring to the end of the frame avoids
-  // "setState called during build".
+  // The notifiers are read during a build (AnimatedBuilder), and these fire
+  // mid-navigation — deferring to the end of the frame avoids "setState
+  // called during build".
   void _publish(Route<dynamic>? route) {
     if (!_attached) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_attached) return;
       final routeName = route?.settings.name;
-      // The library root is generated with Flutter's default '/' name, which
-      // is a placeholder rather than a context worth showing.
+      // The root is generated with Flutter's default '/' name, which is a
+      // placeholder rather than a context worth showing.
       name.value = (routeName == null || routeName == '/') ? null : routeName;
+      canPop.value = navigator?.canPop() ?? false;
     });
   }
 

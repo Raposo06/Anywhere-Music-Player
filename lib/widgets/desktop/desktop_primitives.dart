@@ -3,9 +3,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/cover_art_ref.dart';
 import '../../services/audio_player_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
+import '../cover_art.dart';
 
 /// The small shared pieces the desktop screens all build out of. They exist
 /// here rather than in each screen because the design reuses them verbatim —
@@ -28,6 +30,43 @@ class SectionLabel extends StatelessWidget {
         fontWeight: FontWeight.w600,
         letterSpacing: 0.06 * 11,
         color: AppColors.faint,
+      ),
+    );
+  }
+}
+
+/// A load error with a way to try again — icon, message, Retry button.
+///
+/// Was three near-identical private `_ErrorState`s (library, playlists,
+/// favourites), each written for the same "an error with nothing loaded is a
+/// dead end and needs the retry" case and drifting slightly apart with no
+/// reason tied to the screen. One shared version now.
+class DesktopErrorState extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const DesktopErrorState({
+    super.key,
+    required this.message,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, size: 36, color: AppColors.faint),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13, color: AppColors.muted),
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
+        ],
       ),
     );
   }
@@ -103,6 +142,130 @@ class _HoverRowState extends State<HoverRow> {
             borderRadius: BorderRadius.circular(widget.radius),
           ),
           child: widget.child ?? widget.builder!(_hovered),
+        ),
+      ),
+    );
+  }
+}
+
+/// A cover-art tile, name and subtitle underneath, a play button that grows
+/// under the pointer, and an optional pinned-corner overlay — the shape the
+/// library's folder cards and the playlists grid's cards both are. One
+/// implementation rather than two kept in sync by hand; each grid supplies
+/// its own model-specific text, icon and overlay.
+class HoverCoverCard extends StatefulWidget {
+  final CoverArtRef source;
+  final IconData fallbackIcon;
+  final String title;
+
+  /// Omitted (no second line, no gap) when null or empty — the library's
+  /// folder cards go without one for a folder with nothing to say.
+  final String? subtitle;
+
+  final String playTooltip;
+  final VoidCallback onOpen;
+  final VoidCallback onPlay;
+
+  /// An extra control pinned to the cover's top-right corner, already wrapped
+  /// in its own [Positioned] — the playlists grid's overflow menu. Null when
+  /// there is nothing to show there.
+  final Widget? overlay;
+
+  const HoverCoverCard({
+    super.key,
+    required this.source,
+    required this.fallbackIcon,
+    required this.title,
+    this.subtitle,
+    required this.playTooltip,
+    required this.onOpen,
+    required this.onPlay,
+    this.overlay,
+  });
+
+  @override
+  State<HoverCoverCard> createState() => _HoverCoverCardState();
+}
+
+class _HoverCoverCardState extends State<HoverCoverCard> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onOpen,
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: ColoredBox(
+                      color: AppColors.surface2,
+                      // A stable request size (DPI-aware but not tied to the
+                      // live card width) so resizing the window doesn't
+                      // change the URL and force a re-download.
+                      child: CoverArt(
+                        widget.source,
+                        size: 384,
+                        expand: true,
+                        radius: 0,
+                        fallbackIcon: widget.fallbackIcon,
+                        fallbackIconColor: AppColors.faint,
+                        fallbackIconSize: 56,
+                      ),
+                    ),
+                  ),
+                  // The play button is always present in the design; it just
+                  // gains a little emphasis under the pointer.
+                  Positioned(
+                    right: 10,
+                    bottom: 10,
+                    child: AnimatedScale(
+                      scale: _hovered ? 1.08 : 1,
+                      duration: AppMetrics.stateTransition,
+                      child: AccentCircleButton(
+                        size: 38,
+                        icon: Icons.play_arrow,
+                        tooltip: widget.playTooltip,
+                        onPressed: widget.onPlay,
+                      ),
+                    ),
+                  ),
+                  ?widget.overlay,
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              widget.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.text,
+              ),
+            ),
+            if (widget.subtitle case final subtitle?
+                when subtitle.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: AppColors.muted),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -260,6 +423,11 @@ class AccentCircleButton extends StatelessWidget {
       child: InkWell(
         onTap: onPressed,
         hoverColor: AppColors.accentStrong,
+        // InkWell is not a ButtonStyleButton, so no button theme reaches it —
+        // it needs the hand cursor set here. See [pointerCursor].
+        mouseCursor: onPressed == null
+            ? SystemMouseCursors.basic
+            : pointerCursor,
         child: SizedBox(
           width: size,
           height: size,

@@ -113,23 +113,44 @@ class PlaylistsService with ChangeNotifier {
 
   /// Create a playlist named [name], optionally seeded with [tracks].
   ///
-  /// Returns true when the server accepted it. The list is re-read rather than
-  /// patched locally: `createPlaylist`'s response body varies between servers,
-  /// so the freshly listed playlist is the only trustworthy copy.
-  Future<bool> create(String name, {List<Track> tracks = const []}) async {
+  /// Returns the new playlist, or null if the server refused. The list is
+  /// re-read rather than patched locally: `createPlaylist`'s response body
+  /// varies between servers, so the freshly listed playlist is the only
+  /// trustworthy copy.
+  ///
+  /// Which one that is, is settled without trusting that body at all — the id
+  /// it reports is used when present, but a server that returns nothing still
+  /// created the playlist, so the fallback is whichever id is in the list now
+  /// and was not before. Ambiguity (nothing new, or several) yields null
+  /// rather than a guess: the playlist exists either way, and the caller's
+  /// only use for the result is deciding whether to open it.
+  Future<Playlist?> create(String name, {List<Track> tracks = const []}) async {
     final api = _api;
-    if (api == null) return false;
+    if (api == null) return null;
 
     try {
-      await api.createPlaylist(name, songIds: [for (final t in tracks) t.id]);
+      final before = {for (final p in _playlists) p.id};
+      final created = await api.createPlaylist(
+        name,
+        songIds: [for (final t in tracks) t.id],
+      );
       _error = null;
       await load();
-      return true;
+
+      if (created != null) {
+        final reported = byId(created.id);
+        if (reported != null) return reported;
+      }
+      final fresh = [
+        for (final p in _playlists)
+          if (!before.contains(p.id)) p,
+      ];
+      return fresh.length == 1 ? fresh.single : null;
     } catch (e) {
       _error = 'Could not create playlist: $e';
       debugPrint('PlaylistsService: create failed: $e');
       notifyListeners();
-      return false;
+      return null;
     }
   }
 

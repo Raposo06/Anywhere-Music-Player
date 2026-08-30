@@ -15,6 +15,18 @@ abstract final class AppFonts {
   static const serif = 'SourceSerif4';
 }
 
+/// The hand cursor every clickable thing in this app uses.
+///
+/// **Load-bearing — do not delete as redundant.** Material's buttons default
+/// their cursor to `WidgetStateMouseCursor.adaptiveClickable`, which resolves
+/// to `kIsWeb ? click : basic` — so on desktop *every* Material button
+/// deliberately shows the plain arrow, copying the native macOS/Windows
+/// convention that a hand means a hyperlink. This app wants the hand
+/// everywhere clickable, matching what `HoverRow` already does for rows, so
+/// each button theme below opts in explicitly. Remove these and the buttons
+/// silently go back to an arrow while the rows keep their hand.
+const pointerCursor = SystemMouseCursors.click;
+
 /// The redesign theme — a warm off-black ramp with a single teal accent.
 ///
 /// Applied on every platform (phone, Android TV, desktop) so the app looks
@@ -55,12 +67,15 @@ ThemeData buildAppTheme() {
     // Titles use the serif; everything else stays on Work Sans (inherited
     // from `fontFamily` above). Sizes track the handoff's type scale.
     textTheme: base.textTheme.copyWith(
-      displayLarge:
-          base.textTheme.displayLarge?.copyWith(fontFamily: AppFonts.serif),
-      displayMedium:
-          base.textTheme.displayMedium?.copyWith(fontFamily: AppFonts.serif),
-      displaySmall:
-          base.textTheme.displaySmall?.copyWith(fontFamily: AppFonts.serif),
+      displayLarge: base.textTheme.displayLarge?.copyWith(
+        fontFamily: AppFonts.serif,
+      ),
+      displayMedium: base.textTheme.displayMedium?.copyWith(
+        fontFamily: AppFonts.serif,
+      ),
+      displaySmall: base.textTheme.displaySmall?.copyWith(
+        fontFamily: AppFonts.serif,
+      ),
       headlineLarge: base.textTheme.headlineLarge?.copyWith(
         fontFamily: AppFonts.serif,
         fontWeight: FontWeight.w600,
@@ -131,6 +146,8 @@ ThemeData buildAppTheme() {
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         shape: const StadiumBorder(),
+        enabledMouseCursor: pointerCursor,
+        disabledMouseCursor: SystemMouseCursors.basic,
         textStyle: const TextStyle(
           fontFamily: AppFonts.ui,
           fontWeight: FontWeight.w600,
@@ -146,6 +163,8 @@ ThemeData buildAppTheme() {
         side: const BorderSide(color: AppColors.border),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         shape: const StadiumBorder(),
+        enabledMouseCursor: pointerCursor,
+        disabledMouseCursor: SystemMouseCursors.basic,
         textStyle: const TextStyle(
           fontFamily: AppFonts.ui,
           fontWeight: FontWeight.w600,
@@ -155,7 +174,25 @@ ThemeData buildAppTheme() {
     ),
 
     textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(foregroundColor: AppColors.accentText),
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.accentText,
+        enabledMouseCursor: pointerCursor,
+        disabledMouseCursor: SystemMouseCursors.basic,
+      ),
+    ),
+
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        enabledMouseCursor: pointerCursor,
+        disabledMouseCursor: SystemMouseCursors.basic,
+      ),
+    ),
+
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(
+        enabledMouseCursor: pointerCursor,
+        disabledMouseCursor: SystemMouseCursors.basic,
+      ),
     ),
 
     // Pill-shaped search field, per the handoff (20px full-round).
@@ -220,8 +257,10 @@ ThemeData buildAppTheme() {
 
     snackBarTheme: const SnackBarThemeData(
       backgroundColor: AppColors.surface2,
-      contentTextStyle:
-          TextStyle(color: AppColors.text, fontFamily: AppFonts.ui),
+      contentTextStyle: TextStyle(
+        color: AppColors.text,
+        fontFamily: AppFonts.ui,
+      ),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(10)),
