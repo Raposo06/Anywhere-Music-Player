@@ -720,3 +720,43 @@ than falling back (or showing tofu).
 **What would reverse it.** Enough shortcuts to make per-button hints impractical,
 or wanting the seek/volume keys discoverable too — either would justify the
 overlay, with the tooltips kept as the first-contact hint.
+
+---
+
+## 2026-08-30 — Favourites: songs only, optimistic, desktop-only for now
+
+**Decided.** Starred songs, held server-side and mirrored by
+`FavouritesService`, over `/rest/star`, `/rest/unstar` and `/rest/getStarred2`.
+A heart appears on desktop track rows (hidden until hovered unless already
+starred), in the mini player, and on Now Playing; a third sidebar destination
+lists them.
+
+Three constraints worth keeping:
+
+- **Songs only.** Subsonic can star albums and artists too, but folders in this
+  app are *virtual*: `LibraryScanner.toFolder` sets their `id` to the library
+  path, because the library is built by grouping `/api/song` results by path
+  rather than from Subsonic's album entities. There is no album id to send, so
+  starring a folder is not a thing that can be built without a different
+  lookup — not a scope cut.
+- **Optimistic, with rollback.** `toggle` applies locally, notifies, then calls
+  the server, and reverts (restoring the track's original list position) if it
+  is rejected. A heart that waits on a round trip before filling in feels
+  broken. A rollback surfaces as a SnackBar from the shell, because a heart
+  quietly reverting is otherwise indistinguishable from a mis-click.
+- **Loaded at shell startup**, not when the Favourites tab is first opened.
+  Every track row asks `isStarred`, and an unloaded service answers "no" — so
+  hearts everywhere else would be wrong until you happened to visit the tab.
+
+**Why.** Favourites are the one piece of per-user state Navidrome already keeps
+that the app had no access to, and being server-side they stay in sync with the
+web UI and any other client. Nothing about it needs a local store.
+
+**What would reverse it.** Nothing likely for the model. The desktop-only scope
+is a deliberate first slice, not a decision: `FavouritesService` and the API
+sit below the widget layer, so the phone and TV layouts can adopt the same
+heart without touching either.
+
+**Not done:** no offline cache of the starred list (it is one request, and the
+app already requires a reachable server); no starred-albums view; the phone and
+TV layouts show no hearts.

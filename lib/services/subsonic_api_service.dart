@@ -169,6 +169,48 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
     }
   }
 
+  /// Mark [songId] as a favourite (Subsonic "starred").
+  ///
+  /// Songs only. Folders in this app are *virtual* — their id is the library
+  /// path (see LibraryScanner.toFolder), not a Subsonic album id — so there is
+  /// nothing to star for an album or artist here. See docs/decisions.md.
+  Future<void> star(String songId) async {
+    await _request('star', {'id': songId}, 'Could not add to favourites');
+  }
+
+  /// Remove [songId] from favourites.
+  Future<void> unstar(String songId) async {
+    await _request('unstar', {
+      'id': songId,
+    }, 'Could not remove from favourites');
+  }
+
+  /// Every starred song, newest first as the server orders them.
+  ///
+  /// Uses `getStarred2` (the tag-based variant); the albums and artists it also
+  /// returns are ignored — see [star] for why.
+  Future<List<Track>> getStarredSongs() async {
+    final data = await _request(
+      'getStarred2',
+      null,
+      'Could not load favourites',
+    );
+
+    final starred = data['starred2'] as Map<String, dynamic>?;
+    if (starred == null) return <Track>[];
+
+    final songList = starred['song'];
+    if (songList == null) return <Track>[];
+
+    // Subsonic collapses a single-element list into a bare object — same
+    // normalization search3 does.
+    final items = songList is List ? songList : [songList];
+    return [
+      for (final item in items)
+        Track.fromSubsonic(item as Map<String, dynamic>),
+    ];
+  }
+
   /// Announce that [songId] is playing now (`submission=false`).
   ///
   /// Feeds the server's "now playing" panel only — it does not count as a

@@ -8,7 +8,7 @@ import 'desktop_primitives.dart';
 /// The two top-level destinations the sidebar switches between. Desktop
 /// replaces the phone's bottom tab bar with this; the destinations themselves
 /// are unchanged.
-enum SidebarDestination { library, allTracks }
+enum SidebarDestination { library, allTracks, favourites }
 
 /// The fixed 224px navigation rail: who you are on top, where you can go
 /// below.
@@ -96,6 +96,13 @@ class Sidebar extends StatelessWidget {
             label: 'All Tracks',
             active: selected == SidebarDestination.allTracks,
             onTap: () => onSelect(SidebarDestination.allTracks),
+          ),
+          const SizedBox(height: 4),
+          _NavItem(
+            icon: Icons.favorite_border,
+            label: 'Favourites',
+            active: selected == SidebarDestination.favourites,
+            onTap: () => onSelect(SidebarDestination.favourites),
           ),
         ],
       ),

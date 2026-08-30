@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/audio_player_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/favourites_service.dart';
 import '../../services/library_scanner.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/desktop/desktop_mini_player.dart';
@@ -10,6 +11,7 @@ import '../../widgets/desktop/desktop_shortcuts.dart';
 import '../../widgets/desktop/sidebar.dart';
 import '../../widgets/desktop/window_chrome.dart';
 import 'desktop_all_tracks_screen.dart';
+import 'desktop_favourites_screen.dart';
 import 'desktop_folder_screen.dart';
 import 'desktop_library_screen.dart';
 import 'desktop_player_screen.dart';
@@ -54,7 +56,12 @@ class _DesktopShellState extends State<DesktopShell> {
     // Doing it at the shell level means it still runs if the user lands on
     // All Tracks first.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<LibraryScanner>().scan();
+      if (!mounted) return;
+      context.read<LibraryScanner>().scan();
+      // Loaded up front, not when the Favourites tab is first opened: every
+      // track row asks whether it is starred, and an unloaded service answers
+      // "no" — so the hearts elsewhere would be wrong until you visited it.
+      context.read<FavouritesService>().load();
     });
   }
 
@@ -85,6 +92,10 @@ class _DesktopShellState extends State<DesktopShell> {
       // out of a deep folder trail without walking back up it.
       if (destination == SidebarDestination.library) {
         _libraryNavigator.currentState?.popUntil((route) => route.isFirst);
+      } else if (destination == SidebarDestination.favourites) {
+        // Nothing to unwind here, so re-clicking re-syncs instead — the list
+        // can go stale if you starred something from another client.
+        context.read<FavouritesService>().load();
       }
       return;
     }
@@ -121,6 +132,7 @@ class _DesktopShellState extends State<DesktopShell> {
   String _chromeLabel(String? libraryRoute) {
     final context_ = switch (_destination) {
       SidebarDestination.allTracks => 'All Tracks',
+      SidebarDestination.favourites => 'Favourites',
       SidebarDestination.library => libraryRoute,
     };
     return context_ == null ? appDisplayName : '$context_ — $appDisplayName';
@@ -154,6 +166,7 @@ class _DesktopShellState extends State<DesktopShell> {
                         index: switch (_destination) {
                           SidebarDestination.library => 0,
                           SidebarDestination.allTracks => 1,
+                          SidebarDestination.favourites => 2,
                         },
                         children: [
                           Navigator(
@@ -165,6 +178,7 @@ class _DesktopShellState extends State<DesktopShell> {
                             ),
                           ),
                           const DesktopAllTracksScreen(),
+                          const DesktopFavouritesScreen(),
                         ],
                       ),
                     ),
@@ -172,11 +186,47 @@ class _DesktopShellState extends State<DesktopShell> {
                 ),
               ),
               DesktopMiniPlayer(onOpenPlayer: _openPlayer),
+              const _FavouritesErrorListener(),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+/// Surfaces a failed star/unstar as a SnackBar, once each.
+///
+/// [FavouritesService] applies a toggle locally and rolls it back if the
+/// server refuses (see its `toggle`), and a heart quietly reverting is
+/// otherwise indistinguishable from a mis-click. Lives in the shell because
+/// hearts appear in several places; the SnackBar goes to the app-level
+/// [ScaffoldMessenger], so it is still visible over the Now Playing route.
+///
+/// Renders nothing — it is a listener that happens to be in the tree.
+class _FavouritesErrorListener extends StatelessWidget {
+  const _FavouritesErrorListener();
+
+  @override
+  Widget build(BuildContext context) {
+    final error = context.select<FavouritesService, String?>((f) => f.error);
+    if (error != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(error),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        // Cleared as soon as it's shown, so the same failure can't re-fire on
+        // an unrelated rebuild.
+        context.read<FavouritesService>().clearError();
+      });
+    }
+    return const SizedBox.shrink();
   }
 }
 

@@ -55,6 +55,7 @@ no backend of its own.
 | Stream audio | `GET /rest/stream?id=X` |
 | Cover art | `GET /rest/getCoverArt?id=X` |
 | Now playing / scrobble | `GET /rest/scrobble?id=X&submission=false\|true` |
+| Favourites | `GET /rest/star`, `/rest/unstar`, `/rest/getStarred2` — songs only, see [decisions](decisions.md) |
 
 ## Platform support
 
@@ -106,6 +107,9 @@ no backend of its own.
   app; a "now playing" announcement drives its live panel
 - Desktop keyboard shortcuts: space, arrow-key seek/volume, Ctrl+arrow skip,
   Escape to close Now Playing
+- Favourites (desktop): star songs from any track row, the mini player or Now
+  Playing, with a sidebar list of them. Server-side, so it stays in sync with
+  Navidrome's web UI
 - Automatic recovery from mid-stream connection drops
 - Lock screen / notification controls (Android); SMTC + keep-awake (Windows);
   MPRIS media keys (Linux)
@@ -118,7 +122,7 @@ Three layouts over one set of services. `MainScreen` picks between the first two
 
 | Form factor | Entry point | Navigation | Player |
 |---|---|---|---|
-| Desktop (Windows/Linux) | `screens/desktop/desktop_shell.dart` | 224px sidebar + a nested navigator for folder drill-down | Full-window `DesktopPlayerScreen` with a docked "Up Next" panel |
+| Desktop (Windows/Linux) | `screens/desktop/desktop_shell.dart` | 224px sidebar (Library / All Tracks / Favourites) + a nested navigator for folder drill-down | Full-window `DesktopPlayerScreen` with a docked "Up Next" panel |
 | Android phone | `MainScreen`'s `_PhoneScaffold` | Bottom tab bar | `PlayerScreen` + modal `QueueSheet` |
 | Android TV | `screens/tv_home_screen.dart` | D-pad focus traversal | `TvPlayerScreen` |
 
@@ -162,9 +166,9 @@ library mode (the caches accelerate a working setup, they don't replace it).
 library + stream + cover caching, drop recovery, Android TV UI, Windows SMTC and
 wakelock, Windows installer, Linux MPRIS media keys, Arch packaging (PKGBUILD),
 the desktop redesign (theme + sidebar shell + custom window chrome), scrobbling,
-and desktop keyboard shortcuts.
+desktop keyboard shortcuts, and favourites (desktop).
 
-**Test suite:** 30 test files under `test/` (~4,200 lines including support
+**Test suite:** 33 test files under `test/` (~4,800 lines including support
 fakes) covering the models, services, the screens and the shared widgets.
 Playback is exercised against a fake `just_audio` platform
 (`test/support/fake_just_audio.dart`) rather than a live backend. Sequencing
@@ -181,9 +185,11 @@ cache on Android), so a green suite says nothing about either backend.
 
 **Remaining / known gaps:**
 - iOS is scaffolded but never distributed (needs an Apple Developer account).
-- The desktop *screens* still have no widget tests; the only desktop widget test
-  is `test/widgets/desktop_shortcuts_test.dart`, and `test/` otherwise covers
-  the phone widgets and the services beneath both.
+- The desktop *screens* still have no widget tests; the desktop widget tests
+  cover only the shortcuts, the favourite heart and the track row, and `test/`
+  otherwise covers the phone widgets and the services beneath both.
+- Favourites are desktop-only — the phone and TV layouts show no hearts, though
+  the service beneath them is shared and ready.
 - No Ctrl+F to focus search on desktop — see [decisions](decisions.md) for why
   it needs a focus registry rather than a one-liner.
 - Library cache is a single file per install, wiped on logout — no per-account

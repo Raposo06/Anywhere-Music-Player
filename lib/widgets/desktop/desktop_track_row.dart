@@ -6,6 +6,7 @@ import '../../services/audio_player_service.dart';
 import '../../theme/app_colors.dart';
 import '../cover_art.dart';
 import 'desktop_primitives.dart';
+import 'favourite_button.dart';
 
 /// One track row in a desktop list.
 ///
@@ -41,7 +42,7 @@ class DesktopTrackRow extends StatelessWidget {
             onTap: onTap,
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
             background: isCurrent ? AppColors.accentSoft : null,
-            child: Row(
+            builder: (hovered) => Row(
               children: [
                 if (number case final n?) ...[
                   SizedBox(
@@ -51,7 +52,9 @@ class DesktopTrackRow extends StatelessWidget {
                       textAlign: TextAlign.right,
                       style: TextStyle(
                         fontSize: 12,
-                        color: isCurrent ? AppColors.accentText : AppColors.faint,
+                        color: isCurrent
+                            ? AppColors.accentText
+                            : AppColors.faint,
                       ),
                     ),
                   ),
@@ -76,6 +79,11 @@ class DesktopTrackRow extends StatelessWidget {
                   const PlayingBars(),
                   const SizedBox(width: 12),
                 ],
+                // Hidden (but still occupying its width) until the row is
+                // hovered, unless it's already a favourite — see
+                // FavouriteButton.
+                FavouriteButton(track: track, visible: hovered),
+                const SizedBox(width: 8),
                 Text(
                   track.formattedDuration,
                   style: TextStyle(
@@ -112,7 +120,8 @@ class _QueueContextMenu extends StatelessWidget {
   }
 
   Future<void> _show(BuildContext context, Offset position) async {
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (overlay == null) return;
 
     final playerService = context.read<AudioPlayerService>();
@@ -146,9 +155,11 @@ class _QueueContextMenu extends StatelessWidget {
     if (!hadTrack) return;
     messenger
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text('Added to queue: ${track.title}'),
-        duration: const Duration(seconds: 2),
-      ));
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Added to queue: ${track.title}'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
   }
 }

@@ -9,6 +9,7 @@ import '../../services/audio_player_service.dart';
 import '../../theme/app_colors.dart';
 import '../cover_art.dart';
 import 'desktop_primitives.dart';
+import 'favourite_button.dart';
 
 /// The persistent playback bar docked at the bottom of the desktop shell.
 ///
@@ -63,7 +64,12 @@ class _Bar extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
                     children: [
-                      CoverArt(track, size: 44, radius: 8, showPlaceholder: false),
+                      CoverArt(
+                        track,
+                        size: 44,
+                        radius: 8,
+                        showPlaceholder: false,
+                      ),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
@@ -95,6 +101,8 @@ class _Bar extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 14),
+                      FavouriteButton(track: track, size: 17),
+                      const SizedBox(width: 4),
                       // The controls sit inside the same tap target as the
                       // bar, so they have to swallow their own clicks —
                       // IconButton/InkWell already do, which is why the row
@@ -217,9 +225,7 @@ class _RepeatToggle extends StatelessWidget {
     return Selector<AudioPlayerService, RepeatMode>(
       selector: (_, ps) => ps.repeatMode,
       builder: (context, repeat, _) => IconButton(
-        icon: Icon(
-          repeat == RepeatMode.one ? Icons.repeat_one : Icons.repeat,
-        ),
+        icon: Icon(repeat == RepeatMode.one ? Icons.repeat_one : Icons.repeat),
         iconSize: 16,
         color: repeat == RepeatMode.off ? AppColors.faint : AppColors.accent,
         hoverColor: AppColors.surface2,

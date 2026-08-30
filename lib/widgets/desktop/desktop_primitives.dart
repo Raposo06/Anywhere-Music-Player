@@ -40,7 +40,15 @@ class SectionLabel extends StatelessWidget {
 /// would give a ripple the design doesn't have, so this is a plain
 /// colour swap on the same fast transition as everything else.
 class HoverRow extends StatefulWidget {
-  final Widget child;
+  /// The row's content, when it doesn't care about hover. Exactly one of this
+  /// and [builder] must be given.
+  final Widget? child;
+
+  /// The row's content, built with the current hover state — for content that
+  /// changes on hover, like the favourite heart that stays hidden until the
+  /// pointer is over the row.
+  final Widget Function(bool hovered)? builder;
+
   final VoidCallback? onTap;
   final EdgeInsets padding;
   final double radius;
@@ -51,12 +59,16 @@ class HoverRow extends StatefulWidget {
 
   const HoverRow({
     super.key,
-    required this.child,
+    this.child,
+    this.builder,
     this.onTap,
     this.padding = const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
     this.radius = 8,
     this.background,
-  });
+  }) : assert(
+         (child == null) != (builder == null),
+         'give exactly one of child or builder',
+       );
 
   @override
   State<HoverRow> createState() => _HoverRowState();
@@ -90,7 +102,7 @@ class _HoverRowState extends State<HoverRow> {
             color: _hovered && widget.onTap != null ? hovered : resting,
             borderRadius: BorderRadius.circular(widget.radius),
           ),
-          child: widget.child,
+          child: widget.child ?? widget.builder!(_hovered),
         ),
       ),
     );

@@ -16,6 +16,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/cover_art.dart';
 import '../../widgets/desktop/desktop_primitives.dart';
 import '../../widgets/desktop/desktop_shortcuts.dart';
+import '../../widgets/desktop/favourite_button.dart';
 import '../../widgets/desktop/up_next_panel.dart';
 import '../../widgets/desktop/window_chrome.dart';
 
@@ -421,11 +422,25 @@ class _Details extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          track.title,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.headlineMedium,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                track.title,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Nudged down to sit on the title's first line rather than its
+            // cap-height top, which a bare start-alignment lands on.
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: FavouriteButton(track: track, size: 22),
+            ),
+          ],
         ),
         // Album is omitted: it's almost always the same as the folder below.
         if (_artist case final artist?) ...[
