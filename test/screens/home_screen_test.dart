@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:anywhere_music_player/screens/home_screen.dart';
 import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
+import 'package:anywhere_music_player/services/favourites_service.dart';
 import 'package:anywhere_music_player/services/library_scanner.dart';
 import 'package:anywhere_music_player/services/subsonic_api_service.dart';
 import '../support/fake_path_provider.dart';
@@ -27,8 +28,16 @@ Widget _wrap({
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<AuthService>.value(value: auth),
-      ChangeNotifierProvider<AudioPlayerService>.value(value: player ?? AudioPlayerService()),
+      ChangeNotifierProvider<AudioPlayerService>.value(
+        value: player ?? AudioPlayerService(),
+      ),
       ChangeNotifierProvider<LibraryScanner>.value(value: scanner),
+      // TrackTile carries a favourite heart, which reads this. A
+      // logged-out service is the right stub: isStarred is false for
+      // everything and toggle is a no-op.
+      ChangeNotifierProvider<FavouritesService>(
+        create: (_) => FavouritesService(null),
+      ),
     ],
     child: const MaterialApp(home: HomeScreen()),
   );
@@ -40,7 +49,9 @@ void main() {
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('home_screen_test_');
     PathProviderPlatform.instance = FakePathProviderPlatform(tempDir.path);
-    FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform({});
+    FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(
+      {},
+    );
     SharedPreferences.setMockInitialValues({});
   });
 
@@ -55,49 +66,75 @@ void main() {
     }
   });
 
-  testWidgets('greets the logged-in user and lists folders once the scan completes', (tester) async {
-    final auth = await loggedInAuthService(username: 'alice');
-    // A second top-level folder so "Anime" isn't the sole one — otherwise
-    // it's the auto-flattened root and getTopLevelFolders() surfaces its
-    // children instead (see LibraryScanner.isFlattenedRoot).
-    final scanner = scannerWithSongs([
-      nativeApiSong(id: '1', path: 'Anime/Naruto/song.mp3'),
-      nativeApiSong(id: '2', path: 'Rock/song.mp3'),
-    ]);
+  testWidgets(
+    'greets the logged-in user and lists folders once the scan completes',
+    (tester) async {
+      final auth = await loggedInAuthService(username: 'alice');
+      // A second top-level folder so "Anime" isn't the sole one — otherwise
+      // it's the auto-flattened root and getTopLevelFolders() surfaces its
+      // children instead (see LibraryScanner.isFlattenedRoot).
+      final scanner = scannerWithSongs([
+        nativeApiSong(id: '1', path: 'Anime/Naruto/song.mp3'),
+        nativeApiSong(id: '2', path: 'Rock/song.mp3'),
+      ]);
 
-    await pumpAndWaitForAsyncWork(tester, _wrap(auth: auth, scanner: scanner), () => scanner.isScanning);
-    await tester.pumpAndSettle();
+      await pumpAndWaitForAsyncWork(
+        tester,
+        _wrap(auth: auth, scanner: scanner),
+        () => scanner.isScanning,
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Welcome, alice'), findsOneWidget);
-    expect(find.text('Anime'), findsOneWidget); // top-level folder
-    expect(find.textContaining('tracks'), findsWidgets); // "N tracks" header
-  });
+      expect(find.text('Welcome, alice'), findsOneWidget);
+      expect(find.text('Anime'), findsOneWidget); // top-level folder
+      expect(find.textContaining('tracks'), findsWidgets); // "N tracks" header
+    },
+  );
 
-  testWidgets('shows a fatal error with a retry button when the scan fails', (tester) async {
+  testWidgets('shows a fatal error with a retry button when the scan fails', (
+    tester,
+  ) async {
     final auth = await loggedInAuthService();
     final scanner = LibraryScanner(failingSubsonicApiService());
 
-    await pumpAndWaitForAsyncWork(tester, _wrap(auth: auth, scanner: scanner), () => scanner.isScanning);
+    await pumpAndWaitForAsyncWork(
+      tester,
+      _wrap(auth: auth, scanner: scanner),
+      () => scanner.isScanning,
+    );
     await tester.pumpAndSettle();
 
     // SubsonicApiException.toString() returns just its message (no "Exception: "
     // prefix — see SubsonicApiException).
-    expect(find.text('Failed to scan library: Native API login failed: HTTP 500'),
-        findsOneWidget);
+    expect(
+      find.text('Failed to scan library: Native API login failed: HTTP 500'),
+      findsOneWidget,
+    );
     expect(find.widgetWithText(ElevatedButton, 'Retry'), findsOneWidget);
   });
 
-  testWidgets('searching debounces, then shows results or "No results found"', (tester) async {
+  testWidgets('searching debounces, then shows results or "No results found"', (
+    tester,
+  ) async {
     final auth = await loggedInAuthService();
     final scanner = scannerWithSongs([
       nativeApiSong(id: '1', path: 'Anime/Naruto/song.mp3'),
     ]);
 
-    await pumpAndWaitForAsyncWork(tester, _wrap(auth: auth, scanner: scanner), () => scanner.isScanning);
+    await pumpAndWaitForAsyncWork(
+      tester,
+      _wrap(auth: auth, scanner: scanner),
+      () => scanner.isScanning,
+    );
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField).first, 'nothing matches this');
-    await tester.pump(const Duration(milliseconds: 350)); // past the 300ms debounce
+    await tester.enterText(
+      find.byType(TextField).first,
+      'nothing matches this',
+    );
+    await tester.pump(
+      const Duration(milliseconds: 350),
+    ); // past the 300ms debounce
     await tester.pumpAndSettle();
 
     // The fake auth-service api echoes {"status":"ok"} with no searchResult3,
@@ -105,37 +142,52 @@ void main() {
     expect(find.text('No results found'), findsOneWidget);
   });
 
-  testWidgets('swiping a root-level track away adds it to the queue (was missing — Candidate 04)', (tester) async {
-    // Regression: home's track tile was the one of three copies never given
-    // the swipe-to-queue gesture. See
-    // docs/reviews/2026-08-22-architecture-review.html Candidate 04.
+  testWidgets(
+    'swiping a root-level track away adds it to the queue (was missing — Candidate 04)',
+    (tester) async {
+      // Regression: home's track tile was the one of three copies never given
+      // the swipe-to-queue gesture. See
+      // docs/reviews/2026-08-22-architecture-review.html Candidate 04.
+      final auth = await loggedInAuthService();
+      final scanner = scannerWithSongs([
+        nativeApiSong(id: '1', path: 'Some Song.mp3'),
+      ]);
+      // A track must already be playing, or addToQueue() would fall through to
+      // playTrack() — which needs a live platform audio backend this test
+      // doesn't have. See AudioPlayerService.addToQueue.
+      final player = AudioPlayerService()
+        ..seedForTest(
+          currentTrack: sampleTrack(id: '0', title: 'Already Playing'),
+        );
+
+      await pumpAndWaitForAsyncWork(
+        tester,
+        _wrap(auth: auth, scanner: scanner, player: player),
+        () => scanner.isScanning,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.drag(find.text('Some Song'), const Offset(500, 0));
+      await settle(tester);
+
+      expect(player.queue.map((t) => t.title), ['Some Song']);
+      expect(find.text('Added to queue: Some Song'), findsOneWidget);
+    },
+  );
+
+  testWidgets('logout stops playback, clears the library, and logs out', (
+    tester,
+  ) async {
     final auth = await loggedInAuthService();
-    final scanner = scannerWithSongs([nativeApiSong(id: '1', path: 'Some Song.mp3')]);
-    // A track must already be playing, or addToQueue() would fall through to
-    // playTrack() — which needs a live platform audio backend this test
-    // doesn't have. See AudioPlayerService.addToQueue.
-    final player = AudioPlayerService()
-      ..seedForTest(currentTrack: sampleTrack(id: '0', title: 'Already Playing'));
+    final scanner = scannerWithSongs([
+      nativeApiSong(id: '1', path: 'Anime/song.mp3'),
+    ]);
 
     await pumpAndWaitForAsyncWork(
       tester,
-      _wrap(auth: auth, scanner: scanner, player: player),
+      _wrap(auth: auth, scanner: scanner),
       () => scanner.isScanning,
     );
-    await tester.pumpAndSettle();
-
-    await tester.drag(find.text('Some Song'), const Offset(500, 0));
-    await settle(tester);
-
-    expect(player.queue.map((t) => t.title), ['Some Song']);
-    expect(find.text('Added to queue: Some Song'), findsOneWidget);
-  });
-
-  testWidgets('logout stops playback, clears the library, and logs out', (tester) async {
-    final auth = await loggedInAuthService();
-    final scanner = scannerWithSongs([nativeApiSong(id: '1', path: 'Anime/song.mp3')]);
-
-    await pumpAndWaitForAsyncWork(tester, _wrap(auth: auth, scanner: scanner), () => scanner.isScanning);
     await tester.pumpAndSettle();
     expect(scanner.allTracks, isNotEmpty);
 

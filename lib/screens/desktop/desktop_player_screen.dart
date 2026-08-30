@@ -16,7 +16,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/cover_art.dart';
 import '../../widgets/desktop/desktop_primitives.dart';
 import '../../widgets/desktop/desktop_shortcuts.dart';
-import '../../widgets/desktop/favourite_button.dart';
+import '../../widgets/favourite_button.dart';
 import '../../widgets/desktop/up_next_panel.dart';
 import '../../widgets/desktop/window_chrome.dart';
 

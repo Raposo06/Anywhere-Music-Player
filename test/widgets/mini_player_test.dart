@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
 import 'package:anywhere_music_player/services/auth_service.dart';
+import 'package:anywhere_music_player/services/favourites_service.dart';
 import 'package:anywhere_music_player/widgets/mini_player.dart';
 import 'package:anywhere_music_player/screens/player_screen.dart';
 import '../support/fixtures.dart';
@@ -14,6 +15,11 @@ Widget _wrap(AudioPlayerService service, {Widget child = const MiniPlayer()}) {
       // No cover art on any fixture in this file, so an unauthenticated
       // (apiService == null) AuthService resolves the same as a real one.
       ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
+      // PlayerScreen — which tapping the bar pushes — carries a
+      // favourite heart that reads this. Logged out is the right stub.
+      ChangeNotifierProvider<FavouritesService>(
+        create: (_) => FavouritesService(null),
+      ),
     ],
     child: MaterialApp(home: Scaffold(body: child)),
   );
@@ -31,8 +37,11 @@ void main() {
     expect(tester.getSize(find.byType(MiniPlayer)).height, 0);
   });
 
-  testWidgets('shows the current track title and playback controls', (tester) async {
-    final service = AudioPlayerService()..seedForTest(currentTrack: sampleTrack(title: 'Now Playing Song'));
+  testWidgets('shows the current track title and playback controls', (
+    tester,
+  ) async {
+    final service = AudioPlayerService()
+      ..seedForTest(currentTrack: sampleTrack(title: 'Now Playing Song'));
 
     await tester.pumpWidget(_wrap(service));
     await tester.pump();
@@ -45,7 +54,8 @@ void main() {
   });
 
   testWidgets('tapping the bar opens the full player screen', (tester) async {
-    final service = AudioPlayerService()..seedForTest(currentTrack: sampleTrack());
+    final service = AudioPlayerService()
+      ..seedForTest(currentTrack: sampleTrack());
 
     await tester.pumpWidget(_wrap(service));
     await tester.pump();
@@ -56,17 +66,23 @@ void main() {
     expect(find.byType(PlayerScreen), findsOneWidget);
   });
 
-  testWidgets('updates when the current track changes without rebuilding the parent', (tester) async {
-    final service = AudioPlayerService()..seedForTest(currentTrack: sampleTrack(title: 'First Song'));
+  testWidgets(
+    'updates when the current track changes without rebuilding the parent',
+    (tester) async {
+      final service = AudioPlayerService()
+        ..seedForTest(currentTrack: sampleTrack(title: 'First Song'));
 
-    await tester.pumpWidget(_wrap(service));
-    await tester.pump();
-    expect(find.text('First Song'), findsOneWidget);
+      await tester.pumpWidget(_wrap(service));
+      await tester.pump();
+      expect(find.text('First Song'), findsOneWidget);
 
-    service.seedForTest(currentTrack: sampleTrack(id: '2', title: 'Second Song'));
-    await tester.pump();
+      service.seedForTest(
+        currentTrack: sampleTrack(id: '2', title: 'Second Song'),
+      );
+      await tester.pump();
 
-    expect(find.text('First Song'), findsNothing);
-    expect(find.text('Second Song'), findsOneWidget);
-  });
+      expect(find.text('First Song'), findsNothing);
+      expect(find.text('Second Song'), findsOneWidget);
+    },
+  );
 }

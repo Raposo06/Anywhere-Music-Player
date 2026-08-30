@@ -6,7 +6,7 @@ import '../../services/audio_player_service.dart';
 import '../../theme/app_colors.dart';
 import '../cover_art.dart';
 import 'desktop_primitives.dart';
-import 'favourite_button.dart';
+import '../favourite_button.dart';
 
 /// One track row in a desktop list.
 ///

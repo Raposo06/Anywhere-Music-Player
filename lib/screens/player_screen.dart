@@ -10,6 +10,7 @@ import '../services/audio_player_service.dart';
 import '../services/auth_service.dart';
 import '../services/stream_url_resolver.dart';
 import '../utils/responsive.dart';
+import '../widgets/favourite_button.dart';
 import '../widgets/queue_sheet.dart';
 import 'folder_detail_screen.dart';
 
@@ -201,6 +202,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           appBar: AppBar(
             title: const Text('Now Playing'),
             actions: [
+              FavouriteButton(track: track, size: 22),
               IconButton(
                 icon: const Icon(Icons.queue_music),
                 tooltip: 'Queue',

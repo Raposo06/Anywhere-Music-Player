@@ -9,7 +9,7 @@ import '../../services/audio_player_service.dart';
 import '../../theme/app_colors.dart';
 import '../cover_art.dart';
 import 'desktop_primitives.dart';
-import 'favourite_button.dart';
+import '../favourite_button.dart';
 
 /// The persistent playback bar docked at the bottom of the desktop shell.
 ///

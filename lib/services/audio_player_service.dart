@@ -261,6 +261,8 @@ class AudioPlayerService with ChangeNotifier {
   void _handlePlaybackError(Object error) {
     _lastError = 'Playback error: $error';
     debugPrint('Playback error: $error');
+    // Reached from async paths that can outlive dispose — see _loadAndPlay.
+    if (_disposed) return;
     notifyListeners();
   }
 
@@ -489,7 +491,11 @@ class AudioPlayerService with ChangeNotifier {
       if (token != _loadToken) return;
       _handlePlaybackError(e);
     } finally {
-      if (token == _loadToken) {
+      // The `_disposed` guard matters here and not at most call sites: this
+      // runs after an await, so the service can have been disposed while the
+      // stream was still opening — notifying then throws
+      // "used after being disposed".
+      if (token == _loadToken && !_disposed) {
         _isLoading = false;
         notifyListeners();
       }
@@ -758,9 +764,18 @@ class AudioPlayerService with ChangeNotifier {
   /// runs at all.
   Future<void> shutdown() => _teardown() ?? Future.value();
 
+  /// Idempotent, and safe to call after [shutdown] — which is the desktop
+  /// close path, where the guard shuts the player down and Provider may still
+  /// dispose it afterwards. [_teardown] guards itself; this flag is what stops
+  /// `ChangeNotifier.dispose` (which asserts when called twice) from running
+  /// more than once.
+  bool _superDisposed = false;
+
   @override
   void dispose() {
     _teardown();
+    if (_superDisposed) return;
+    _superDisposed = true;
     super.dispose();
   }
 

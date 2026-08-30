@@ -8,6 +8,7 @@ import '../../services/library_scanner.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/desktop/desktop_mini_player.dart';
 import '../../widgets/desktop/desktop_shortcuts.dart';
+import '../../widgets/favourites_error_listener.dart';
 import '../../widgets/desktop/sidebar.dart';
 import '../../widgets/desktop/window_chrome.dart';
 import 'desktop_all_tracks_screen.dart';
@@ -186,47 +187,12 @@ class _DesktopShellState extends State<DesktopShell> {
                 ),
               ),
               DesktopMiniPlayer(onOpenPlayer: _openPlayer),
-              const _FavouritesErrorListener(),
+              const FavouritesErrorListener(),
             ],
           ),
         ),
       ),
     );
-  }
-}
-
-/// Surfaces a failed star/unstar as a SnackBar, once each.
-///
-/// [FavouritesService] applies a toggle locally and rolls it back if the
-/// server refuses (see its `toggle`), and a heart quietly reverting is
-/// otherwise indistinguishable from a mis-click. Lives in the shell because
-/// hearts appear in several places; the SnackBar goes to the app-level
-/// [ScaffoldMessenger], so it is still visible over the Now Playing route.
-///
-/// Renders nothing — it is a listener that happens to be in the tree.
-class _FavouritesErrorListener extends StatelessWidget {
-  const _FavouritesErrorListener();
-
-  @override
-  Widget build(BuildContext context) {
-    final error = context.select<FavouritesService, String?>((f) => f.error);
-    if (error != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(error),
-              duration: const Duration(seconds: 4),
-            ),
-          );
-        // Cleared as soon as it's shown, so the same failure can't re-fire on
-        // an unrelated rebuild.
-        context.read<FavouritesService>().clearError();
-      });
-    }
-    return const SizedBox.shrink();
   }
 }
 

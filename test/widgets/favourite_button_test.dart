@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:anywhere_music_player/services/favourites_service.dart';
 import 'package:anywhere_music_player/services/subsonic_api_service.dart';
 import 'package:anywhere_music_player/theme/app_colors.dart';
-import 'package:anywhere_music_player/widgets/desktop/favourite_button.dart';
+import 'package:anywhere_music_player/widgets/favourite_button.dart';
 import '../support/fixtures.dart';
 
 // Covers the heart itself: that it reflects starred state, toggles on tap, and

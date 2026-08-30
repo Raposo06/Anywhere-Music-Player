@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import 'cover_art.dart';
+import 'favourite_button.dart';
 
 /// One track row, used by the home, all-tracks and folder screens. Was three
 /// near-identical private tiles that had already drifted — the home screen
@@ -51,7 +52,9 @@ class TrackTile extends StatelessWidget {
                       child: Text(
                         '${index + 1}',
                         style: TextStyle(
-                          color: isCurrentTrack ? scheme.primary : scheme.onSurfaceVariant,
+                          color: isCurrentTrack
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
                           fontWeight: isCurrentTrack ? FontWeight.bold : null,
                         ),
                       ),
@@ -73,9 +76,15 @@ class TrackTile extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          trailing: isCurrentTrack
-              ? Icon(Icons.equalizer, color: scheme.primary)
-              : null,
+          // The heart sits beside the playing marker rather than replacing it —
+          // both are state, and a row can be current *and* a favourite.
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isCurrentTrack) Icon(Icons.equalizer, color: scheme.primary),
+              FavouriteButton(track: track),
+            ],
+          ),
           onTap: onTap,
         );
 
@@ -93,8 +102,13 @@ class TrackTile extends StatelessWidget {
               children: [
                 Icon(Icons.queue_music, color: Colors.white),
                 SizedBox(width: 8),
-                Text('Add to queue',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
+                Text(
+                  'Add to queue',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
           ),
@@ -106,10 +120,12 @@ class TrackTile extends StatelessWidget {
             if (willQueue) {
               messenger
                 ..hideCurrentSnackBar()
-                ..showSnackBar(SnackBar(
-                  content: Text('Added to queue: ${track.title}'),
-                  duration: const Duration(seconds: 2),
-                ));
+                ..showSnackBar(
+                  SnackBar(
+                    content: Text('Added to queue: ${track.title}'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
             }
             return false;
           },

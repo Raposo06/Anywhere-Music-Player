@@ -752,11 +752,50 @@ Three constraints worth keeping:
 that the app had no access to, and being server-side they stay in sync with the
 web UI and any other client. Nothing about it needs a local store.
 
-**What would reverse it.** Nothing likely for the model. The desktop-only scope
-is a deliberate first slice, not a decision: `FavouritesService` and the API
-sit below the widget layer, so the phone and TV layouts can adopt the same
-heart without touching either.
+**What would reverse it.** Nothing likely for the model.
 
 **Not done:** no offline cache of the starred list (it is one request, and the
-app already requires a reachable server); no starred-albums view; the phone and
-TV layouts show no hearts.
+app already requires a reachable server); no starred-albums view; the TV layout
+shows no hearts.
+
+**Update (same day):** the phone layout now has them too — see the entry below.
+
+---
+
+## 2026-08-30 — Favourites on the phone; the heart becomes a shared widget
+
+**Decided.** The phone gets the same favourites: a heart on every [TrackTile]
+and in [PlayerScreen]'s app bar, plus a third bottom-nav destination listing
+them. `FavouriteButton` and the error listener moved out of
+`lib/widgets/desktop/` to `lib/widgets/`, since both layouts now use them
+unchanged.
+
+Phone-specific choices:
+
+- **Pull-to-refresh** on the list. Desktop re-syncs by clicking the already
+  active sidebar item; the phone's tab bar has no equivalent gesture, and the
+  list can go stale when another client stars something.
+- **The heart is always visible**, where desktop hides it until the row is
+  hovered. There is no hover to reveal it with, so `visible` stays at its
+  default. The empty and error states are deliberately scrollable so the
+  refresh gesture still works with no rows.
+- **`BottomNavigationBarType.fixed`**, because three destinations otherwise
+  switch Material to the shifting style, which hides the inactive labels.
+
+**Why.** The service and API were already shared — only the widgets were
+desktop-only — so this was UI work, not a second implementation. Favourites
+starred on the phone appear on the desktop and in Navidrome's web UI, because
+none of it is local state.
+
+**What would reverse it.** Nothing likely. Android TV still has no hearts: its
+D-pad UI is a separate screen set, and starring wants a deliberate focus
+target rather than a heart hung off a list row.
+
+**A latent bug this surfaced.** Putting a `Selector` inside `TrackTile` meant
+every screen test needed `FavouritesService` in scope, and writing the phone
+screen test then exposed two real defects in `AudioPlayerService`, both fixed
+here: an in-flight load could call `notifyListeners()` *after* `dispose()`
+(async completion outliving teardown), and `dispose()` was not idempotent
+despite `_teardown()` being so — `ChangeNotifier.dispose` asserts on a second
+call, which matters because the desktop close guard calls `shutdown()` and
+Provider may dispose afterwards.

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/track.dart';
-import '../../services/favourites_service.dart';
-import '../../theme/app_colors.dart';
+import '../models/track.dart';
+import '../services/favourites_service.dart';
+import '../theme/app_colors.dart';
 
 /// The heart that stars [track], filled when it is a favourite.
 ///
@@ -14,6 +14,11 @@ import '../../theme/app_colors.dart';
 /// — the row keeps its width whether or not the pointer is over it, so hearts
 /// stay in a column and nothing shifts on hover. A *starred* heart ignores
 /// [visible] and always shows; it is state, not an affordance.
+///
+/// Shared by both layouts. Only desktop passes [visible] (rows hide the heart
+/// until hovered); phone leaves it at the default, since there is no hover to
+/// reveal it with. The accent tint is the same either way —
+/// `colorScheme.primary` *is* [AppColors.accent], see app_theme.dart.
 class FavouriteButton extends StatelessWidget {
   final Track track;
   final double size;

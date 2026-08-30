@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:anywhere_music_player/screens/folder_detail_screen.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
+import 'package:anywhere_music_player/services/favourites_service.dart';
 import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/library_scanner.dart';
 import '../support/fake_path_provider.dart';
@@ -20,8 +21,16 @@ Widget _wrap({
 }) {
   return MultiProvider(
     providers: [
-      ChangeNotifierProvider<AudioPlayerService>.value(value: player ?? AudioPlayerService()),
+      ChangeNotifierProvider<AudioPlayerService>.value(
+        value: player ?? AudioPlayerService(),
+      ),
       ChangeNotifierProvider<LibraryScanner>.value(value: scanner),
+      // TrackTile carries a favourite heart, which reads this. A
+      // logged-out service is the right stub: isStarred is false for
+      // everything and toggle is a no-op.
+      ChangeNotifierProvider<FavouritesService>(
+        create: (_) => FavouritesService(null),
+      ),
       // No cover art on any fixture in this file, so an unauthenticated
       // (apiService == null) AuthService resolves the same as a real one.
       ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
@@ -36,7 +45,9 @@ void main() {
   late Directory tempDir;
 
   setUp(() async {
-    tempDir = await Directory.systemTemp.createTemp('folder_detail_screen_test_');
+    tempDir = await Directory.systemTemp.createTemp(
+      'folder_detail_screen_test_',
+    );
     PathProviderPlatform.instance = FakePathProviderPlatform(tempDir.path);
   });
 
@@ -58,7 +69,9 @@ void main() {
     ]);
     await tester.runAsync(() => scanner.scan());
 
-    await tester.pumpWidget(_wrap(scanner: scanner, folderId: 'Anime', folderName: 'Anime'));
+    await tester.pumpWidget(
+      _wrap(scanner: scanner, folderId: 'Anime', folderName: 'Anime'),
+    );
     await settle(tester);
 
     expect(find.text('Naruto'), findsOneWidget); // subfolder
@@ -66,7 +79,9 @@ void main() {
     expect(find.text('1 track(s)'), findsOneWidget); // recursive total
   });
 
-  testWidgets('refreshes when a background rescan updates the library', (tester) async {
+  testWidgets('refreshes when a background rescan updates the library', (
+    tester,
+  ) async {
     // Candidate 08: FolderDetailScreen used to read the scanner once in
     // initState and never listen again, so a background refresh landing
     // while the screen was already open was invisible.
@@ -79,7 +94,9 @@ void main() {
     final scanner = scannerWithSongs(songs);
     await tester.runAsync(() => scanner.scan());
 
-    await tester.pumpWidget(_wrap(scanner: scanner, folderId: 'Anime', folderName: 'Anime'));
+    await tester.pumpWidget(
+      _wrap(scanner: scanner, folderId: 'Anime', folderName: 'Anime'),
+    );
     await settle(tester);
 
     expect(find.text('1 track(s)'), findsOneWidget);
@@ -92,17 +109,29 @@ void main() {
     expect(find.text('loose2'), findsOneWidget);
   });
 
-  testWidgets('shows "No content found" for a path with nothing in it', (tester) async {
-    final scanner = scannerWithSongs([nativeApiSong(id: '1', path: 'Anime/song.mp3')]);
+  testWidgets('shows "No content found" for a path with nothing in it', (
+    tester,
+  ) async {
+    final scanner = scannerWithSongs([
+      nativeApiSong(id: '1', path: 'Anime/song.mp3'),
+    ]);
     await tester.runAsync(() => scanner.scan());
 
-    await tester.pumpWidget(_wrap(scanner: scanner, folderId: 'Nonexistent', folderName: 'Nonexistent'));
+    await tester.pumpWidget(
+      _wrap(
+        scanner: scanner,
+        folderId: 'Nonexistent',
+        folderName: 'Nonexistent',
+      ),
+    );
     await settle(tester);
 
     expect(find.text('No content found'), findsOneWidget);
   });
 
-  testWidgets('shows a breadcrumb (Home + parent) for a nested folder', (tester) async {
+  testWidgets('shows a breadcrumb (Home + parent) for a nested folder', (
+    tester,
+  ) async {
     // A second, unrelated top-level folder so "Anime" isn't the sole
     // top-level entry — otherwise it's the auto-flattened root and the
     // breadcrumb deliberately omits it (see LibraryScanner.isFlattenedRoot).
@@ -112,7 +141,9 @@ void main() {
     ]);
     await tester.runAsync(() => scanner.scan());
 
-    await tester.pumpWidget(_wrap(scanner: scanner, folderId: 'Anime/Naruto', folderName: 'Naruto'));
+    await tester.pumpWidget(
+      _wrap(scanner: scanner, folderId: 'Anime/Naruto', folderName: 'Naruto'),
+    );
     await settle(tester);
 
     expect(find.byIcon(Icons.home_rounded), findsOneWidget);
@@ -126,7 +157,9 @@ void main() {
     ]);
     await tester.runAsync(() => scanner.scan());
 
-    await tester.pumpWidget(_wrap(scanner: scanner, folderId: 'Anime', folderName: 'Anime'));
+    await tester.pumpWidget(
+      _wrap(scanner: scanner, folderId: 'Anime', folderName: 'Anime'),
+    );
     await settle(tester);
 
     await tester.tap(find.byIcon(Icons.search));
@@ -138,33 +171,47 @@ void main() {
     expect(find.text('Bleach Opening'), findsNothing);
   });
 
-  testWidgets('search finds tracks nested in a subfolder, not just direct children', (tester) async {
-    // Regression: a browsable folder frequently has zero *direct* tracks —
-    // everything lives one or more album subfolders down (confirmed against
-    // a real library: e.g. a "Games" folder held 0 direct / 2,218 recursive
-    // tracks). Searching used to filter only the direct-children list, so it
-    // silently found nothing in exactly this shape of folder.
+  testWidgets(
+    'search finds tracks nested in a subfolder, not just direct children',
+    (tester) async {
+      // Regression: a browsable folder frequently has zero *direct* tracks —
+      // everything lives one or more album subfolders down (confirmed against
+      // a real library: e.g. a "Games" folder held 0 direct / 2,218 recursive
+      // tracks). Searching used to filter only the direct-children list, so it
+      // silently found nothing in exactly this shape of folder.
+      final scanner = scannerWithSongs([
+        nativeApiSong(
+          id: '1',
+          path: 'Anime/Bleach/Bleach OST 1/Naruto Opening.mp3',
+        ),
+      ]);
+      await tester.runAsync(() => scanner.scan());
+
+      await tester.pumpWidget(
+        _wrap(scanner: scanner, folderId: 'Anime/Bleach', folderName: 'Bleach'),
+      );
+      await settle(tester);
+
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), 'naruto');
+      await tester.pump();
+
+      expect(find.text('Naruto Opening'), findsOneWidget);
+    },
+  );
+
+  testWidgets('search with no matches shows the empty-search message', (
+    tester,
+  ) async {
     final scanner = scannerWithSongs([
-      nativeApiSong(id: '1', path: 'Anime/Bleach/Bleach OST 1/Naruto Opening.mp3'),
+      nativeApiSong(id: '1', path: 'Anime/Naruto Opening.mp3'),
     ]);
     await tester.runAsync(() => scanner.scan());
 
-    await tester.pumpWidget(_wrap(scanner: scanner, folderId: 'Anime/Bleach', folderName: 'Bleach'));
-    await settle(tester);
-
-    await tester.tap(find.byIcon(Icons.search));
-    await tester.pump();
-    await tester.enterText(find.byType(TextField), 'naruto');
-    await tester.pump();
-
-    expect(find.text('Naruto Opening'), findsOneWidget);
-  });
-
-  testWidgets('search with no matches shows the empty-search message', (tester) async {
-    final scanner = scannerWithSongs([nativeApiSong(id: '1', path: 'Anime/Naruto Opening.mp3')]);
-    await tester.runAsync(() => scanner.scan());
-
-    await tester.pumpWidget(_wrap(scanner: scanner, folderId: 'Anime', folderName: 'Anime'));
+    await tester.pumpWidget(
+      _wrap(scanner: scanner, folderId: 'Anime', folderName: 'Anime'),
+    );
     await settle(tester);
 
     await tester.tap(find.byIcon(Icons.search));
@@ -176,11 +223,23 @@ void main() {
   });
 
   testWidgets('swiping a track away adds it to the queue', (tester) async {
-    final scanner = scannerWithSongs([nativeApiSong(id: '1', path: 'Anime/Some Song.mp3')]);
+    final scanner = scannerWithSongs([
+      nativeApiSong(id: '1', path: 'Anime/Some Song.mp3'),
+    ]);
     await tester.runAsync(() => scanner.scan());
-    final player = AudioPlayerService()..seedForTest(currentTrack: sampleTrack(id: '0', title: 'Already Playing'));
+    final player = AudioPlayerService()
+      ..seedForTest(
+        currentTrack: sampleTrack(id: '0', title: 'Already Playing'),
+      );
 
-    await tester.pumpWidget(_wrap(scanner: scanner, folderId: 'Anime', folderName: 'Anime', player: player));
+    await tester.pumpWidget(
+      _wrap(
+        scanner: scanner,
+        folderId: 'Anime',
+        folderName: 'Anime',
+        player: player,
+      ),
+    );
     await settle(tester);
 
     await tester.drag(find.text('Some Song'), const Offset(500, 0));
