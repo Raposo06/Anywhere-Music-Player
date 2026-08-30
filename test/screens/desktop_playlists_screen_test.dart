@@ -11,6 +11,7 @@ import 'package:anywhere_music_player/screens/desktop/desktop_playlists_screen.d
 import 'package:anywhere_music_player/services/audio_player_service.dart';
 import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/favourites_service.dart';
+import 'package:anywhere_music_player/services/library_scanner.dart';
 import 'package:anywhere_music_player/services/playlists_service.dart';
 import '../support/fake_auth.dart';
 import '../support/fake_just_audio.dart';
@@ -84,6 +85,11 @@ void main() {
           ChangeNotifierProvider<FavouritesService>(
             create: (_) => FavouritesService(null),
           ),
+          // The playlists list pins an "All Tracks" row whose subtitle is the
+          // library's track count.
+          ChangeNotifierProvider<LibraryScanner>(
+            create: (_) => LibraryScanner(null),
+          ),
         ],
         child: MaterialApp(home: Scaffold(body: home)),
       ),
@@ -141,6 +147,27 @@ void main() {
       await settle(tester, frames: 8);
 
       expect(server.playlists.keys, ['2']);
+    });
+
+    testWidgets('pins All Tracks above the user\'s own playlists', (
+      tester,
+    ) async {
+      await pump(tester, const DesktopPlaylistsScreen());
+
+      expect(find.text('All Tracks'), findsOneWidget);
+      // A library view has nothing to rename or delete, so it gets no
+      // overflow menu — only Roadtrip (owned) does.
+      expect(find.byIcon(Icons.more_horiz), findsOneWidget);
+    });
+
+    testWidgets('All Tracks is still there when there are no playlists', (
+      tester,
+    ) async {
+      server.playlists.clear();
+      await pump(tester, const DesktopPlaylistsScreen());
+
+      expect(find.text('All Tracks'), findsOneWidget);
+      expect(find.text('No playlists yet'), findsOneWidget);
     });
 
     testWidgets('with none, it says so', (tester) async {

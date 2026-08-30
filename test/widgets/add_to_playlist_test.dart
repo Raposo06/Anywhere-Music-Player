@@ -151,6 +151,14 @@ void main() {
     expect(service.error, contains('Could not add to playlist'));
   });
 
+  testWidgets('never offers All Tracks as a destination', (tester) async {
+    // It is pinned into the playlists *list* for browsing, but you cannot add
+    // a song to it — it is a view of the library, not a collection.
+    await pumpPicker(tester);
+
+    expect(find.text('All Tracks'), findsNothing);
+  });
+
   testWidgets('with no playlists it still offers to create one', (
     tester,
   ) async {

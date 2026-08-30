@@ -5,7 +5,6 @@ import '../services/playlists_service.dart';
 import '../utils/platform_detector.dart';
 import '../widgets/favourites_error_listener.dart';
 import '../widgets/mini_player.dart';
-import 'all_tracks_screen.dart';
 import 'desktop/desktop_shell.dart';
 import 'favourites_screen.dart';
 import 'playlists_screen.dart';
@@ -58,12 +57,7 @@ class _PhoneScaffoldState extends State<_PhoneScaffold> {
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: const [
-          HomeScreen(),
-          AllTracksScreen(),
-          FavouritesScreen(),
-          PlaylistsScreen(),
-        ],
+        children: const [HomeScreen(), FavouritesScreen(), PlaylistsScreen()],
       ),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
@@ -86,10 +80,6 @@ class _PhoneScaffoldState extends State<_PhoneScaffold> {
               BottomNavigationBarItem(
                 icon: Icon(Icons.folder),
                 label: 'Folders',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.library_music),
-                label: 'All Tracks',
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.favorite),

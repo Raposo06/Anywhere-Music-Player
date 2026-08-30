@@ -5,11 +5,13 @@ import '../models/playlist.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import '../services/auth_service.dart';
+import '../services/library_scanner.dart';
 import '../services/playlists_service.dart';
 import '../utils/responsive.dart';
 import '../widgets/add_to_playlist.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/track_tile.dart';
+import 'all_tracks_screen.dart';
 import 'player_screen.dart';
 
 /// The phone's playlists list. Counterpart to `DesktopPlaylistsScreen`;
@@ -35,6 +37,34 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
       MaterialPageRoute(
         builder: (_) => PlaylistScreen(playlistId: playlist.id),
       ),
+    );
+  }
+
+  void _openAllTracks() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const AllTracksScreen()));
+  }
+
+  /// The library's own collection, above the user's playlists.
+  ///
+  /// All Tracks is a *view of the library*, not a playlist: nothing to rename
+  /// or delete, and it never appears in the add-to-playlist picker. The
+  /// divider is what makes that visible.
+  Widget _buildBuiltIns(BuildContext context) {
+    final count = context.watch<LibraryScanner>().allTracks.length;
+    return Column(
+      children: [
+        ListTile(
+          leading: const CircleAvatar(child: Icon(Icons.library_music)),
+          title: const Text('All Tracks'),
+          subtitle: Text(
+            count == 0 ? 'Everything in your library' : '$count tracks',
+          ),
+          onTap: _openAllTracks,
+        ),
+        const Divider(height: 1),
+      ],
     );
   }
 
@@ -108,17 +138,28 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
       );
     }
     if (service.playlists.isEmpty) {
-      return const _Message(
-        icon: Icons.queue_music,
-        title: 'No playlists yet',
-        subtitle: 'Create one with +, or long-press a track to add it to one.',
+      // All Tracks still shows — the list is never truly empty.
+      return ListView(
+        children: [
+          _buildBuiltIns(context),
+          const Padding(
+            padding: EdgeInsets.only(top: 32),
+            child: Text(
+              'No playlists yet',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 15),
+            ),
+          ),
+        ],
       );
     }
 
     return ListView.builder(
-      itemCount: service.playlists.length,
+      // One extra leading row for All Tracks.
+      itemCount: service.playlists.length + 1,
       itemBuilder: (context, i) {
-        final playlist = service.playlists[i];
+        if (i == 0) return _buildBuiltIns(context);
+        final playlist = service.playlists[i - 1];
         final editable = playlist.isEditableBy(username);
         return ListTile(
           leading: CoverArt(playlist, size: 48, showPlaceholder: false),

@@ -10,6 +10,7 @@ import 'package:anywhere_music_player/screens/playlists_screen.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
 import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/favourites_service.dart';
+import 'package:anywhere_music_player/services/library_scanner.dart';
 import 'package:anywhere_music_player/services/playlists_service.dart';
 import '../support/fake_auth.dart';
 import '../support/fake_just_audio.dart';
@@ -78,6 +79,11 @@ void main() {
           ChangeNotifierProvider<FavouritesService>(
             create: (_) => FavouritesService(null),
           ),
+          // The playlists list pins an "All Tracks" row whose subtitle is the
+          // library's track count.
+          ChangeNotifierProvider<LibraryScanner>(
+            create: (_) => LibraryScanner(null),
+          ),
         ],
         child: MaterialApp(home: home),
       ),
@@ -141,6 +147,27 @@ void main() {
       await settle(tester, frames: 8);
 
       expect(find.text('Fresh'), findsOneWidget);
+    });
+
+    testWidgets('pins All Tracks above the user\'s own playlists', (
+      tester,
+    ) async {
+      await pump(tester, const PlaylistsScreen());
+
+      expect(find.text('All Tracks'), findsOneWidget);
+      // It is a library view, not a playlist: nothing to delete. Only
+      // Roadtrip (owned) has a delete button.
+      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+    });
+
+    testWidgets('All Tracks is still there when there are no playlists', (
+      tester,
+    ) async {
+      server.playlists.clear();
+      await pump(tester, const PlaylistsScreen());
+
+      expect(find.text('All Tracks'), findsOneWidget);
+      expect(find.text('No playlists yet'), findsOneWidget);
     });
 
     testWidgets('with none, it says so and invites creating one', (

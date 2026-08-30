@@ -5,12 +5,14 @@ import '../../models/playlist.dart';
 import '../../models/track.dart';
 import '../../services/audio_player_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/library_scanner.dart';
 import '../../services/playlists_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/add_to_playlist.dart';
 import '../../widgets/cover_art.dart';
 import '../../widgets/desktop/desktop_primitives.dart';
 import '../../widgets/desktop/desktop_track_row.dart';
+import 'desktop_all_tracks_screen.dart';
 import 'desktop_shell.dart';
 
 /// The playlists list — the root of the Playlists destination's navigator.
@@ -36,6 +38,15 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
 
   void _open(Playlist playlist) {
     Navigator.of(context).push(DesktopPlaylistScreen.route(playlist.id));
+  }
+
+  void _openAllTracks() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        settings: const RouteSettings(name: 'All Tracks'),
+        builder: (_) => const DesktopAllTracksScreen(),
+      ),
+    );
   }
 
   @override
@@ -105,36 +116,136 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
       );
     }
     if (service.playlists.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.queue_music, size: 40, color: AppColors.faint),
-            SizedBox(height: 12),
-            Text(
-              'No playlists yet',
-              style: TextStyle(fontSize: 15, color: AppColors.muted),
+      // All Tracks still shows — the list is never truly empty.
+      return ListView(
+        children: [
+          _buildBuiltIns(),
+          const Padding(
+            padding: EdgeInsets.only(top: 24),
+            child: Column(
+              children: [
+                Text(
+                  'No playlists yet',
+                  style: TextStyle(fontSize: 15, color: AppColors.muted),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'Create one above, or right-click a track to add it to one.',
+                  style: TextStyle(fontSize: 13, color: AppColors.faint),
+                ),
+              ],
             ),
-            SizedBox(height: 6),
-            Text(
-              'Create one above, or right-click a track to add it to a new one.',
-              style: TextStyle(fontSize: 13, color: AppColors.faint),
-            ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
     return ListView.builder(
-      itemCount: service.playlists.length,
+      // One extra leading row for All Tracks, plus the divider under it.
+      itemCount: service.playlists.length + 1,
       itemBuilder: (context, i) {
-        final playlist = service.playlists[i];
+        if (i == 0) return _buildBuiltIns();
+        final playlist = service.playlists[i - 1];
         return _PlaylistRow(
           playlist: playlist,
           editable: playlist.isEditableBy(username),
           onTap: () => _open(playlist),
         );
       },
+    );
+  }
+
+  /// The library's own collections, above the user's playlists.
+  ///
+  /// All Tracks is a *view of the library*, not a playlist: it can't be
+  /// renamed, deleted or added to, and it never appears in the add-to-playlist
+  /// picker. The divider is what makes that distinction visible rather than
+  /// something the user has to discover by right-clicking.
+  Widget _buildBuiltIns() {
+    final count = context.watch<LibraryScanner>().allTracks.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _BuiltInRow(
+          icon: Icons.library_music_outlined,
+          name: 'All Tracks',
+          summary: count == 0
+              ? 'Everything in your library'
+              : '${_thousands(count)} tracks',
+          onTap: _openAllTracks,
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+          child: Divider(height: 1, color: AppColors.border),
+        ),
+      ],
+    );
+  }
+
+  static String _thousands(int n) {
+    final digits = n.toString();
+    final buffer = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
+      buffer.write(digits[i]);
+    }
+    return buffer.toString();
+  }
+}
+
+/// A library collection in the playlists list — same shape as a playlist row,
+/// deliberately, but with no overflow menu because there is nothing to rename
+/// or delete.
+class _BuiltInRow extends StatelessWidget {
+  final IconData icon;
+  final String name;
+  final String summary;
+  final VoidCallback onTap;
+
+  const _BuiltInRow({
+    required this.icon,
+    required this.name,
+    required this.summary,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return HoverRow(
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.surface2,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Icon(icon, size: 20, color: AppColors.muted),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: serifStyle(fontSize: 14, color: AppColors.text),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  summary,
+                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

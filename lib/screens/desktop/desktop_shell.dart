@@ -11,7 +11,6 @@ import '../../widgets/desktop/desktop_shortcuts.dart';
 import '../../widgets/favourites_error_listener.dart';
 import '../../widgets/desktop/sidebar.dart';
 import '../../widgets/desktop/window_chrome.dart';
-import 'desktop_all_tracks_screen.dart';
 import 'desktop_favourites_screen.dart';
 import 'desktop_folder_screen.dart';
 import 'desktop_playlists_screen.dart';
@@ -129,7 +128,7 @@ class _DesktopShellState extends State<DesktopShell> {
   GlobalKey<NavigatorState>? get _activeNavigator => switch (_destination) {
     SidebarDestination.library => _libraryNavigator,
     SidebarDestination.playlists => _playlistsNavigator,
-    SidebarDestination.allTracks || SidebarDestination.favourites => null,
+    SidebarDestination.favourites => null,
   };
 
   /// True while Now Playing is on screen, so a second request — a queue jump,
@@ -161,7 +160,6 @@ class _DesktopShellState extends State<DesktopShell> {
   /// destination name, ahead of the app name.
   String _chromeLabel(String? libraryRoute) {
     final context_ = switch (_destination) {
-      SidebarDestination.allTracks => 'All Tracks',
       SidebarDestination.favourites => 'Favourites',
       SidebarDestination.playlists => 'Playlists',
       SidebarDestination.library => libraryRoute,
@@ -197,9 +195,8 @@ class _DesktopShellState extends State<DesktopShell> {
                       child: IndexedStack(
                         index: switch (_destination) {
                           SidebarDestination.library => 0,
-                          SidebarDestination.allTracks => 1,
-                          SidebarDestination.favourites => 2,
-                          SidebarDestination.playlists => 3,
+                          SidebarDestination.favourites => 1,
+                          SidebarDestination.playlists => 2,
                         },
                         children: [
                           Navigator(
@@ -210,7 +207,6 @@ class _DesktopShellState extends State<DesktopShell> {
                               builder: (_) => const DesktopLibraryScreen(),
                             ),
                           ),
-                          const DesktopAllTracksScreen(),
                           const DesktopFavouritesScreen(),
                           Navigator(
                             key: _playlistsNavigator,

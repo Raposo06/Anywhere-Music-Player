@@ -96,7 +96,7 @@ no backend of its own.
   folder grid, docked mini player, and a full-window Now Playing with a
   permanent "Up Next" queue panel
 - Folder-based browsing that mirrors the server's filesystem structure
-- All-tracks list with local search
+- All-tracks list with local search, reached from the top of Playlists
 - Streaming with background playback, seeking, and gapless-style advance
 - Manual queue (add / remove / reorder), plus shuffle and repeat
   (off / all / one), both persisted across restarts
@@ -126,8 +126,8 @@ Three layouts over one set of services. `MainScreen` picks between the first two
 
 | Form factor | Entry point | Navigation | Player |
 |---|---|---|---|
-| Desktop (Windows/Linux) | `screens/desktop/desktop_shell.dart` | 224px sidebar (Library / All Tracks / Favourites / Playlists) + a nested navigator per drill-down destination | Full-window `DesktopPlayerScreen` with a docked "Up Next" panel |
-| Android phone | `MainScreen`'s `_PhoneScaffold` | Bottom tab bar (Folders / All Tracks / Favourites / Playlists) | `PlayerScreen` + modal `QueueSheet` |
+| Desktop (Windows/Linux) | `screens/desktop/desktop_shell.dart` | 224px sidebar (Library / Favourites / Playlists) + a nested navigator per drill-down destination; All Tracks is pinned inside Playlists | Full-window `DesktopPlayerScreen` with a docked "Up Next" panel |
+| Android phone | `MainScreen`'s `_PhoneScaffold` | Bottom tab bar (Folders / Favourites / Playlists); All Tracks is pinned inside Playlists | `PlayerScreen` + modal `QueueSheet` |
 | Android TV | `screens/tv_home_screen.dart` | D-pad focus traversal | `TvPlayerScreen` |
 
 Desktop and phone are **separate screens on purpose** — see
