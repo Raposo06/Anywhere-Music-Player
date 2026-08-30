@@ -24,7 +24,11 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
   final String password;
 
   static const String _apiVersion = '1.16.1';
-  static const String _clientName = 'AnywherePlayer';
+  /// Sent as Subsonic's `c` param on every request. This is the name the
+  /// server shows for the client — Navidrome's "now playing" panel and play
+  /// history both display it — so it is the app's real name, not an
+  /// identifier. Spaces are fine; it is URI-encoded like any other param.
+  static const String _clientName = 'Anywhere Music Player';
   static const _saltChars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   static const int _saltLength = 12;
   static const Duration _httpTimeout = Duration(seconds: 15);
