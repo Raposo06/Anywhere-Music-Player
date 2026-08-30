@@ -167,14 +167,14 @@ void main() {
       await pump(tester, const DesktopPlaylistsScreen());
 
       expect(find.text('All Tracks'), findsOneWidget);
-      expect(find.text('No playlists yet'), findsOneWidget);
+      expect(find.textContaining('No playlists yet'), findsOneWidget);
     });
 
     testWidgets('with none, it says so', (tester) async {
       server.playlists.clear();
       await pump(tester, const DesktopPlaylistsScreen());
 
-      expect(find.text('No playlists yet'), findsOneWidget);
+      expect(find.textContaining('No playlists yet'), findsOneWidget);
     });
   });
 

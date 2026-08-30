@@ -40,6 +40,20 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
     Navigator.of(context).push(DesktopPlaylistScreen.route(playlist.id));
   }
 
+  /// Play a playlist without opening it.
+  ///
+  /// Its tracks are fetched on demand — the list view only knows counts — so
+  /// this loads first and then plays, mirroring what the folder cards do with
+  /// their own play button.
+  Future<void> _playPlaylist(Playlist playlist) async {
+    final service = context.read<PlaylistsService>();
+    await service.loadTracks(playlist.id);
+    final tracks = service.tracksOf(playlist.id);
+    if (tracks == null || tracks.isEmpty || !mounted) return;
+    context.read<AudioPlayerService>().play(tracks);
+    if (mounted) DesktopPlayerLauncher.openPlayer(context);
+  }
+
   void _openAllTracks() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -115,70 +129,67 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
         onRetry: () => context.read<PlaylistsService>().load(),
       );
     }
-    if (service.playlists.isEmpty) {
-      // All Tracks still shows — the list is never truly empty.
-      return ListView(
-        children: [
-          _buildBuiltIns(),
-          const Padding(
-            padding: EdgeInsets.only(top: 24),
-            child: Column(
-              children: [
-                Text(
-                  'No playlists yet',
-                  style: TextStyle(fontSize: 15, color: AppColors.muted),
-                ),
-                SizedBox(height: 6),
-                Text(
-                  'Create one above, or right-click a track to add it to one.',
-                  style: TextStyle(fontSize: 13, color: AppColors.faint),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
 
-    return ListView.builder(
-      // One extra leading row for All Tracks, plus the divider under it.
-      itemCount: service.playlists.length + 1,
-      itemBuilder: (context, i) {
-        if (i == 0) return _buildBuiltIns();
-        final playlist = service.playlists[i - 1];
-        return _PlaylistRow(
-          playlist: playlist,
-          editable: playlist.isEditableBy(username),
-          onTap: () => _open(playlist),
-        );
-      },
+    // Two sections rather than one mixed grid: the built-ins are a different
+    // kind of thing, and a labelled break says so more clearly than a divider
+    // between cards would.
+    return ListView(
+      children: [
+        const SectionLabel('Library'),
+        const SizedBox(height: 10),
+        _grid([_buildAllTracksCard()]),
+        const SizedBox(height: 24),
+        const SectionLabel('Playlists'),
+        const SizedBox(height: 10),
+        if (service.playlists.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 8, bottom: 24),
+            child: Text(
+              'No playlists yet — create one above, or right-click a track '
+              'to add it to one.',
+              style: TextStyle(fontSize: 13, color: AppColors.faint),
+            ),
+          )
+        else
+          _grid([
+            for (final playlist in service.playlists)
+              _PlaylistCard(
+                playlist: playlist,
+                editable: playlist.isEditableBy(username),
+                onOpen: () => _open(playlist),
+                onPlay: () => _playPlaylist(playlist),
+              ),
+          ]),
+      ],
     );
   }
 
-  /// The library's own collections, above the user's playlists.
-  ///
-  /// All Tracks is a *view of the library*, not a playlist: it can't be
-  /// renamed, deleted or added to, and it never appears in the add-to-playlist
-  /// picker. The divider is what makes that distinction visible rather than
-  /// something the user has to discover by right-clicking.
-  Widget _buildBuiltIns() {
+  /// The same grid geometry the library's folder cards use, so the two screens
+  /// line up column-for-column at any window width.
+  Widget _grid(List<Widget> children) {
+    return GridView(
+      shrinkWrap: true,
+      padding: EdgeInsets.zero,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 320,
+        crossAxisSpacing: 20,
+        mainAxisSpacing: 20,
+        childAspectRatio: 0.86,
+      ),
+      children: children,
+    );
+  }
+
+  Widget _buildAllTracksCard() {
     final count = context.watch<LibraryScanner>().allTracks.length;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _BuiltInRow(
-          icon: Icons.library_music_outlined,
-          name: 'All Tracks',
-          summary: count == 0
-              ? 'Everything in your library'
-              : '${_thousands(count)} tracks',
-          onTap: _openAllTracks,
-        ),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-          child: Divider(height: 1, color: AppColors.border),
-        ),
-      ],
+    return _BuiltInCard(
+      icon: Icons.library_music_outlined,
+      name: 'All Tracks',
+      summary: count == 0
+          ? 'Everything in your library'
+          : '${_thousands(count)} tracks',
+      onOpen: _openAllTracks,
     );
   }
 
@@ -193,95 +204,49 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
   }
 }
 
-/// A library collection in the playlists list — same shape as a playlist row,
-/// deliberately, but with no overflow menu because there is nothing to rename
-/// or delete.
-class _BuiltInRow extends StatelessWidget {
-  final IconData icon;
-  final String name;
-  final String summary;
-  final VoidCallback onTap;
+/// A playlist as a cover card, matching the library's folder cards.
+///
+/// Navidrome generates a mosaic cover for a playlist, so most have real art;
+/// the fallback is the same queue glyph used elsewhere for playlists.
+class _PlaylistCard extends StatefulWidget {
+  final Playlist playlist;
+  final bool editable;
+  final VoidCallback onOpen;
+  final VoidCallback onPlay;
 
-  const _BuiltInRow({
-    required this.icon,
-    required this.name,
-    required this.summary,
-    required this.onTap,
+  const _PlaylistCard({
+    required this.playlist,
+    required this.editable,
+    required this.onOpen,
+    required this.onPlay,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return HoverRow(
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.surface2,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Icon(icon, size: 20, color: AppColors.muted),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: serifStyle(fontSize: 14, color: AppColors.text),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  summary,
-                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  State<_PlaylistCard> createState() => _PlaylistCardState();
 }
 
-/// One playlist in the list: cover, name, summary, and an overflow menu for
-/// rename/delete (only where the user actually owns it).
-class _PlaylistRow extends StatelessWidget {
-  final Playlist playlist;
-  final bool editable;
-  final VoidCallback onTap;
+class _PlaylistCardState extends State<_PlaylistCard> {
+  bool _hovered = false;
 
-  const _PlaylistRow({
-    required this.playlist,
-    required this.editable,
-    required this.onTap,
-  });
-
-  Future<void> _rename(BuildContext context) async {
+  Future<void> _rename() async {
     final name = await showDialog<String>(
       context: context,
       // The dialog owns its controller — see PlaylistNameDialog for why.
       builder: (_) => PlaylistNameDialog(
-        initialName: playlist.name,
+        initialName: widget.playlist.name,
         title: 'Rename playlist',
         actionLabel: 'Rename',
       ),
     );
-    if (name == null || name.isEmpty || !context.mounted) return;
-    await context.read<PlaylistsService>().rename(playlist.id, name);
+    if (name == null || name.isEmpty || !mounted) return;
+    await context.read<PlaylistsService>().rename(widget.playlist.id, name);
   }
 
-  Future<void> _delete(BuildContext context) async {
+  Future<void> _delete() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Delete "${playlist.name}"?'),
+        title: Text('Delete "${widget.playlist.name}"?'),
         content: const Text(
           'This removes the playlist from the server. The songs themselves '
           'are not touched.',
@@ -298,55 +263,168 @@ class _PlaylistRow extends StatelessWidget {
         ],
       ),
     );
-    if (confirmed != true || !context.mounted) return;
-    await context.read<PlaylistsService>().delete(playlist.id);
+    if (confirmed != true || !mounted) return;
+    await context.read<PlaylistsService>().delete(widget.playlist.id);
   }
 
   @override
   Widget build(BuildContext context) {
-    return HoverRow(
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-      child: Row(
-        children: [
-          CoverArt(playlist, size: 40, radius: 6, showPlaceholder: false),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  playlist.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: serifStyle(fontSize: 14, color: AppColors.text),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  editable
-                      ? playlist.summary
-                      : '${playlist.summary} · read-only',
-                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
-                ),
-              ],
-            ),
-          ),
-          if (editable)
-            PopupMenuButton<String>(
-              tooltip: 'More',
-              icon: const Icon(
-                Icons.more_horiz,
-                size: 18,
-                color: AppColors.faint,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onOpen,
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: ColoredBox(
+                      color: AppColors.surface2,
+                      // A stable request size, for the same reason the folder
+                      // cards use one: resizing must not re-mint the URL.
+                      child: CoverArt(
+                        widget.playlist,
+                        size: 384,
+                        expand: true,
+                        radius: 0,
+                        fallbackIcon: Icons.queue_music,
+                        fallbackIconColor: AppColors.faint,
+                        fallbackIconSize: 56,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 10,
+                    bottom: 10,
+                    child: AnimatedScale(
+                      scale: _hovered ? 1.08 : 1,
+                      duration: AppMetrics.stateTransition,
+                      child: AccentCircleButton(
+                        size: 38,
+                        icon: Icons.play_arrow,
+                        tooltip: 'Play this playlist',
+                        onPressed: widget.onPlay,
+                      ),
+                    ),
+                  ),
+                  // Always present rather than hover-gated, like the play
+                  // button: the design keeps card affordances visible.
+                  if (widget.editable)
+                    Positioned(
+                      right: 4,
+                      top: 4,
+                      child: PopupMenuButton<String>(
+                        tooltip: 'More',
+                        icon: const Icon(
+                          Icons.more_horiz,
+                          size: 18,
+                          color: Colors.white,
+                        ),
+                        onSelected: (value) =>
+                            value == 'rename' ? _rename() : _delete(),
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(
+                            value: 'rename',
+                            child: Text('Rename…'),
+                          ),
+                          PopupMenuItem(value: 'delete', child: Text('Delete')),
+                        ],
+                      ),
+                    ),
+                ],
               ),
-              onSelected: (value) =>
-                  value == 'rename' ? _rename(context) : _delete(context),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'rename', child: Text('Rename…')),
-                PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
             ),
-        ],
+            const SizedBox(height: 10),
+            Text(
+              widget.playlist.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.text,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              widget.editable
+                  ? widget.playlist.summary
+                  : '${widget.playlist.summary} · read-only',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, color: AppColors.muted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A library collection as a card — same geometry as a playlist card, but
+/// with a glyph instead of cover art and no play or overflow, because there
+/// is nothing to rename, delete, or (for All Tracks) sensibly play in order.
+class _BuiltInCard extends StatelessWidget {
+  final IconData icon;
+  final String name;
+  final String summary;
+  final VoidCallback onOpen;
+
+  const _BuiltInCard({
+    required this.icon,
+    required this.name,
+    required this.summary,
+    required this.onOpen,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onOpen,
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: ColoredBox(
+                  color: AppColors.surface2,
+                  child: Center(
+                    child: Icon(icon, size: 56, color: AppColors.faint),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.text,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              summary,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, color: AppColors.muted),
+            ),
+          ],
+        ),
       ),
     );
   }
