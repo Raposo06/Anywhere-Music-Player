@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
 import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/favourites_service.dart';
+import 'package:anywhere_music_player/services/library_scanner.dart';
 import 'package:anywhere_music_player/widgets/mini_player.dart';
 import 'package:anywhere_music_player/screens/player_screen.dart';
 import '../support/fixtures.dart';
@@ -19,6 +20,11 @@ Widget _wrap(AudioPlayerService service, {Widget child = const MiniPlayer()}) {
       // favourite heart that reads this. Logged out is the right stub.
       ChangeNotifierProvider<FavouritesService>(
         create: (_) => FavouritesService(null),
+      ),
+      // PlayerScreen resolves the playing track against the scan for its
+      // folder line; an empty scanner just leaves the track as-is.
+      ChangeNotifierProvider<LibraryScanner>(
+        create: (_) => LibraryScanner(null),
       ),
     ],
     child: MaterialApp(home: Scaffold(body: child)),

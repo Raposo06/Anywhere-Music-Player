@@ -8,7 +8,9 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import '../services/auth_service.dart';
+import '../services/library_scanner.dart';
 import '../services/stream_url_resolver.dart';
+import '../utils/now_playing_folder.dart';
 import '../utils/responsive.dart';
 import '../widgets/favourite_button.dart';
 import '../widgets/queue_sheet.dart';
@@ -161,6 +163,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
           );
         }
 
+        // Resolve to the scan's copy so the folder line (and its tap-through)
+        // uses the real filesystem path even when playback started from a
+        // playlist, whose tracks carry tag-based paths.
+        track = canonicalTrack(track, context.read<LibraryScanner>());
+
         final duration = track.durationSeconds != null
             ? Duration(seconds: track.durationSeconds!)
             : Duration.zero;
@@ -276,14 +283,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
               ],
 
-              if (track.folderPath.isNotEmpty) ...[
+              if (nowPlayingFolderPath(track) case final folderLine
+                  when folderLine.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 MouseRegion(
                   cursor: SystemMouseCursors.click,
                   child: GestureDetector(
                     onTap: () => _openFolder(track),
                     child: Text(
-                      track.folderPath,
+                      folderLine,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: Theme.of(context).colorScheme.primary,
                             decoration: TextDecoration.underline,
@@ -350,14 +358,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
             overflow: TextOverflow.ellipsis,
           ),
         ],
-        if (track.folderPath.isNotEmpty) ...[
+        if (nowPlayingFolderPath(track) case final folderLine
+            when folderLine.isNotEmpty) ...[
           const SizedBox(height: 8),
           MouseRegion(
             cursor: SystemMouseCursors.click,
             child: GestureDetector(
               onTap: () => _openFolder(track),
               child: Text(
-                track.folderPath,
+                folderLine,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: Theme.of(context).colorScheme.primary,
                       decoration: TextDecoration.underline,
@@ -439,10 +448,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ),
     );
 
-    // Only wire up tap navigation when the track actually belongs to a
-    // folder (singletons / root-level tracks shouldn't pretend to be
-    // clickable).
-    if (track.folderPath.isEmpty) return art;
+    // Only wire up tap navigation when there's a folder line to match
+    // (root-level tracks, and tracks whose only path segment is the top-level
+    // category, shouldn't pretend to be clickable).
+    if (nowPlayingFolderPath(track).isEmpty) return art;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,

@@ -14,6 +14,34 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Now Playing's folder line uses the real path, minus its top-level segment (2026-08-31)
+
+**Decided.** The folder line on every player (`player_screen.dart`,
+`desktop_player_screen.dart`, `tv_player_screen.dart`) now:
+1. resolves the playing track to its scanned copy by id
+   (`LibraryScanner.trackById`) before reading `folderPath`, and
+2. drops the first path segment for display (`nowPlayingFolderPath` in
+   `lib/utils/now_playing_folder.dart`) — hiding the line entirely when nothing
+   is left.
+
+**Why.** The same song showed two different folder lines depending on how
+playback started: from a playlist (`api.getPlaylist` → `Track.fromSubsonic`) the
+path is Subsonic's tag-based virtual path (`AlbumArtist/Album`); from library
+browse (`LibraryScanner` → `Track.fromNativeApi`) it's the real filesystem path.
+Reported as inconsistent, and the playlist path also made the tap-through open a
+folder that doesn't exist in the virtual tree. Resolving by id (the pattern
+`desktop_library_screen.dart` already uses for search results) fixes both. The
+first real segment is a broad category (`SOUNDTRACKS`, …) shared across large
+swaths of the library — noise next to the folder that actually identifies the
+album, and redundant with the artist line above it.
+
+**What would reverse it.** Wanting the full real path shown (drop step 2), or
+libraries that don't use a top-level category folder — there the dropped segment
+would be meaningful. A leaf-only or last-2-segments rule would be a one-line
+change to `nowPlayingFolderPath`.
+
+---
+
 ## Now Playing scales with the window; its cover art request does not (2026-08-28)
 
 **Decided.** The Now Playing pane sizes the cover art and the info column from

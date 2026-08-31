@@ -108,6 +108,16 @@ void main() {
       expect(scanner.allTracks.single.folderName, 'Naruto');
     });
 
+    test('trackById returns the scanned copy, with its real path', () async {
+      final scanner = LibraryScanner(apiWith([
+        _song(id: '42', path: 'SOUNDTRACKS/Movies/HP/01 - Hedwig.flac'),
+      ]));
+      await scanner.scan();
+
+      expect(scanner.trackById('42')?.folderPath, 'SOUNDTRACKS/Movies/HP');
+      expect(scanner.trackById('nope'), isNull);
+    });
+
     test('getFolderContents drills into a nested subfolder', () async {
       final scanner = LibraryScanner(apiWith([
         _song(id: '1', path: 'Anime/Naruto/01 - Opening.mp3'),

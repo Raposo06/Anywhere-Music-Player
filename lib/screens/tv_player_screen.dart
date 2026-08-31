@@ -8,7 +8,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import '../services/auth_service.dart';
+import '../services/library_scanner.dart';
 import '../services/stream_url_resolver.dart';
+import '../utils/now_playing_folder.dart';
 
 /// Full-screen TV player with large cover art and D-pad navigable controls.
 class TvPlayerScreen extends StatefulWidget {
@@ -37,6 +39,11 @@ class _TvPlayerScreenState extends State<TvPlayerScreen> {
                   ),
                 );
               }
+
+              // Real filesystem path, top-level category dropped — matches the
+              // other players regardless of how playback started.
+              track = canonicalTrack(track, context.read<LibraryScanner>());
+              final folderLine = nowPlayingFolderPath(track);
 
               final screenHeight = MediaQuery.of(context).size.height;
               // Give the cover more breathing room so it's the focal point
@@ -69,9 +76,7 @@ class _TvPlayerScreenState extends State<TvPlayerScreen> {
 
                     // Subtitle (folder path / artist)
                     Text(
-                      track.folderPath.isNotEmpty
-                          ? track.folderPath
-                          : 'Unknown Artist',
+                      folderLine.isNotEmpty ? folderLine : 'Unknown Artist',
                       style: TextStyle(
                         fontSize: 18,
                         color: Colors.grey[400],

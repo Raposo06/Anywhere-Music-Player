@@ -11,7 +11,9 @@ import 'package:provider/provider.dart';
 import '../../models/track.dart';
 import '../../services/audio_player_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/library_scanner.dart';
 import '../../services/stream_url_resolver.dart';
+import '../../utils/now_playing_folder.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/cover_art.dart';
 import '../../widgets/desktop/desktop_primitives.dart';
@@ -177,6 +179,13 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
         // build() has already returned — `context.select` on it would assert.
         _watchForErrors(context);
 
+        // Resolve to the scan's copy so the folder line (and its tap-through)
+        // uses the real filesystem path even when playback started from a
+        // playlist, whose tracks carry tag-based paths.
+        final resolved = track == null
+            ? null
+            : canonicalTrack(track, context.read<LibraryScanner>());
+
         return DesktopPlaybackShortcuts(
           // Alt+← / Escape back out of Now Playing — the same plain pop the
           // chrome's back chevron does, so it can't strand a FolderRequest.
@@ -186,13 +195,13 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
             body: Column(
               children: [
                 WindowChrome(
-                  label: track == null
+                  label: resolved == null
                       ? appDisplayName
-                      : '${track.title} — $appDisplayName',
+                      : '${resolved.title} — $appDisplayName',
                   onBack: () => Navigator.of(context).pop(),
                 ),
                 Expanded(
-                  child: track == null
+                  child: resolved == null
                       ? const Center(
                           child: Text(
                             'No track playing',
@@ -200,8 +209,8 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
                           ),
                         )
                       : _Body(
-                          track: track,
-                          onOpenFolder: () => _openFolder(track),
+                          track: resolved,
+                          onOpenFolder: () => _openFolder(resolved),
                         ),
                 ),
               ],
@@ -383,9 +392,10 @@ class _AlbumArt extends StatelessWidget {
       ),
     );
 
-    // Only clickable when the track actually belongs to a folder — root-level
-    // singletons shouldn't pretend otherwise.
-    if (track.folderPath.isEmpty) return art;
+    // Only clickable when there's a folder line to match — root-level tracks,
+    // and tracks whose only path segment is the top-level category, shouldn't
+    // pretend otherwise.
+    if (nowPlayingFolderPath(track).isEmpty) return art;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(onTap: onTap, child: art),
@@ -452,14 +462,15 @@ class _Details extends StatelessWidget {
             style: const TextStyle(fontSize: 16, color: AppColors.muted),
           ),
         ],
-        if (track.folderPath.isNotEmpty) ...[
+        if (nowPlayingFolderPath(track) case final folderLine
+            when folderLine.isNotEmpty) ...[
           const SizedBox(height: 8),
           MouseRegion(
             cursor: SystemMouseCursors.click,
             child: GestureDetector(
               onTap: onOpenFolder,
               child: Text(
-                track.folderPath,
+                folderLine,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(

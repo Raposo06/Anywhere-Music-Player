@@ -15,6 +15,7 @@ class LibraryScanner with ChangeNotifier {
 
   List<Track> _allTracks = [];
   Map<String, _FolderNode> _rootNodes = {};
+  Map<String, Track> _tracksById = {};
   bool _isScanning = false;
   bool _hasInitialData = false;
   String? _error;
@@ -46,6 +47,12 @@ class LibraryScanner with ChangeNotifier {
   String? get refreshError => _refreshError;
 
   List<Track> get allTracks => _allTracks;
+
+  /// The scanned track for [id] — the copy carrying a real filesystem path —
+  /// or null when the scan doesn't contain it. Lets a track that arrived by
+  /// another route (a playlist fetch, whose paths are tag-based) be resolved
+  /// back to its canonical form.
+  Track? trackById(String id) => _tracksById[id];
 
   void clearRefreshError() {
     if (_refreshError == null) return;
@@ -124,6 +131,7 @@ class LibraryScanner with ChangeNotifier {
   Future<void> rescan() async {
     _allTracks = [];
     _rootNodes = {};
+    _tracksById = {};
     _hasInitialData = false;
     await scan();
   }
@@ -133,6 +141,7 @@ class LibraryScanner with ChangeNotifier {
   Future<void> resetAndClearCache() async {
     _allTracks = [];
     _rootNodes = {};
+    _tracksById = {};
     _hasInitialData = false;
     _isScanning = false;
     _error = null;
@@ -144,6 +153,7 @@ class LibraryScanner with ChangeNotifier {
   /// Build the virtual folder tree from track file paths.
   void _buildFolderTree() {
     _rootNodes = {};
+    _tracksById = {for (final track in _allTracks) track.id: track};
 
     for (final track in _allTracks) {
       // track.path is the full path, e.g. "Anime/Naruto/23.Senya.mp3"
