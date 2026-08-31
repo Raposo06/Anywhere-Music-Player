@@ -298,6 +298,72 @@ removes the race outright.
 artifacts; add `android/.kotlin/` to `.gitignore` rather than checking the
 stack traces in.
 
+### First Android build on a fresh Linux machine: three version floors and a JRE-only JDK
+
+**Symptom.** `flutter build apk` fails, not on missing tools, but on version
+floors the installed Flutter (3.47.1) silently enforces against whatever the
+Android project last had checked in. Each fix uncovers the next one:
+
+1. `AGP version (8.6.0) is lower than Flutter's minimum supported version of
+   8.11.1` — bump `com.android.application` in `android/settings.gradle`'s
+   `plugins {}` block **and** `com.android.tools.build:gradle` in
+   `android/build.gradle`'s `buildscript.dependencies` — both exist, both must
+   move together, or the second one silently wins.
+2. Next: `Kotlin version (2.1.0) is lower than Flutter's minimum supported
+   version of 2.2.20` — same two-places pattern, `org.jetbrains.kotlin.android`
+   in `settings.gradle` and `ext.kotlin_version` in `build.gradle`.
+3. Then a real (not version-floor) failure: `Toolchain installation
+   '/usr/lib/jvm/java-21-openjdk' does not provide the required capabilities:
+   [JAVA_COMPILER]`. The system's "default" JDK was `jre21-openjdk` — a
+   runtime with no `javac` — while a full `jdk17-openjdk` sat installed and
+   unused. Fixed without touching the system default:
+   `flutter config --jdk-dir=/usr/lib/jvm/java-17-openjdk`.
+
+**Stop at AGP/Kotlin 8.11.1 / 2.2.20, don't chase the "will soon be dropped"
+warnings to 9.0.1 / 2.3.20+.** Once the build succeeds, Flutter *warns* that
+these floors are moving again, but the Flutter Fix box printed alongside it is
+explicit: **"Starting AGP 9+, only the new DSL interface will be read. This
+results in a build failure when applying the Flutter Gradle plugin"** — this
+project's Flutter Gradle plugin does not yet speak the new DSL
+(`android.newDsl=false` in `android/gradle.properties` is the existing,
+deliberate opt-out). Bumping past the warning breaks the build outright rather
+than just aging.
+
+**The Android SDK itself needs setting up on a machine that has never built
+Android before** — this one hadn't. `flutter doctor` reporting "Unable to
+locate Android SDK" means starting from nothing:
+`android-sdk-cmdline-tools-latest` and `android-sdk-platform-tools` from the
+AUR, both root-owned by the pacman install. `sdkmanager`/`android sdk install`
+then needs to *write into* that same directory (installing platforms,
+build-tools, licenses) — `sudo chown -R $USER:$USER /opt/android-sdk` once,
+rather than sudo for every component install afterward. Point Flutter at it
+with `flutter config --android-sdk /opt/android-sdk`.
+
+**`flutter doctor --android-licenses` can report "unknown" forever on a newer
+SDK.** It works by shelling out to `sdkmanager --licenses` and grepping the
+output for the literal string `"All SDK package licenses accepted."` — this
+SDK's `cmdline-tools` ships a newer "Android CLI" that intercepts `sdkmanager`
+calls with `Warning: The --licenses option is no longer needed.` and never
+prints that string, so the doctor check stays red even though licenses are
+genuinely fine (individual `android sdk install` runs accept them
+per-package, visible as `License for package ... accepted.` in the build log).
+**Trust the actual build, not this doctor line** — `flutter build apk`
+succeeding is stronger evidence than the license check passing.
+
+**First install on a phone that already had the app prompts "install
+anyway" / not-verified, even though nothing in the app changed.** Release
+builds sign with `signingConfigs.debug` (`android/app/build.gradle`) — the
+machine's own debug keystore, auto-created on first use. This SDK generation
+puts it at **`~/.config/.android/debug.keystore`**, not the traditional
+`~/.android/debug.keystore` — worth knowing before grepping the wrong
+directory. A machine that has never built Android before mints a brand-new
+certificate, which a phone that already trusts a *different* machine's debug
+key (Windows, say) has never seen — Android's installer treats an unrecognized
+certificate as more suspicious than a familiar one, regardless of what the
+app actually does. Not a bug, nothing to fix; it stops recurring once the
+phone has seen this machine's certificate a few times, since every later
+build from here reuses the same keystore.
+
 ### Navidrome shows an empty library; the app shows 0 folders and 0 tracks
 
 **Symptom.** The library and playlists go empty across every client at once —
