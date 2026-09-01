@@ -31,11 +31,73 @@ flutter build linux          # Linux — needs libmpv installed first, see Traps
 
 Windows distribution is an [Inno Setup](https://jrsoftware.org/isinfo.php)
 installer built from `installer.iss` → `AnywhereMusicPlayer_Setup.exe`.
+`installer.iss` needs Inno Setup **6.5.4+** — it uses `WizardStyle=modern dark
+polar`, which older compilers reject.
 
-⚠️ **The version lives in two places and they currently disagree:**
-`pubspec.yaml` says `1.1.0+2`, `installer.iss` says `1.3`. Whichever is right,
-they need bumping together — an installer labelled with a version the app
-doesn't report makes bug reports unmatchable to builds.
+⚠️ **`pubspec.yaml` (`1.1.0+2`) and `installer.iss`'s fallback (`1.3`) still
+disagree**, but for a *tagged release* neither is used — the workflow passes the
+git tag to both via `--build-name` / `/DMyAppVersion` (see
+[decisions.md](decisions.md), 2026-09-01). The two hardcoded values only apply
+to a hand-run `flutter build` / `ISCC` with no override, so keep them roughly in
+step but the tag is what ships.
+
+### Automated releases (GitHub Actions)
+
+`.github/workflows/release.yml` builds all three platforms and publishes a
+GitHub Release on any `v*` tag:
+
+```bash
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+Assets: `.apk` (phone + TV, one APK), `-setup.exe`, `-linux-x64.tar.gz`, an
+`.AppImage` when `scripts/package-linux-appimage.sh` succeeds (best-effort —
+see that script's header), and `SHA256SUMS`. `versionCode` is the workflow run
+number, so it always increases. `workflow_dispatch` runs the same builds without
+publishing, for a smoke test.
+
+**One-time setup — repo variable:**
+
+- Settings → Secrets and variables → Actions → **Variables** → `API_BASE_URL`,
+  e.g. `https://navidrome.foxcore.dev`. `flutter_dotenv` bakes this into every
+  build's asset bundle; the job fails fast if it's unset. It is not a secret
+  (it's public DNS), so a variable, not a secret.
+
+**One-time setup — Android signing.** The `release` build type is debug-signed
+unless `android/key.properties` + a keystore are present (both gitignored). Make
+a real upload key once:
+
+```bash
+keytool -genkey -v -keystore android/app/upload-keystore.jks \
+  -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+```
+
+Store the two passwords in Vaultwarden. For a **local** signed build, also write
+`android/key.properties`:
+
+```
+storePassword=…
+keyPassword=…
+keyAlias=upload
+storeFile=upload-keystore.jks
+```
+
+For **CI**, add four repo **secrets** (Settings → Secrets and variables →
+Actions → Secrets) — the workflow reconstructs `key.properties` from them:
+
+| Secret | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 android/app/upload-keystore.jks` |
+| `ANDROID_KEYSTORE_PASSWORD` | store password from `keytool` |
+| `ANDROID_KEY_PASSWORD` | key password from `keytool` |
+| `ANDROID_KEY_ALIAS` | `upload` |
+
+⚠️ **The keystore is unrecoverable if lost** — a phone with the app installed
+can only take updates signed by the same key; losing it means every user
+uninstalls and reinstalls. Back up `upload-keystore.jks` somewhere off the repo.
+
+No iOS: `ios/` is unconfigured scaffolding, and download-page distribution isn't
+possible on iOS anyway (App Store / TestFlight only).
 
 Linux distribution (personal-use install, not published anywhere) is a
 [PKGBUILD](https://wiki.archlinux.org/title/PKGBUILD) at
@@ -449,6 +511,37 @@ the outside is too late, the callback (and its zone-bound `scan()`) has
 already fired. See `test/support/pump_helpers.dart`'s `waitForAsyncWork` /
 `pumpAndWaitForAsyncWork` and their usage in `test/screens/`.
 
+### The local Flutter SDK is stuck several minor versions behind
+
+**Symptom:** `flutter --version` reports something well below what this doc
+says the tree targets (e.g. 3.38.x against a 3.47.x target). `flutter analyze`
+shows `undefined_hidden_name` warnings for `RepeatMode` (see next trap);
+`flutter test` fails the two `find.widgetWithText(FilledButton, 'Add songs')`
+assertions in the playlist screen tests, because on the old SDK
+`FilledButton.icon` returns a private `_FilledButtonWithIcon` and `find.byType`
+matches exact runtime type. `flutter upgrade` alone doesn't fix it.
+
+**Cause:** the SDK checkout's `stable` branch has diverged — Flutter rewrites
+`stable`'s history on each release, so a checkout that missed a few becomes
+"diverged, N and M different commits" against `origin/stable` and stops
+fast-forwarding. `flutter upgrade` won't force past that.
+
+**Fix:** reset the SDK's `stable` branch straight to the target tag. The
+diverged commits are all upstream release commits — nobody develops in the SDK
+checkout, so there's nothing local to lose:
+
+```bash
+cd /c/flutter   # wherever `where flutter` points
+git fetch origin --tags
+git checkout stable && git reset --hard 3.47.1
+flutter --version   # re-provisions bin/cache for the new version — minutes
+```
+
+Then in the project: `flutter pub get && flutter analyze && flutter test`.
+Confirmed 2026-09-01: this took the dev SDK from 3.38.9 to 3.47.1, cleared the
+`RepeatMode` warnings and the `FilledButton` test failures, and left analyze
+clean.
+
 ### `flutter test` / build fails: `RepeatMode` is imported from both ... and `repeating_animation_builder.dart`
 
 **Symptom:** compilation fails (build or `flutter test`) with `'RepeatMode' is
@@ -524,6 +617,84 @@ RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1); // the real an
 
 One gesture per test — a second `addPointer` with the same device id trips an
 assertion inside `MouseTracker` that reads like a framework bug and isn't.
+
+### Android: a song plays once, re-announces itself, then playback dead-stops
+
+**Symptom:** on the phone, pick a song — it plays through, the notification /
+lock screen appears to announce the track *again* right as it ends, and then
+playback stops instead of advancing. The same build advances fine on Windows.
+
+**Cause:** `await _player!.play()`. just_audio's `play()` returns a future that
+completes when playback **stops**, not when it starts — and the two backends
+disagree about what that means in practice:
+
+| Backend | `play()` resolves |
+|---|---|
+| ExoPlayer (Android) | at `STATE_ENDED` / pause / dispose — i.e. **at the end of the track** |
+| media_kit (Windows/Linux) | immediately |
+
+Verified in `just_audio-0.9.46/android/src/main/java/com/ryanheise/just_audio/AudioPlayer.java`
+(`play()` stashes the `Result` in `playResult`; only `STATE_ENDED`, `pause()`
+and `dispose()` complete it) versus `just_audio_media_kit-2.1.0/lib/mediakit_player.dart`
+(`play()` returns `PlayResponse()` straight away).
+
+Awaiting it on Android pinned `_isLoading = true` for the entire track, because
+`_loadAndPlay`'s `finally` is the only place that clears it. Three things follow:
+
+1. The end-of-track handler is `processingState == completed && !_isLoading`.
+   At `STATE_ENDED` the plugin broadcasts the `completed` event **before** it
+   completes `playResult`, and both cross the same binary messenger in order —
+   so Dart always sees `completed` while `_isLoading` is still true, and the
+   advance is skipped. `PlayerState` has value equality and the stream is
+   `.distinct()`, so `completed` is emitted exactly once: there is no second
+   chance. **Playback stops at the end of every track.**
+2. Everything after the `await` — `_presence.show(track)`, the `now-playing`
+   report — ran *at track end* instead of at track start, so the notification
+   pushed the finished song's metadata (and bumped the AVRCP queue counter)
+   right as it ended. That is the "it played a second time" the user sees.
+3. `_handleStreamError` bails while `_isLoading`, so mid-stream drop recovery
+   had never once engaged on Android.
+
+**Fix:** never await `play()` — fire it and attach a `catchError`. Introduced by
+`ad2629a` ("Refactor playback and URL resolution"), which turned a
+fire-and-forget `_player!.play();` into `await _player!.play();`.
+
+**How to check it.** `flutter run` on the phone and watch for the
+`AudioPlayerService: loading stream ... trackId=` line: exactly one appears per
+*user action*, and none at the end of a track, when this bug is present. A
+healthy build logs a fresh one the moment each track ends.
+
+### Android: one `LockCachingAudioSource` per cache file, ever
+
+**Symptom:** intermittent Android-only playback corruption or a mid-song error
+on a *first* (uncached) play of a track — a slow load, then garbled audio or a
+dead stop. Replaying the same track afterwards can stay broken until the app's
+storage is cleared.
+
+**Cause:** each `LockCachingAudioSource` memoizes its own download
+(`_response ??= _fetch()`) and `_fetch()` opens `audio_cache/<id>.part` with a
+**truncating** `openWrite()`. Two instances pointing at the same `cacheFile`
+therefore run two independent downloads that clobber one file. Two ways this
+happened:
+
+- `_setSourceWithRetry` called `_buildSource(track)` a second time on its 12s
+  timeout. `Future.timeout` does not cancel the load it gave up on, so the
+  first source was still alive and downloading. **Fix:** build the source once
+  and pass the same instance to both attempts — safe, because just_audio keys a
+  source on an id fixed at construction, so re-`setAudioSource` rebinds the
+  same proxy entry rather than creating a second one.
+- eviction skipped only the exact `<id>` file, so it could delete the playing
+  track's `<id>.part` mid-download once the cache passed its 2 GB cap. **Fix:**
+  skip `<id>` *and* its `.part`/`.mime` sidecars.
+
+**The rule:** anything that builds a source for a track must produce at most one
+live `LockCachingAudioSource` for that track's cache file, and anything that
+deletes from `audio_cache/` must treat `<id>`, `<id>.part` and `<id>.mime` as
+one unit.
+
+Both live in `lib/services/stream_cache.dart` now (`DiskStreamCache`), lifted
+out of `AudioPlayerService`; `_setSourceWithRetry` still owns the build-once
+retry. `test/services/stream_cache_test.dart` covers the eviction rule.
 
 ## Server dependency
 

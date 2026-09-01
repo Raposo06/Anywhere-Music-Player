@@ -1,0 +1,191 @@
+name: Release
+
+# Push a tag -> build all three platforms -> publish a GitHub Release with
+# checksums. See docs/operations.md "Automated releases" for the one-time setup
+# (Android keystore secrets + the API_BASE_URL repo variable).
+#
+#   git tag v1.2.0 && git push origin v1.2.0
+#
+# workflow_dispatch builds the same artifacts for a smoke test but does NOT
+# publish (no tag, so nothing to attach a release to).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version string for a manual test build
+        default: 0.0.0-dev
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: '3.47.1'   # pinned — floating stable re-triggers the AGP/Kotlin/RepeatMode traps in docs/operations.md
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      build_number: ${{ github.run_number }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - id: v
+        run: |
+          if [ "${{ github.event_name }}" = push ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "publish=true"                 >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "publish=false"                 >> "$GITHUB_OUTPUT"
+          fi
+      - name: Require API_BASE_URL repo variable
+        run: |
+          test -n "${{ vars.API_BASE_URL }}" || {
+            echo "::error::Set the API_BASE_URL repository variable (Settings > Secrets and variables > Actions > Variables)."
+            exit 1
+          }
+
+  android:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: echo "API_BASE_URL=${{ vars.API_BASE_URL }}" > .env
+      - run: yes | flutter doctor --android-licenses || true
+
+      - name: Restore keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/upload-keystore.jks
+      - name: Write key.properties
+        run: |
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storeFile=upload-keystore.jks
+          EOF
+
+      - run: flutter pub get
+      - run: >
+          flutter build apk --release
+          --build-name=${{ needs.meta.outputs.version }}
+          --build-number=${{ needs.meta.outputs.build_number }}
+
+      - run: mv build/app/outputs/flutter-apk/app-release.apk AnywhereMusicPlayer-${{ needs.meta.outputs.version }}.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: AnywhereMusicPlayer-*.apk
+          if-no-files-found: error
+
+  windows:
+    needs: meta
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: git config --system core.longpaths true   # docs/operations.md: MAX_PATH trap
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: Set-Content -Path .env -Value "API_BASE_URL=${{ vars.API_BASE_URL }}"
+
+      - run: flutter pub get
+      - run: >
+          flutter build windows --release
+          --build-name=${{ needs.meta.outputs.version }}
+          --build-number=${{ needs.meta.outputs.build_number }}
+
+      - name: Install Inno Setup 6.7.3
+        # Pinned by version + SHA256. installer.iss needs 6.5.4+ (WizardStyle
+        # "modern dark polar"); 7.x is an untested compiler rewrite, and the old
+        # unversioned jrsoftware.org/download.php/is.exe now serves 7.x. Bump:
+        # new URL from github.com/jrsoftware/issrc/releases, new Get-FileHash.
+        run: |
+          $url = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'
+          $sha = '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732'
+          curl.exe -fsSL -o is.exe $url
+          if ((Get-FileHash is.exe -Algorithm SHA256).Hash -ne $sha) { throw 'Inno Setup SHA256 mismatch' }
+          Start-Process -Wait -FilePath .\is.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-'
+
+      - name: Build installer
+        run: >
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          /DMyAppVersion=${{ needs.meta.outputs.version }}
+          installer.iss
+
+      - run: Move-Item Output\AnywhereMusicPlayer_Setup.exe AnywhereMusicPlayer-${{ needs.meta.outputs.version }}-setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: AnywhereMusicPlayer-*-setup.exe
+          if-no-files-found: error
+
+  linux:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Toolchain + libmpv
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config \
+            libgtk-3-dev libmpv-dev mpv libsecret-1-dev
+
+      - run: echo "API_BASE_URL=${{ vars.API_BASE_URL }}" > .env
+      - run: flutter pub get
+      - run: >
+          flutter build linux --release
+          --build-name=${{ needs.meta.outputs.version }}
+          --build-number=${{ needs.meta.outputs.build_number }}
+
+      - name: Tarball
+        run: |
+          tar -C build/linux/x64/release/bundle -czf \
+            AnywhereMusicPlayer-${{ needs.meta.outputs.version }}-linux-x64.tar.gz .
+
+      - name: AppImage (best-effort — see script header)
+        continue-on-error: true
+        run: bash scripts/package-linux-appimage.sh ${{ needs.meta.outputs.version }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            AnywhereMusicPlayer-*-linux-x64.tar.gz
+            AnywhereMusicPlayer-*-x86_64.AppImage
+          if-no-files-found: error
+
+  release:
+    needs: [meta, android, windows, linux]
+    if: needs.meta.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: Checksums
+        run: cd dist && sha256sum AnywhereMusicPlayer-* > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist/*
