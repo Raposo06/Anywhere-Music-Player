@@ -12,6 +12,7 @@ import '../../services/subsonic_api_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/desktop/desktop_primitives.dart';
 import '../../widgets/desktop/desktop_track_row.dart';
+import '../../widgets/play_actions.dart';
 import 'desktop_folder_screen.dart';
 import 'desktop_search_field.dart';
 import 'desktop_shell.dart';
@@ -151,15 +152,6 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
     context.read<AudioPlayerService>().play(tracks);
   }
 
-  void _playTrack(Track track, List<Track> playlist) {
-    final player = context.read<AudioPlayerService>();
-    // Already the current track — don't restart it, just show it.
-    if (player.currentTrack?.id != track.id) {
-      player.play(playlist, from: playlist.indexOf(track));
-    }
-    DesktopPlayerLauncher.openPlayer(context);
-  }
-
   @override
   Widget build(BuildContext context) {
     final scanner = context.watch<LibraryScanner>();
@@ -244,7 +236,7 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
             DesktopTrackRow(
               track: track,
               number: index + 1,
-              onTap: () => _playTrack(track, rootTracks),
+              onTap: () => playFromList(context, track, rootTracks),
             ),
         ],
         const SizedBox(height: 16),
@@ -291,7 +283,7 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
             DesktopTrackRow(
               track: track,
               number: index + 1,
-              onTap: () => _playTrack(track, _searchTracks),
+              onTap: () => playFromList(context, track, _searchTracks),
             ),
         ],
         const SizedBox(height: 16),

@@ -4,7 +4,6 @@
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import '../services/auth_service.dart';
@@ -14,13 +13,9 @@ import '../utils/now_playing_folder.dart';
 import '../utils/responsive.dart';
 import '../widgets/favourite_button.dart';
 import '../widgets/queue_sheet.dart';
+import '../widgets/scrub_bar.dart';
+import '../widgets/upcoming_cover_precacher.dart';
 import 'folder_detail_screen.dart';
-
-/// Mid-track seeking is supported on all platforms. On Android, playback is
-/// backed by a LockCachingAudioSource — a seekable local cache file — so the
-/// old limitation (ExoPlayer can't seek Navidrome's live HTTP stream for VBR
-/// MP3 / FLAC / OGG) no longer applies. Desktop and web seek natively.
-bool get _seekSupported => true;
 
 /// The artist to display on the player, or null when there's nothing
 /// meaningful — an empty tag or Navidrome's '[Unknown Artist]' placeholder is
@@ -48,18 +43,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final _previousFocusNode = FocusNode();
   final _nextFocusNode = FocusNode();
 
-  // Track id we most recently kicked off an upcoming-cover precache for.
-  // Prevents re-precaching on every rebuild while the same track plays.
-  String? _precachedForTrackId;
+  final _coverPrecacher = UpcomingCoverPrecacher();
 
   // Last playback error shown in a SnackBar, so the same error isn't
   // re-shown on every rebuild while it's still the current error.
   String? _shownError;
-
-  // How many upcoming covers to prefetch at player size. Covers are KB, so a
-  // wide window is cheap and means rapid skip-forward lands on art that's
-  // already been fetched instead of loading it on arrival.
-  static const int _coverPrefetchAhead = 10;
 
   @override
   void initState() {
@@ -68,58 +56,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _playPauseFocusNode.requestFocus();
     });
-  }
-
-  /// Prefetch the covers of the upcoming tracks at the player-screen size so a
-  /// rapid skip-forward lands on already-fetched art instead of flashing an
-  /// empty frame. The immediate next is fully decoded (instant on the next
-  /// skip); the rest of the window is only downloaded to the image disk cache
-  /// (no decode, so no pressure on the bounded in-memory cache). Fire-and-
-  /// forget; rate-limited to once per track via [_precachedForTrackId].
-  void _precacheUpcomingCovers(double size) {
-    final ps = context.read<AudioPlayerService>();
-    final current = ps.currentTrack;
-    if (current == null) return;
-    if (_precachedForTrackId == current.id) return;
-    _precachedForTrackId = current.id;
-
-    final StreamUrlResolver? resolver = context.read<AuthService>().apiService;
-    final pixelSize =
-        (size * MediaQuery.devicePixelRatioOf(context)).round();
-
-    // Immediate next (wrap-aware): decode it so the very next skip is instant.
-    final next = ps.peekNextTrack();
-    final nextUrl = next == null ? null : resolver.resolveCoverUrl(next, size: pixelSize);
-    if (nextUrl != null) {
-      precacheImage(
-        CachedNetworkImageProvider(
-          nextUrl,
-          cacheKey: next!.coverCacheKey(size: pixelSize),
-        ),
-        context,
-      ).catchError((_) {
-        // Cache miss / network blip — the real fetch happens on render.
-      });
-    }
-
-    // Window ahead (queued tracks first, then play-order context): download to
-    // the disk cache so skipping several forward finds covers already fetched.
-    final window = <Track>[...ps.queue, ...ps.upcomingFromContext]
-        .take(_coverPrefetchAhead);
-    for (final track in window) {
-      final url = resolver.resolveCoverUrl(track, size: pixelSize);
-      if (url != null) {
-        _warmCoverToDisk(url, track.coverCacheKey(size: pixelSize));
-      }
-    }
-  }
-
-  Future<void> _warmCoverToDisk(String url, String? cacheKey) async {
-    try {
-      await DefaultCacheManager().downloadFile(url, key: cacheKey);
-    } catch (_) {
-      // Best-effort; the on-demand fetch covers a miss.
-    }
   }
 
   @override
@@ -181,11 +117,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
             : (screenWidth * 0.6).clamp(200.0, 350.0);
 
         // Defer to the next frame so we don't call precacheImage during a
-        // build phase. The post-frame callback also rate-limits via
-        // _precachedForTrackId so repeated rebuilds for the same track are
-        // a no-op.
+        // build phase. The precacher itself is a no-op until the track changes.
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _precacheUpcomingCovers(albumArtSize.toDouble());
+          if (mounted) {
+            _coverPrecacher.precache(context, logicalSize: albumArtSize.toDouble());
+          }
         });
 
         final horizontalPadding = Responsive.getHorizontalPadding(context);
@@ -463,119 +399,47 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 }
 
-/// Progress bar that uses StreamBuilder for high-frequency position updates
-/// instead of rebuilding the entire widget tree via notifyListeners().
-/// Uses onChangeStart/onChangeEnd to prevent the position stream from
-/// fighting with the user's drag/tap gesture.
-class _ProgressBar extends StatefulWidget {
+/// The phone player's position bar: a full-width slider with plain elapsed /
+/// total labels beneath. The drag/seek machinery lives in [ScrubBar].
+class _ProgressBar extends StatelessWidget {
   final Duration duration;
 
   const _ProgressBar({required this.duration});
 
   @override
-  State<_ProgressBar> createState() => _ProgressBarState();
-}
-
-class _ProgressBarState extends State<_ProgressBar> {
-  // Drag state. While [_isDragging] is true the slider and time label
-  // follow [_dragValue] (a 0.0–1.0 fraction) instead of the position
-  // stream — this keeps the thumb glued to the user's finger and avoids
-  // stream-vs-gesture jitter. [_dragStartTrackId] is captured at drag
-  // start so we can discard the seek if the track auto-advanced mid-drag.
-  bool _isDragging = false;
-  double _dragValue = 0.0;
-  String? _dragStartTrackId;
-
-  String _formatDuration(Duration? d) {
-    if (d == null) return '0:00';
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final hours = d.inHours;
-    final minutes = d.inMinutes.remainder(60);
-    final seconds = d.inSeconds.remainder(60);
-    if (hours > 0) {
-      return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
-    }
-    return '${twoDigits(minutes)}:${twoDigits(seconds)}';
-  }
-
-  void _onChangeStart(double value) {
-    final ps = context.read<AudioPlayerService>();
-    setState(() {
-      _isDragging = true;
-      _dragValue = value;
-      _dragStartTrackId = ps.currentTrack?.id;
-    });
-  }
-
-  void _onChanged(double value) {
-    setState(() => _dragValue = value);
-  }
-
-  void _onChangeEnd(double value) {
-    final ps = context.read<AudioPlayerService>();
-    final stillSameTrack = ps.currentTrack?.id == _dragStartTrackId;
-    setState(() {
-      _isDragging = false;
-      _dragStartTrackId = null;
-    });
-    if (stillSameTrack && widget.duration > Duration.zero) {
-      final targetMs = (value * widget.duration.inMilliseconds).round();
-      ps.seek(Duration(milliseconds: targetMs));
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final playerService = context.read<AudioPlayerService>();
-    final hasDuration = widget.duration > Duration.zero;
-    final canSeek = hasDuration && _seekSupported;
-
-    return StreamBuilder<Duration>(
-      stream: playerService.positionStream,
-      builder: (context, snapshot) {
-        final streamPosition = snapshot.data ?? Duration.zero;
-
-        final displayFraction = _isDragging
-            ? _dragValue
-            : (hasDuration
-                ? streamPosition.inMilliseconds / widget.duration.inMilliseconds
-                : 0.0);
-
-        final displayPosition = _isDragging
-            ? Duration(
-                milliseconds:
-                    (_dragValue * widget.duration.inMilliseconds).round())
-            : streamPosition;
-
-        return Column(
-          children: [
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 4,
-                thumbShape: const RoundSliderThumbShape(
-                  enabledThumbRadius: 8,
-                ),
-              ),
-              child: Slider(
-                value: displayFraction.clamp(0.0, 1.0),
-                onChanged: canSeek ? _onChanged : null,
-                onChangeStart: canSeek ? _onChangeStart : null,
-                onChangeEnd: canSeek ? _onChangeEnd : null,
-              ),
+    final ps = context.read<AudioPlayerService>();
+    return ScrubBar(
+      duration: duration,
+      trackId: ps.currentTrack?.id,
+      position: ps.positionStream,
+      onSeek: ps.seek,
+      builder: (context, view) => Column(
+        children: [
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 4,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(_formatDuration(displayPosition)),
-                  Text(_formatDuration(widget.duration)),
-                ],
-              ),
+            child: Slider(
+              value: view.fraction,
+              onChanged: view.onChanged,
+              onChangeStart: view.onChangeStart,
+              onChangeEnd: view.onChangeEnd,
             ),
-          ],
-        );
-      },
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(formatPlaybackDuration(view.position)),
+                Text(formatPlaybackDuration(duration)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

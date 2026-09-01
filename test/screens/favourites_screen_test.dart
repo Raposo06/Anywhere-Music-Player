@@ -10,6 +10,7 @@ import 'package:anywhere_music_player/screens/favourites_screen.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
 import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/favourites_service.dart';
+import 'package:anywhere_music_player/services/library_scanner.dart';
 import 'package:anywhere_music_player/services/subsonic_api_service.dart';
 import '../support/fake_just_audio.dart';
 import '../support/fake_resolver.dart';
@@ -92,6 +93,12 @@ void main() {
           // resolves the same as a real one — same shortcut the other screen
           // tests take.
           ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
+          // Tapping a row pushes PlayerScreen, which resolves the playing
+          // track against the scan for its folder line; an empty scanner just
+          // leaves the track as-is.
+          ChangeNotifierProvider<LibraryScanner>(
+            create: (_) => LibraryScanner(null),
+          ),
         ],
         child: const MaterialApp(home: FavouritesScreen()),
       ),

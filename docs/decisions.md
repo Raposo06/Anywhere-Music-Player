@@ -14,6 +14,199 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## The standalone All Tracks screens are deleted (2026-09-01)
+
+**Decided.** `screens/all_tracks_screen.dart`, `screens/desktop/desktop_all_tracks_screen.dart`
+and `test/screens/all_tracks_screen_test.dart` are gone. Supersedes the "Left
+behind, deliberately" note on **2026-08-30 — All Tracks is a Navidrome smart
+playlist**: they were kept as the reuse target for a cache-backed fetch path if
+load time proved a problem. It hasn't — All Tracks has served from `getPlaylist`
+since then with no complaint — and the screens had drifted (they never got the
+`play_actions` / `CentredMessage` treatment the live screens did) into pure dead
+weight that still showed up in every codebase search.
+
+**What would reverse it.** The load-time problem finally biting. The fix then is
+still to special-case the *fetch* (serve the smart playlist's tracks from the
+library cache), not to resurrect a screen — recover these from git history only
+as a reference for the list/search wiring, not as-is.
+
+---
+
+## The phone gets a shared `CentredMessage`, like the desktop's `DesktopErrorState` (2026-09-01)
+
+**Decided.** `lib/widgets/centred_message.dart` holds `CentredMessage` — the
+centred icon + title (+ optional subtitle and action) for a phone screen's empty
+and error states. Favourites and Playlists each had a byte-identical private
+copy (`_CentredMessage` / `_Message`); those are gone, and Home's two scan/search
+error blocks now use it too. Finishes "2026-08-30 — One `DesktopErrorState`, not
+three" on the phone side.
+
+**Why.** The best copy — the scroll-wrapped one that keeps a `RefreshIndicator`
+pullable on an empty list — was private to Playlists, so the other phone screens
+reinvented plainer variants. One widget makes the scroll-wrap (and the styling)
+reach all of them.
+
+**Visible change on Home.** Its scan-error and search-error states were red
+body text with a bare `ElevatedButton`; they now match Favourites/Playlists —
+an `error_outline` icon, muted text, a `FilledButton` retry.
+
+**Not done.** A shared widget owning the whole loading/error/empty branch
+*precedence* (three services expose the same `isLoading`/`isLoaded`/`error`
+triplet). The deletion test is ambiguous — it would spread four lines of
+branching back across four screens rather than concentrate them — so it waits
+for a fourth phone list or a precedence bug.
+
+**What would reverse it.** The phone empty/error states diverging enough per
+screen that a shared widget needs more configuration than the inline version
+costs.
+
+---
+
+## The stream cache is a `StreamCache` seam, not `AudioPlayerService` internals (2026-09-01)
+
+**Decided.** The Android on-disk stream cache — directory bootstrap, the
+`LockCachingAudioSource` choice, and the 2 GB LRU eviction with its
+`.part`/`.mime` sidecar protection — moved out of `AudioPlayerService` into
+`lib/services/stream_cache.dart` as a `StreamCache` interface with two
+implementations: `DiskStreamCache` (Android) and `DirectStreamCache` (desktop,
+web, tests, and the default). `main()` picks one next to the `NowPlayingPresence`
+wiring; `AudioPlayerService` just calls `sourceFor` / `evict`. Nothing about the
+cache's behaviour changed — this is the same code behind an interface. The
+keyed-by-id and 2 GB decisions below still stand.
+
+**Why.** It was ~90 lines of platform-specific file I/O — including the
+codebase's single most regression-prone rule (the sidecar protection) —
+interleaved through the busiest file in the repo and reachable only behind a
+live ExoPlayer, so it had no test. Behind a two-method interface the eviction
+rule is plain file I/O over a directory a test hands it:
+`test/services/stream_cache_test.dart`. It also matches the seam pattern the
+service already used four times (`NowPlayingPresence`, `StreamUrlResolver`,
+`PlaybackReporter`, and `PlaybackCursor`), and drops the `_isAndroid` branch out
+of the load path.
+
+**What would reverse it.** Desktop or web wanting the same on-disk cache — at
+which point `DiskStreamCache` stops being Android-specific and the split is
+about caching vs not, which the interface already expresses.
+
+---
+
+## The scrub bar's drag/seek machine lives in one widget (2026-09-01)
+
+**Decided.** `lib/widgets/scrub_bar.dart` holds `ScrubBar` — the "follow the
+finger while dragging, seek on release unless the track advanced mid-drag"
+state machine that the phone, desktop and TV player bars each spelled out in
+full. The three bars keep their own `Slider` theme, label typography and column
+layout and get the machine's output through a `builder`. `formatPlaybackDuration`
+moved here from `widgets/desktop/desktop_primitives.dart` (it was never a
+desktop concept) and is now the one formatter all three use.
+
+**Seeking has no platform gate.** The dead `_seekSupported` getter (always
+`true`, doc describing an ExoPlayer limitation that the Android stream cache
+removed) is gone; `ScrubBar` seeks whenever the track length is known and an
+`onSeek` is given. Do not re-add a platform check — Android plays from a
+seekable cache file, desktop/media_kit seeks natively.
+
+**Visible change on TV.** TV's bespoke `_fmt` produced non-padded minutes and
+no hour rollover (`3:05`, and `70:00` for a 70-minute track); it now matches
+phone/desktop (`03:05`, `1:10:00`).
+
+**What would reverse it.** The three bars' layouts diverging so far that the
+`builder` indirection costs more than the shared machine saves — at which point
+the machine could become a plain controller object the three instantiate
+directly. Extends "2026-08-22 architecture review" Candidate 02.
+
+---
+
+## "Play this, and show it" is one helper, not eleven copies (2026-09-01)
+
+**Decided.** `lib/widgets/play_actions.dart` owns the whole track-pick gesture:
+`playFromList(context, track, tracks)` and `playAll(context, tracks, {shuffled})`
+start playback *and* bring Now Playing forward, and `playFromList` skips the
+restart when the tapped track is already playing. Every list screen — phone,
+desktop and TV — calls those two verbs and nothing else. The "show Now Playing"
+half is a seam: `openNowPlaying` uses the shell's `NowPlayingOpener`
+`InheritedWidget` when one is installed (the desktop shell, which owns the
+root-navigator push + `FolderRequest` round-trip — this is the old
+`DesktopPlayerLauncher`, renamed and moved out of `desktop_shell.dart`), and
+otherwise pushes the platform's player route directly (phone, TV, widget tests).
+
+**Why.** The rule has three parts (play from here / unless already current /
+then open the player) and it was hand-written in ~11 screens in three different
+shapes — two of them, the phone Home list and Android TV, were missing the
+"already current" guard entirely, so tapping the playing song restarted it and
+double-scrobbled it. This is exactly the "fixes that have to be made twice"
+signal the 2026-08-28 phone/desktop split entry named as *its* reversal trigger,
+so the gesture policy moves to the shared side while the layouts stay split.
+Extends "2026-08-29 — Picking a track on desktop opens Now Playing": same
+behaviour, now the single implementation for all three form factors.
+
+**What would reverse it.** Wanting a list you can queue from without it yanking
+you to Now Playing — that would be a per-surface option on the helper, not a
+return to per-screen copies.
+
+---
+
+## Releases are built in CI, and the git tag is the version (2026-09-01)
+
+**Decided.** `.github/workflows/release.yml` builds Android / Windows / Linux on
+a `v*` tag and publishes a GitHub Release. The tag — not `pubspec.yaml`, not
+`installer.iss` — is the version of a released build: the workflow feeds it to
+`flutter build --build-name` and `ISCC /DMyAppVersion`. `versionCode` is the
+Actions run number (monotonic). The apps get a hosted download page
+(foxcore.dev) pointing at `releases/latest`.
+
+**Why.** Builds were hand-cranked per platform per release, which is why
+`pubspec.yaml` (`1.1.0+2`) and `installer.iss` (`1.3`) had already drifted apart
+— the exact failure the Arch PKGBUILD's `pkgver()` was written to avoid.
+Deriving every artifact's version from one tag makes drift structurally
+impossible instead of a thing to remember. GitHub Releases (not the VPS, not
+R2, not binaries in a repo) because the repo is public so assets download with
+no auth, it's CDN-backed and free, and CI can attach to a release in one step
+where committing 40 MB binaries back to a repo is an antipattern.
+
+**Why not iOS.** `ios/` is untouched Flutter scaffolding, and iOS has no
+download-page distribution path regardless — App Store or TestFlight only, both
+needing the paid Developer Program and a Mac to build. Out of scope until those
+change.
+
+**Android signing changed with this.** `buildTypes.release` was debug-signed
+(`signingConfigs.debug`); it now uses a real `signingConfigs.release` read from
+a gitignored `android/key.properties`, falling back to debug when that file is
+absent so plain dev checkouts are unaffected. CI reconstructs the file from
+secrets. See [operations.md](operations.md) "Automated releases".
+
+**What would reverse it.** Making the repo private (assets would then need a
+token — move to Cloudflare R2 or a public releases-only repo), or adding a
+platform CI can't build for free (iOS/macOS need paid macOS runners — likely
+stays a local `flutter build` + manual upload).
+
+---
+
+## `just_audio`'s `play()` is fired, never awaited (2026-09-01)
+
+**Decided.** `AudioPlayerService._loadAndPlay` fires `_player!.play()` and moves
+on, with a `catchError` for the error path. It must stay that way, and the
+comment saying so must stay with it.
+
+**Why.** `play()` completes when playback *stops*, not when it starts. On
+Android (ExoPlayer) the platform holds the reply until `STATE_ENDED`, so
+awaiting it holds `_isLoading` true for the whole track — which gates off the
+`completed` handler that advances the playlist (playback dead-stops at the end
+of every song), defers `_presence.show` and the now-playing report to track end
+(the notification re-announces the song as it finishes), and blocks
+`_handleStreamError`'s drop recovery, which checks `_isLoading`. media_kit
+returns from `play()` immediately, so **desktop shows none of this** — this is
+the platform split in `CLAUDE.md` biting for real. `ad2629a` added the `await`
+during a refactor; this entry exists so it doesn't get added back as a tidy-up.
+
+**What would reverse it.** just_audio changing `play()` to mean "started" (it
+has been "stops" since 0.9.x and the doc comment says so), or dropping the
+ExoPlayer backend. If sequencing ever moves onto `ConcatenatingAudioSource`,
+the whole `_isLoading`/`completed` handshake goes away with it — but see the
+entry on why sequencing is hand-rolled before going there.
+
+---
+
 ## Now Playing's folder line uses the real path, minus its top-level segment (2026-08-31)
 
 **Decided.** The folder line on every player (`player_screen.dart`,

@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:io' show Platform, File, Directory;
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/track.dart';
 import 'now_playing_presence.dart';
 import 'playback_cursor.dart';
 import 'playback_reporter.dart';
+import 'stream_cache.dart';
 import 'stream_url_resolver.dart';
 
 export 'playback_cursor.dart' show RepeatMode;
@@ -27,6 +27,7 @@ class AudioPlayerService with ChangeNotifier {
   final NowPlayingPresence _presence;
   final StreamUrlResolver _resolver;
   final PlaybackReporter _reporter;
+  final StreamCache _streamCache;
 
   final PlaybackCursor _cursor = PlaybackCursor();
   // The track currently coming out of the speakers — may be a playlist item
@@ -45,13 +46,6 @@ class AudioPlayerService with ChangeNotifier {
   // stay gapless.
   static const _skipDebounce = Duration(milliseconds: 280);
   Timer? _loadDebounce;
-
-  // Android-only on-disk stream cache (LockCachingAudioSource). Lets the player
-  // seek within a local file (Navidrome's live HTTP stream isn't seekable for
-  // VBR/FLAC/OGG) and avoids re-streaming on replay. Bounded by
-  // [_audioCacheCapBytes]; oldest songs are evicted after each load.
-  Directory? _audioCacheDir;
-  static const int _audioCacheCapBytes = 2 * 1024 * 1024 * 1024; // 2 GB
 
   // Mid-stream drop recovery: bounded auto-resume of the current track when the
   // network/server closes a connection mid-playback.
@@ -114,15 +108,15 @@ class AudioPlayerService with ChangeNotifier {
   Duration? get position => _player?.position;
   Duration? get bufferedPosition => _player?.bufferedPosition;
 
-  bool get _isAndroid => !kIsWeb && Platform.isAndroid;
-
   AudioPlayerService({
     NowPlayingPresence? presence,
     StreamUrlResolver? resolver,
     PlaybackReporter? reporter,
+    StreamCache? streamCache,
   }) : _presence = presence ?? const NoPresence(),
        _resolver = resolver ?? const NoResolver(),
-       _reporter = reporter ?? const NoPlaybackReporter() {
+       _reporter = reporter ?? const NoPlaybackReporter(),
+       _streamCache = streamCache ?? const DirectStreamCache() {
     // Fire-and-forget: the modes are cosmetic until something is actually
     // playing, and this service is constructed before login, so there is
     // nothing to block on.
@@ -180,7 +174,7 @@ class AudioPlayerService with ChangeNotifier {
     _player!.setLoopMode(LoopMode.off);
 
     _presence.bind(_player!, (
-      play: () => _player?.play(),
+      play: _resumePlayback,
       pause: () => _player?.pause(),
       next: playNext,
       previous: playPrevious,
@@ -328,67 +322,9 @@ class AudioPlayerService with ChangeNotifier {
     );
   }
 
-  AudioSource _buildSource(Track track) {
+  Future<AudioSource> _buildSource(Track track) {
     final uri = Uri.parse(_resolver.buildStreamUrl(track.id));
-    final tag = _buildMediaItem(track);
-    // On Android, cache the stream to a per-song file so playback is seekable
-    // (the live HTTP stream isn't) and replays don't re-fetch from the server.
-    // Keyed by track id — NOT the URL, whose auth salt rotates on every build
-    // and would otherwise defeat the cache. Desktop (media_kit) streams direct.
-    if (_isAndroid && _audioCacheDir != null) {
-      return LockCachingAudioSource(
-        uri,
-        tag: tag,
-        cacheFile: File('${_audioCacheDir!.path}/${track.id}'),
-      );
-    }
-    return AudioSource.uri(uri, tag: tag);
-  }
-
-  /// Resolve the Android stream-cache directory once. No-op off Android.
-  Future<void> _ensureAudioCacheDir() async {
-    if (!_isAndroid || _audioCacheDir != null) return;
-    try {
-      final base = await getTemporaryDirectory();
-      final dir = Directory('${base.path}/audio_cache');
-      if (!await dir.exists()) await dir.create(recursive: true);
-      _audioCacheDir = dir;
-    } catch (e) {
-      debugPrint('AudioPlayerService: could not init audio cache dir: $e');
-    }
-  }
-
-  /// Keep the Android stream cache under [_audioCacheCapBytes] by deleting the
-  /// oldest cached songs. Never evicts the track currently loaded. Fire-and-
-  /// forget; cache integrity is best-effort.
-  Future<void> _evictAudioCacheIfNeeded() async {
-    final dir = _audioCacheDir;
-    if (dir == null) return;
-    try {
-      final entries = <({File file, int size, DateTime modified})>[];
-      var total = 0;
-      await for (final e in dir.list()) {
-        if (e is! File) continue;
-        final st = await e.stat();
-        total += st.size;
-        entries.add((file: e, size: st.size, modified: st.modified));
-      }
-      if (total <= _audioCacheCapBytes) return;
-      entries.sort((a, b) => a.modified.compareTo(b.modified)); // oldest first
-      final currentId = _currentTrack?.id;
-      for (final entry in entries) {
-        if (total <= _audioCacheCapBytes) break;
-        if (currentId != null && entry.file.path.endsWith('/$currentId')) {
-          continue; // don't delete the song that's playing
-        }
-        try {
-          await entry.file.delete();
-          total -= entry.size;
-        } catch (_) {}
-      }
-    } catch (e) {
-      debugPrint('AudioPlayerService: audio cache eviction failed: $e');
-    }
+    return _streamCache.sourceFor(track, uri, _buildMediaItem(track));
   }
 
   /// Load the source, retrying once if it stalls. A single setAudioSource on
@@ -397,10 +333,16 @@ class AudioPlayerService with ChangeNotifier {
   /// never plays" on Next). Re-issuing the load recovers it — the same thing a
   /// manual Next press does, but automatic and on the same track.
   Future<void> _setSourceWithRetry(Track track, int token) async {
-    await _ensureAudioCacheDir();
     const loadTimeout = Duration(seconds: 12);
+    // Built ONCE and reused for the retry. `Future.timeout` doesn't cancel the
+    // load it gave up on, so a second source for the same track would leave two
+    // live — and on Android two `LockCachingAudioSource`s race a truncating
+    // write into `<id>.part` (see [StreamCache]). Re-issuing the same instance
+    // is safe: just_audio keys a source on an id fixed at construction, so the
+    // second setAudioSource rebinds the same entry.
+    final source = await _buildSource(track);
     try {
-      await _player!.setAudioSource(_buildSource(track)).timeout(loadTimeout);
+      await _player!.setAudioSource(source).timeout(loadTimeout);
     } on TimeoutException {
       // If a newer load superseded us while we were stalled, don't reissue —
       // retrying here would clobber the current track's source with this
@@ -409,7 +351,7 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint(
         'AudioPlayerService: load stalled, retrying trackId=${track.id}',
       );
-      await _player!.setAudioSource(_buildSource(track)).timeout(loadTimeout);
+      await _player!.setAudioSource(source).timeout(loadTimeout);
     }
   }
 
@@ -480,13 +422,24 @@ class AudioPlayerService with ChangeNotifier {
       if (resumeFrom != null && resumeFrom > Duration.zero) {
         await _player!.seek(resumeFrom);
       }
-      await _player!.play();
+      // NOT awaited, and must never be. just_audio's play() completes when
+      // playback *stops*, not when it starts: on Android the platform holds
+      // the method-channel reply until STATE_ENDED, so awaiting it pins
+      // _isLoading true for the whole track — which gates off the completed
+      // handler that advances the playlist, and disables drop recovery.
+      // media_kit returns immediately, so desktop never showed it. See the
+      // trap in docs/operations.md.
+      unawaited(
+        _player!.play().catchError((Object e) {
+          if (token == _loadToken) _handlePlaybackError(e);
+        }),
+      );
       _presence.show(track);
       // Same moment we tell the OS, tell the server — this drives Navidrome's
       // "now playing" panel. Re-sent on drop recovery, which is fine: it is a
       // heartbeat, not a play count.
       _report('now-playing', () => _reporter.nowPlaying(track.id));
-      unawaited(_evictAudioCacheIfNeeded());
+      unawaited(_streamCache.evict(keep: _currentTrack));
     } catch (e) {
       if (token != _loadToken) return;
       _handlePlaybackError(e);
@@ -578,8 +531,18 @@ class AudioPlayerService with ChangeNotifier {
     if (_player!.playing) {
       await _player!.pause();
     } else {
-      _player!.play();
+      _resumePlayback();
     }
+  }
+
+  /// Fire `play()` on the live player and route any rejection to the error
+  /// handler. Never awaited — see [_loadAndPlay] for why — and never left
+  /// uncaught. For the system transport button and [togglePlayPause]'s resume
+  /// branch; the load path has its own token-guarded call.
+  void _resumePlayback() {
+    final player = _player;
+    if (player == null) return;
+    unawaited(player.play().catchError((Object e) => _handlePlaybackError(e)));
   }
 
   Future<void> stop() async {

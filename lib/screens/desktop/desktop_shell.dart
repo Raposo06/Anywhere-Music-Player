@@ -11,6 +11,7 @@ import '../../widgets/desktop/desktop_shortcuts.dart';
 import '../../widgets/favourites_error_listener.dart';
 import '../../widgets/desktop/sidebar.dart';
 import '../../widgets/desktop/window_chrome.dart';
+import '../../widgets/play_actions.dart';
 import 'desktop_favourites_screen.dart';
 import 'desktop_folder_screen.dart';
 import 'desktop_playlists_screen.dart';
@@ -198,7 +199,7 @@ class _DesktopShellState extends State<DesktopShell> {
 
   @override
   Widget build(BuildContext context) {
-    return DesktopPlayerLauncher(
+    return NowPlayingOpener(
       open: _openPlayer,
       child: DesktopPlaybackShortcuts(
         onBack: _goBack,
@@ -266,33 +267,6 @@ class _DesktopShellState extends State<DesktopShell> {
       ),
     );
   }
-}
-
-/// Hands everything under [DesktopShell] the shell's "open Now Playing"
-/// action.
-///
-/// The list screens are what know a track was just picked, but they can't push
-/// Now Playing themselves: it goes on the *root* navigator and hands a folder
-/// back to the shell when closed (see [FolderRequest]), so the shell has to own
-/// the push. This is the wire between the two.
-class DesktopPlayerLauncher extends InheritedWidget {
-  final VoidCallback open;
-
-  const DesktopPlayerLauncher({
-    super.key,
-    required this.open,
-    required super.child,
-  });
-
-  /// Opens Now Playing from anywhere under the shell. A no-op outside it, so a
-  /// screen reused off-shell (or in a test) still works.
-  static void openPlayer(BuildContext context) {
-    context.getInheritedWidgetOfExactType<DesktopPlayerLauncher>()?.open();
-  }
-
-  @override
-  bool updateShouldNotify(DesktopPlayerLauncher oldWidget) =>
-      open != oldWidget.open;
 }
 
 /// Publishes the name of whatever route is currently on top of the navigator

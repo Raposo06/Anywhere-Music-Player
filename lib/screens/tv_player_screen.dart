@@ -11,6 +11,7 @@ import '../services/auth_service.dart';
 import '../services/library_scanner.dart';
 import '../services/stream_url_resolver.dart';
 import '../utils/now_playing_folder.dart';
+import '../widgets/scrub_bar.dart';
 
 /// Full-screen TV player with large cover art and D-pad navigable controls.
 class TvPlayerScreen extends StatefulWidget {
@@ -176,52 +177,39 @@ class _TvProgressBar extends StatelessWidget {
   final Duration duration;
   const _TvProgressBar({required this.duration});
 
-  String _fmt(Duration d) {
-    final m = d.inMinutes;
-    final s = d.inSeconds % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final player = context.read<AudioPlayerService>();
-
-    return StreamBuilder<Duration>(
-      stream: player.positionStream,
-      builder: (context, snap) {
-        final pos = snap.data ?? Duration.zero;
-        final progress = duration.inMilliseconds > 0
-            ? (pos.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
-            : 0.0;
-
-        return Column(
-          children: [
-            SliderTheme(
-              data: SliderThemeData(
-                trackHeight: 6,
-                thumbShape:
-                    const RoundSliderThumbShape(enabledThumbRadius: 8),
-                activeTrackColor: Colors.white,
-                inactiveTrackColor: Colors.grey[700],
-                thumbColor: Colors.white,
-              ),
-              child: Slider(value: progress, onChanged: null),
+    return ScrubBar(
+      duration: duration,
+      trackId: null,
+      position: context.read<AudioPlayerService>().positionStream,
+      onSeek: null, // the TV remote has no scrub gesture — display only
+      builder: (context, view) => Column(
+        children: [
+          SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 6,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+              activeTrackColor: Colors.white,
+              inactiveTrackColor: Colors.grey[700],
+              thumbColor: Colors.white,
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(_fmt(pos),
-                      style: TextStyle(fontSize: 16, color: Colors.grey[400])),
-                  Text(_fmt(duration),
-                      style: TextStyle(fontSize: 16, color: Colors.grey[400])),
-                ],
-              ),
+            child: Slider(value: view.fraction, onChanged: null),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(formatPlaybackDuration(view.position),
+                    style: TextStyle(fontSize: 16, color: Colors.grey[400])),
+                Text(formatPlaybackDuration(duration),
+                    style: TextStyle(fontSize: 16, color: Colors.grey[400])),
+              ],
             ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
   }
 }

@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/track.dart';
-import '../../services/audio_player_service.dart';
 import '../../services/favourites_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/desktop/desktop_primitives.dart';
 import '../../widgets/desktop/desktop_track_row.dart';
+import '../../widgets/play_actions.dart';
 import 'desktop_shell.dart';
 
 /// The starred songs, newest first.
@@ -16,31 +16,6 @@ import 'desktop_shell.dart';
 /// whole list in memory, so this just renders it.
 class DesktopFavouritesScreen extends StatelessWidget {
   const DesktopFavouritesScreen({super.key});
-
-  void _playTrack(BuildContext context, Track track, List<Track> playlist) {
-    final player = context.read<AudioPlayerService>();
-    // Already the current track — don't restart it, just show it. Same rule
-    // the other desktop lists follow.
-    if (player.currentTrack?.id != track.id) {
-      player.play(playlist, from: playlist.indexOf(track));
-    }
-    DesktopPlayerLauncher.openPlayer(context);
-  }
-
-  void _playAll(
-    BuildContext context,
-    List<Track> tracks, {
-    required bool shuffled,
-  }) {
-    if (tracks.isEmpty) return;
-    final player = context.read<AudioPlayerService>();
-    if (shuffled) {
-      player.playShuffled(tracks);
-    } else {
-      player.play(tracks);
-    }
-    DesktopPlayerLauncher.openPlayer(context);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -80,7 +55,7 @@ class DesktopFavouritesScreen extends StatelessWidget {
                 ElevatedButton.icon(
                   onPressed: tracks.isEmpty
                       ? null
-                      : () => _playAll(context, tracks, shuffled: false),
+                      : () => playAll(context, tracks),
                   icon: const Icon(Icons.play_arrow, size: 18),
                   label: const Text('Play All'),
                 ),
@@ -88,7 +63,7 @@ class DesktopFavouritesScreen extends StatelessWidget {
                 OutlinedButton.icon(
                   onPressed: tracks.isEmpty
                       ? null
-                      : () => _playAll(context, tracks, shuffled: true),
+                      : () => playAll(context, tracks, shuffled: true),
                   icon: const Icon(Icons.shuffle, size: 16),
                   label: const Text('Shuffle'),
                 ),
@@ -161,7 +136,7 @@ class DesktopFavouritesScreen extends StatelessWidget {
         return DesktopTrackRow(
           track: track,
           number: index + 1,
-          onTap: () => _playTrack(context, track, tracks),
+          onTap: () => playFromList(context, track, tracks),
         );
       },
     );

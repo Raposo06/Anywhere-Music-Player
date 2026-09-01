@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A bounded alternative to [WidgetTester.pumpAndSettle] for screens built on
-/// [ScrollablePositionedList] (all_tracks/folder_detail): that widget's
+/// [ScrollablePositionedList] (the folder screens): that widget's
 /// internal re-measurement can keep scheduling frames indefinitely, which
 /// makes `pumpAndSettle()` hang rather than time out. This just advances a
 /// fixed amount of simulated time instead of waiting for "no more frames".

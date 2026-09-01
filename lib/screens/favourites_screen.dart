@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/track.dart';
-import '../services/audio_player_service.dart';
 import '../services/favourites_service.dart';
 import '../utils/responsive.dart';
+import '../widgets/centred_message.dart';
+import '../widgets/play_actions.dart';
 import '../widgets/track_tile.dart';
-import 'player_screen.dart';
 
 /// The phone's starred songs, newest first.
 ///
@@ -19,35 +19,6 @@ import 'player_screen.dart';
 /// re-sync with the way the desktop sidebar does.
 class FavouritesScreen extends StatelessWidget {
   const FavouritesScreen({super.key});
-
-  void _playTrack(BuildContext context, Track track, List<Track> playlist) {
-    final playerService = context.read<AudioPlayerService>();
-    // Already the current track — don't restart it, just open the player.
-    // Same rule the other phone lists follow.
-    if (playerService.currentTrack?.id != track.id) {
-      playerService.play(playlist, from: playlist.indexOf(track));
-    }
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
-  }
-
-  void _playAll(
-    BuildContext context,
-    List<Track> tracks, {
-    required bool shuffled,
-  }) {
-    if (tracks.isEmpty) return;
-    final playerService = context.read<AudioPlayerService>();
-    if (shuffled) {
-      playerService.playShuffled(tracks);
-    } else {
-      playerService.play(tracks);
-    }
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,12 +33,12 @@ class FavouritesScreen extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.play_arrow),
               tooltip: 'Play all',
-              onPressed: () => _playAll(context, tracks, shuffled: false),
+              onPressed: () => playAll(context, tracks),
             ),
             IconButton(
               icon: const Icon(Icons.shuffle),
               tooltip: 'Shuffle',
-              onPressed: () => _playAll(context, tracks, shuffled: true),
+              onPressed: () => playAll(context, tracks, shuffled: true),
             ),
           ],
         ],
@@ -99,7 +70,7 @@ class FavouritesScreen extends StatelessWidget {
     // *after* a successful load (a rejected star) is surfaced as a SnackBar
     // instead, and must not replace a list that is still good.
     if (!favourites.isLoaded && favourites.error != null) {
-      return _CentredMessage(
+      return CentredMessage(
         icon: Icons.error_outline,
         title: favourites.error!,
         action: FilledButton(
@@ -110,7 +81,7 @@ class FavouritesScreen extends StatelessWidget {
     }
 
     if (tracks.isEmpty) {
-      return const _CentredMessage(
+      return const CentredMessage(
         icon: Icons.favorite_border,
         title: 'No favourites yet',
         subtitle: 'Tap the heart on any track to keep it here.',
@@ -124,70 +95,10 @@ class FavouritesScreen extends StatelessWidget {
         return TrackTile(
           track: track,
           leadingIndex: index,
-          onTap: () => _playTrack(context, track, tracks),
+          onTap: () => playFromList(context, track, tracks),
         );
       },
     );
   }
 }
 
-/// Empty and error states, both of which must stay scrollable so
-/// [RefreshIndicator] can still be pulled when the list has no rows.
-class _CentredMessage extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-  final Widget? action;
-
-  const _CentredMessage({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    this.action,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, size: 48, color: scheme.onSurfaceVariant),
-                  const SizedBox(height: 16),
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: scheme.onSurfaceVariant),
-                  ),
-                  if (subtitle case final subtitle?) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      subtitle,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ],
-                  if (action case final action?) ...[
-                    const SizedBox(height: 20),
-                    action,
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

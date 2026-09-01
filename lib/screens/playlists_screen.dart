@@ -3,15 +3,15 @@ import 'package:provider/provider.dart';
 
 import '../models/playlist.dart';
 import '../models/track.dart';
-import '../services/audio_player_service.dart';
 import '../services/auth_service.dart';
 import '../services/playlists_service.dart';
 import '../utils/responsive.dart';
 import '../widgets/add_songs_to_playlist.dart';
 import '../widgets/add_to_playlist.dart';
+import '../widgets/centred_message.dart';
 import '../widgets/cover_art.dart';
+import '../widgets/play_actions.dart';
 import '../widgets/track_tile.dart';
-import 'player_screen.dart';
 
 /// The phone's playlists list. Counterpart to `DesktopPlaylistsScreen`;
 /// the two share [PlaylistsService] and differ only in chrome.
@@ -107,7 +107,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (!service.isLoaded && service.error != null) {
-      return _Message(
+      return CentredMessage(
         icon: Icons.error_outline,
         title: service.error!,
         action: FilledButton(
@@ -117,7 +117,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
       );
     }
     if (service.playlists.isEmpty) {
-      return const _Message(
+      return const CentredMessage(
         icon: Icons.queue_music,
         title: 'No playlists yet',
         subtitle: 'Create one with +, or long-press a track to add it to one.',
@@ -174,29 +174,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     });
   }
 
-  void _playTrack(Track track, List<Track> tracks) {
-    final player = context.read<AudioPlayerService>();
-    if (player.currentTrack?.id != track.id) {
-      player.play(tracks, from: tracks.indexOf(track));
-    }
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
-  }
-
-  void _playAll(List<Track> tracks, {required bool shuffled}) {
-    if (tracks.isEmpty) return;
-    final player = context.read<AudioPlayerService>();
-    if (shuffled) {
-      player.playShuffled(tracks);
-    } else {
-      player.play(tracks);
-    }
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
-  }
-
   /// Whether this playlist accepts edits — see [Playlist.isEditableBy].
   bool get _editable {
     final playlist = context.read<PlaylistsService>().byId(widget.playlistId);
@@ -230,12 +207,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             IconButton(
               icon: const Icon(Icons.play_arrow),
               tooltip: 'Play all',
-              onPressed: () => _playAll(tracks, shuffled: false),
+              onPressed: () => playAll(context, tracks),
             ),
             IconButton(
               icon: const Icon(Icons.shuffle),
               tooltip: 'Shuffle',
-              onPressed: () => _playAll(tracks, shuffled: true),
+              onPressed: () => playAll(context, tracks, shuffled: true),
             ),
           ],
           if (playlist != null && _editable)
@@ -262,7 +239,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (tracks.isEmpty) {
-      return _Message(
+      return CentredMessage(
         icon: Icons.queue_music,
         title: 'This playlist is empty',
         subtitle: playlist != null && _editable
@@ -283,69 +260,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         track: tracks[i],
         leadingIndex: i,
         onRemoveFromPlaylist: _editable ? () => _remove(tracks[i], i) : null,
-        onTap: () => _playTrack(tracks[i], tracks),
+        onTap: () => playFromList(context, tracks[i], tracks),
       ),
     );
   }
 }
 
-/// Empty and error states, kept scrollable so pull-to-refresh still works
-/// when there are no rows.
-class _Message extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-  final Widget? action;
-
-  const _Message({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    this.action,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, size: 48, color: scheme.onSurfaceVariant),
-                  const SizedBox(height: 16),
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: scheme.onSurfaceVariant),
-                  ),
-                  if (subtitle case final subtitle?) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      subtitle,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ],
-                  if (action case final action?) ...[
-                    const SizedBox(height: 20),
-                    action,
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

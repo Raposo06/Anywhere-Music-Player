@@ -81,8 +81,7 @@ class QueueSheet extends StatelessWidget {
                       if (manual.isNotEmpty) _label(context, 'Next in Queue'),
                       SliverReorderableList(
                         itemCount: manual.length,
-                        onReorder: (oldIdx, newIdx) {
-                          if (newIdx > oldIdx) newIdx--;
+                        onReorderItem: (oldIdx, newIdx) {
                           ps.moveInQueue(oldIdx, newIdx);
                         },
                         itemBuilder: (context, index) {
@@ -102,8 +101,7 @@ class QueueSheet extends StatelessWidget {
                         _label(context, 'Next from playlist'),
                       SliverReorderableList(
                         itemCount: upcoming.length,
-                        onReorder: (oldIdx, newIdx) {
-                          if (newIdx > oldIdx) newIdx--;
+                        onReorderItem: (oldIdx, newIdx) {
                           ps.reorderUpcoming(oldIdx, newIdx);
                         },
                         itemBuilder: (context, index) {

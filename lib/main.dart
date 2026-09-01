@@ -14,6 +14,7 @@ import 'services/android_presence.dart';
 import 'services/linux_presence.dart';
 import 'services/now_playing_presence.dart';
 import 'services/playback_reporter.dart';
+import 'services/stream_cache.dart';
 import 'services/stream_url_resolver.dart';
 import 'services/windows_presence.dart';
 import 'services/favourites_service.dart';
@@ -121,6 +122,13 @@ void main() async {
       ? LinuxPresence(resolver: resolver)
       : const NoPresence();
 
+  // Android streams through an on-disk cache (seekable local files; ExoPlayer
+  // can't seek Navidrome's live HTTP stream) — everything else streams direct.
+  // See StreamCache.
+  final StreamCache streamCache = (!kIsWeb && Platform.isAndroid)
+      ? DiskStreamCache()
+      : const DirectStreamCache();
+
   // Built here rather than inside the provider below so window close can get
   // at it — see [_DesktopCloseGuard]. It already belongs with the other
   // once-per-process services above.
@@ -128,6 +136,7 @@ void main() async {
     presence: presence,
     resolver: resolver,
     reporter: reporter,
+    streamCache: streamCache,
   );
 
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {

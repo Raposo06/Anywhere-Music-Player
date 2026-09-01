@@ -10,8 +10,8 @@ import '../../theme/app_colors.dart';
 import '../../widgets/cover_art.dart';
 import '../../widgets/desktop/desktop_primitives.dart';
 import '../../widgets/desktop/desktop_track_row.dart';
+import '../../widgets/play_actions.dart';
 import 'desktop_search_field.dart';
-import 'desktop_shell.dart';
 
 /// A folder's contents: subfolders ("Albums") above its own tracks.
 ///
@@ -157,16 +157,8 @@ class _DesktopFolderScreenState extends State<DesktopFolderScreen> {
 
   /// Play everything under this folder, subfolders included — the same
   /// recursive set both buttons act on, sequential or shuffled.
-  void _playAll({required bool shuffled}) {
-    if (_allTracks.isEmpty) return;
-    final player = context.read<AudioPlayerService>();
-    if (shuffled) {
-      player.playShuffled(_allTracks);
-    } else {
-      player.play(_allTracks);
-    }
-    DesktopPlayerLauncher.openPlayer(context);
-  }
+  void _playAll({required bool shuffled}) =>
+      playAll(context, _allTracks, shuffled: shuffled);
 
   void _openSubfolder(Folder folder) {
     Navigator.of(context).push(
@@ -198,24 +190,11 @@ class _DesktopFolderScreenState extends State<DesktopFolderScreen> {
   void _goHome() => Navigator.of(context).popUntil((route) => route.isFirst);
 
   void _playTrack(Track track) {
-    final player = context.read<AudioPlayerService>();
-    // Already the current track — don't restart it, just show it.
-    if (player.currentTrack?.id == track.id) {
-      DesktopPlayerLauncher.openPlayer(context);
-      return;
-    }
-    if (_query.isEmpty) {
-      // This folder's own "Tracks" section — continue through the rest of it.
-      player.play(_tracks, from: _tracks.indexOf(track));
-    } else {
-      // A search match may live in a subfolder album, not in [_tracks] at
-      // all — play from the recursive set search actually searched, so
-      // playback continues into the rest of what the search was looking
-      // through, not just the direct-children list the match may be absent
-      // from.
-      player.play(_allTracks, from: _allTracks.indexOf(track));
-    }
-    DesktopPlayerLauncher.openPlayer(context);
+    // Outside search, play through this folder's own "Tracks" section. While
+    // searching, a match may live in a subfolder album and not be in [_tracks]
+    // at all — play from the recursive set search actually looked through, so
+    // playback continues into the rest of it.
+    playFromList(context, track, _query.isEmpty ? _tracks : _allTracks);
   }
 
   @override

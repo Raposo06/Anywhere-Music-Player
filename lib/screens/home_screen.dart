@@ -8,9 +8,10 @@ import '../services/subsonic_api_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/library_scanner.dart';
 import '../utils/responsive.dart';
+import '../widgets/centred_message.dart';
 import '../widgets/cover_art.dart';
+import '../widgets/play_actions.dart';
 import '../widgets/track_tile.dart';
-import 'player_screen.dart';
 import 'folder_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -155,37 +156,21 @@ class _HomeScreenState extends State<HomeScreen> {
     await auth.logout();
   }
 
-  void _playTrack(Track track, List<Track> playlist) {
-    final playerService = context.read<AudioPlayerService>();
-    final trackIndex = playlist.indexOf(track);
-    playerService.play(playlist, from: trackIndex);
-
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PlayerScreen()),
-    );
-  }
-
   Future<void> _playFolder(Folder folder) async {
     final scanner = context.read<LibraryScanner>();
-    final playerService = context.read<AudioPlayerService>();
     final messenger = ScaffoldMessenger.of(context);
 
     if (folder.id == null) return;
 
     final tracks = scanner.getAllTracksInFolder(folder.id!);
 
-    if (tracks.isNotEmpty) {
-      playerService.playShuffled(tracks);
-      if (mounted) {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const PlayerScreen()),
-        );
-      }
-    } else {
+    if (tracks.isEmpty) {
       messenger.showSnackBar(
         const SnackBar(content: Text('No tracks found in this folder')),
       );
+      return;
     }
+    if (mounted) playAll(context, tracks, shuffled: true);
   }
 
   void _openFolder(Folder folder) {
@@ -215,11 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
             builder: (context, hasTrack, _) => hasTrack
                 ? IconButton(
                     icon: const Icon(Icons.music_note),
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                      );
-                    },
+                    onPressed: () => openNowPlaying(context),
                   )
                 : const SizedBox.shrink(),
           ),
@@ -323,17 +304,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (scanner.error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(scanner.error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => scanner.rescan(),
-              child: const Text('Retry'),
-            ),
-          ],
+      return CentredMessage(
+        icon: Icons.error_outline,
+        title: scanner.error!,
+        action: FilledButton(
+          onPressed: () => scanner.rescan(),
+          child: const Text('Retry'),
         ),
       );
     }
@@ -364,13 +340,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const Spacer(),
                 ElevatedButton.icon(
-                  onPressed: () {
-                    final playerService = context.read<AudioPlayerService>();
-                    playerService.playShuffled(rootTracks);
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                    );
-                  },
+                  onPressed: () => playAll(context, rootTracks, shuffled: true),
                   icon: const Icon(Icons.play_arrow, size: 20),
                   label: const Text('Play All'),
                 ),
@@ -379,7 +349,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ...rootTracks.map((track) => TrackTile(
             track: track,
-            onTap: () => _playTrack(track, rootTracks),
+            onTap: () => playFromList(context, track, rootTracks),
           )),
           const Divider(height: 32),
         ],
@@ -431,17 +401,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (_searchError != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(_searchError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => _performSearch(_searchQuery),
-              child: const Text('Retry'),
-            ),
-          ],
+      return CentredMessage(
+        icon: Icons.error_outline,
+        title: _searchError!,
+        action: FilledButton(
+          onPressed: () => _performSearch(_searchQuery),
+          child: const Text('Retry'),
         ),
       );
     }
@@ -487,13 +452,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const Spacer(),
                 TextButton.icon(
-                  onPressed: () {
-                    final playerService = context.read<AudioPlayerService>();
-                    playerService.playShuffled(_searchTracks);
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                    );
-                  },
+                  onPressed: () =>
+                      playAll(context, _searchTracks, shuffled: true),
                   icon: const Icon(Icons.play_arrow, size: 20),
                   label: const Text('Play All'),
                 ),
@@ -502,7 +462,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ..._searchTracks.map((track) => TrackTile(
             track: track,
-            onTap: () => _playTrack(track, _searchTracks),
+            onTap: () => playFromList(context, track, _searchTracks),
           )),
         ],
         const SizedBox(height: 16),

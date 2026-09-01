@@ -8,8 +8,8 @@ import '../services/audio_player_service.dart';
 import '../utils/responsive.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/play_actions.dart';
 import '../widgets/track_tile.dart';
-import 'player_screen.dart';
 
 class FolderDetailScreen extends StatefulWidget {
   final String folderId;
@@ -117,28 +117,10 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
     );
   }
 
-  void _playAll() {
-    // Play all tracks recursively (this folder + subfolders)
-    if (_allTracks.isEmpty) return;
+  /// Play all tracks recursively (this folder + subfolders).
+  void _playAll() => playAll(context, _allTracks);
 
-    final playerService = context.read<AudioPlayerService>();
-    playerService.play(_allTracks);
-
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PlayerScreen()),
-    );
-  }
-
-  void _shufflePlay() {
-    if (_allTracks.isEmpty) return;
-
-    final playerService = context.read<AudioPlayerService>();
-    playerService.playShuffled(_allTracks);
-
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PlayerScreen()),
-    );
-  }
+  void _shufflePlay() => playAll(context, _allTracks, shuffled: true);
 
   void _openSubfolder(Folder folder) {
     Navigator.of(context).push(
@@ -313,11 +295,7 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
             builder: (context, hasTrack, _) => hasTrack
                 ? IconButton(
                     icon: const Icon(Icons.music_note),
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                      );
-                    },
+                    onPressed: () => openNowPlaying(context),
                   )
                 : const SizedBox.shrink(),
           ),
@@ -456,27 +434,15 @@ class _FolderDetailScreenState extends State<FolderDetailScreen> {
                 // subfolder — so this numbers by position among the results
                 // themselves, same as the home and all-tracks search results.
                 leadingIndex: index,
-                onTap: () {
-                  final playerService = context.read<AudioPlayerService>();
-                  // If this track is already the current one, don't restart it
-                  // — just open the player and let it keep playing.
-                  if (playerService.currentTrack?.id != track.id) {
-                    if (_isSearching) {
-                      // A search match may live in a subfolder album, not in
-                      // [_tracks] at all — play from the recursive set search
-                      // actually searched, so playback continues into the
-                      // rest of what the search was looking through.
-                      playerService.play(_allTracks, from: _allTracks.indexOf(track));
-                    } else {
-                      // Always play from the full folder list so playback
-                      // continues through tracks not matched by the search.
-                      playerService.play(_tracks, from: _tracks.indexOf(track));
-                    }
-                  }
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                  );
-                },
+                // While searching, a match may live in a subfolder album and
+                // not be in [_tracks] at all — play from the recursive set
+                // search actually looked through, so playback continues into
+                // the rest of it rather than stopping at the folder's own list.
+                onTap: () => playFromList(
+                  context,
+                  track,
+                  _isSearching ? _allTracks : _tracks,
+                ),
               );
             },
           ),

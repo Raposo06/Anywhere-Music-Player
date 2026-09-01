@@ -24,6 +24,11 @@ Each of these looks like an obvious cleanup and is not. The reasoning is in
    `usesCleartextTraffic="true"` — that unblocks cleartext for the real server too.
 6. **Drop recovery never auto-resumes while paused.** Idle connections drop when
    paused; resuming there starts music the user deliberately stopped.
+7. **`just_audio`'s `play()` is never awaited.** It completes when playback
+   *stops*, not when it starts — on Android the platform holds that future until
+   the track ends, so awaiting it pins `_isLoading` true for the whole song and
+   silently kills end-of-track advance. media_kit returns immediately, so the
+   bug is invisible on desktop. It reads like a missing `await`; it is not.
 
 ## Platform reality
 

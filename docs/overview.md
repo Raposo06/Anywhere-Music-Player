@@ -65,10 +65,15 @@ no backend of its own.
 | Android (phone) | Shipped — APK |
 | Android TV | Shipped — D-pad UI, `LEANBACK_LAUNCHER` |
 | Windows | Shipped — Inno Setup installer (`installer.iss`) |
-| iOS | Scaffolded (`ios/`), not distributed — needs an Apple Developer account |
-| Linux | Buildable (`flutter build linux`) — not packaged for distribution; needs the system's libmpv installed first, see [operations](operations.md) |
+| iOS | Scaffolded (`ios/`), not distributed — needs an Apple Developer account, and iOS has no download-page path regardless |
+| Linux | Shipped — `.tar.gz` + best-effort `.AppImage`; also an Arch PKGBUILD. Needs the system's libmpv, see [operations](operations.md) |
 | macOS | Scaffolded by Flutter, not built or distributed |
 | Web | **Not supported** — there is no `web/` directory |
+
+Tagged releases (`v*`) are built for Android / Windows / Linux and published to
+GitHub Releases by `.github/workflows/release.yml`, with a hosted download page
+on foxcore.dev pointing at the latest — see [operations](operations.md) and
+[decisions](decisions.md) (2026-09-01).
 
 > ⚠️ The README and the old WikiJS page both listed **Web** as a target. That was
 > never true in this tree; corrected 2026-08-17. The Windows audio backend
@@ -183,17 +188,18 @@ the desktop redesign (theme + sidebar shell + custom window chrome), scrobbling,
 desktop keyboard shortcuts, favourites (desktop + phone), and playlists
 (desktop + phone).
 
-**Test suite:** 39 test files under `test/` (~6,400 lines including support
+**Test suite:** 35 test files under `test/` (~7,500 lines including support
 fakes) covering the models, services, the screens and the shared widgets.
 Playback is exercised against a fake `just_audio` platform
 (`test/support/fake_just_audio.dart`) rather than a live backend. Sequencing
 (playlist/queue/shuffle/repeat) lives in `PlaybackCursor`, a pure Dart class
 with no player or Flutter dependency, tested directly rather than through
 seams on `AudioPlayerService`; "what tells the OS this is playing"
-(`NowPlayingPresence`) and "what's the URL for this track"
-(`StreamUrlResolver`, see [decisions](decisions.md)) are similarly pulled out
-into their own seams, each with a no-op/throwing test default so nothing in
-the suite needs a real Windows or Android platform channel. Run with
+(`NowPlayingPresence`), "what's the URL for this track" (`StreamUrlResolver`),
+and "how the audio is cached" (`StreamCache` — Android's on-disk cache vs
+streaming direct, see [decisions](decisions.md)) are similarly pulled out into
+their own seams, each with a no-op/throwing/pass-through test default so nothing
+in the suite needs a real Windows or Android platform channel. Run with
 `flutter test`. **This does not replace on-device testing** — the audio path
 differs by platform (media_kit/MPV on Windows, ExoPlayer + loopback stream
 cache on Android), so a green suite says nothing about either backend.

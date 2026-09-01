@@ -110,7 +110,7 @@ void main() {
       find.text('Failed to scan library: Native API login failed: HTTP 500'),
       findsOneWidget,
     );
-    expect(find.widgetWithText(ElevatedButton, 'Retry'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Retry'), findsOneWidget);
   });
 
   testWidgets('searching debounces, then shows results or "No results found"', (

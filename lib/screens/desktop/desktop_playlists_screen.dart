@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../models/playlist.dart';
 import '../../models/track.dart';
-import '../../services/audio_player_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/playlists_service.dart';
 import '../../theme/app_colors.dart';
@@ -11,6 +10,7 @@ import '../../widgets/add_songs_to_playlist.dart';
 import '../../widgets/add_to_playlist.dart';
 import '../../widgets/desktop/desktop_primitives.dart';
 import '../../widgets/desktop/desktop_track_row.dart';
+import '../../widgets/play_actions.dart';
 import 'desktop_shell.dart';
 
 /// The playlists list — the root of the Playlists destination's navigator.
@@ -48,18 +48,16 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
     _open(created);
   }
 
-  /// Play a playlist without opening it.
+  /// Play a playlist straight from its card.
   ///
   /// Its tracks are fetched on demand — the list view only knows counts — so
-  /// this loads first and then plays, mirroring what the folder cards do with
-  /// their own play button.
+  /// this loads first and then plays.
   Future<void> _playPlaylist(Playlist playlist) async {
     final service = context.read<PlaylistsService>();
     await service.loadTracks(playlist.id);
     final tracks = service.tracksOf(playlist.id);
-    if (tracks == null || tracks.isEmpty || !mounted) return;
-    context.read<AudioPlayerService>().play(tracks);
-    if (mounted) DesktopPlayerLauncher.openPlayer(context);
+    if (tracks == null || !mounted) return;
+    playAll(context, tracks);
   }
 
   @override
@@ -301,25 +299,6 @@ class _DesktopPlaylistScreenState extends State<DesktopPlaylistScreen> {
     });
   }
 
-  void _playTrack(Track track, List<Track> tracks) {
-    final player = context.read<AudioPlayerService>();
-    if (player.currentTrack?.id != track.id) {
-      player.play(tracks, from: tracks.indexOf(track));
-    }
-    DesktopPlayerLauncher.openPlayer(context);
-  }
-
-  void _playAll(List<Track> tracks, {required bool shuffled}) {
-    if (tracks.isEmpty) return;
-    final player = context.read<AudioPlayerService>();
-    if (shuffled) {
-      player.playShuffled(tracks);
-    } else {
-      player.play(tracks);
-    }
-    DesktopPlayerLauncher.openPlayer(context);
-  }
-
   /// Whether this playlist accepts edits. Playlists owned by someone else are
   /// visible but not modifiable — see [Playlist.isEditableBy].
   bool get _editable {
@@ -380,7 +359,7 @@ class _DesktopPlaylistScreenState extends State<DesktopPlaylistScreen> {
                 ElevatedButton.icon(
                   onPressed: (tracks == null || tracks.isEmpty)
                       ? null
-                      : () => _playAll(tracks, shuffled: false),
+                      : () => playAll(context, tracks),
                   icon: const Icon(Icons.play_arrow, size: 18),
                   label: const Text('Play All'),
                 ),
@@ -388,7 +367,7 @@ class _DesktopPlaylistScreenState extends State<DesktopPlaylistScreen> {
                 OutlinedButton.icon(
                   onPressed: (tracks == null || tracks.isEmpty)
                       ? null
-                      : () => _playAll(tracks, shuffled: true),
+                      : () => playAll(context, tracks, shuffled: true),
                   icon: const Icon(Icons.shuffle, size: 16),
                   label: const Text('Shuffle'),
                 ),
@@ -443,7 +422,7 @@ class _DesktopPlaylistScreenState extends State<DesktopPlaylistScreen> {
       itemBuilder: (context, i) => DesktopTrackRow(
         track: tracks[i],
         number: i + 1,
-        onTap: () => _playTrack(tracks[i], tracks),
+        onTap: () => playFromList(context, tracks[i], tracks),
         onRemoveFromPlaylist: _editable ? () => _remove(tracks[i], i) : null,
       ),
     );

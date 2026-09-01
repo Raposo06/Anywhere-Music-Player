@@ -7,7 +7,7 @@ import '../services/auth_service.dart';
 import '../services/library_scanner.dart';
 import '../services/stream_url_resolver.dart';
 import '../models/track.dart';
-import 'tv_player_screen.dart';
+import '../widgets/play_actions.dart';
 
 /// Android TV optimized home screen — simple "All Tracks" view with shuffle.
 class TvHomeScreen extends StatefulWidget {
@@ -60,24 +60,10 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
     super.dispose();
   }
 
-  void _playTrack(int index) {
-    final audioPlayer = context.read<AudioPlayerService>();
-    audioPlayer.play(_tracks, from: index);
-    _openPlayer();
-  }
+  void _playTrack(int index) =>
+      playFromList(context, _tracks[index], _tracks);
 
-  void _shuffleAll() {
-    if (_tracks.isEmpty) return;
-    final audioPlayer = context.read<AudioPlayerService>();
-    audioPlayer.playShuffled(_tracks);
-    _openPlayer();
-  }
-
-  void _openPlayer() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const TvPlayerScreen()),
-    );
-  }
+  void _shuffleAll() => playAll(context, _tracks, shuffled: true);
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +125,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                     child: _TvHeaderButton(
                       icon: Icons.music_note,
                       label: 'Now Playing',
-                      onPressed: _openPlayer,
+                      onPressed: () => openNowPlaying(context),
                       onNavigateDown: () => _trackListScopeNode.requestFocus(),
                     ),
                   );

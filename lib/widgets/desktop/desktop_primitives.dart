@@ -496,17 +496,6 @@ class TransportButton extends StatelessWidget {
   }
 }
 
-/// Formats a duration as `mm:ss` (or `h:mm:ss` past an hour) — the format the
-/// design shows for both track durations and the scrub bar's time labels.
-String formatPlaybackDuration(Duration? d) {
-  if (d == null) return '00:00';
-  String two(int n) => n.toString().padLeft(2, '0');
-  if (d.inHours > 0) {
-    return '${d.inHours}:${two(d.inMinutes.remainder(60))}:${two(d.inSeconds.remainder(60))}';
-  }
-  return '${two(d.inMinutes)}:${two(d.inSeconds.remainder(60))}';
-}
-
 /// The serif style used for anything that is a *name* — track titles, folder
 /// names, screen headings.
 TextStyle serifStyle({

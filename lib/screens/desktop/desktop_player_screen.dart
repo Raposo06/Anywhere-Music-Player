@@ -1,18 +1,14 @@
 import 'dart:math' as math;
 
-import 'package:cached_network_image/cached_network_image.dart';
 // `RepeatMode` collides with Flutter's own (unrelated) animation-builder
 // symbol added in 3.47 — hide it so this app's enum resolves. See
 // docs/operations.md.
 import 'package:flutter/material.dart' hide RepeatMode;
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/track.dart';
 import '../../services/audio_player_service.dart';
-import '../../services/auth_service.dart';
 import '../../services/library_scanner.dart';
-import '../../services/stream_url_resolver.dart';
 import '../../utils/now_playing_folder.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/cover_art.dart';
@@ -21,6 +17,8 @@ import '../../widgets/desktop/desktop_shortcuts.dart';
 import '../../widgets/favourite_button.dart';
 import '../../widgets/desktop/up_next_panel.dart';
 import '../../widgets/desktop/window_chrome.dart';
+import '../../widgets/scrub_bar.dart';
+import '../../widgets/upcoming_cover_precacher.dart';
 
 /// The size the cover is *requested* at — deliberately a constant, and
 /// deliberately larger than the biggest size it is ever drawn at
@@ -89,71 +87,11 @@ class DesktopPlayerScreen extends StatefulWidget {
 }
 
 class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
-  /// Track id we most recently kicked off an upcoming-cover precache for, so
-  /// repeated rebuilds for the same track don't re-fetch.
-  String? _precachedForTrackId;
+  final _coverPrecacher = UpcomingCoverPrecacher();
 
   /// Last playback error shown in a SnackBar, so the same error isn't
   /// re-shown on every rebuild while it's still the current error.
   String? _shownError;
-
-  /// How many upcoming covers to prefetch. Covers are KB, so a wide window is
-  /// cheap and means rapid skip-forward lands on art already fetched.
-  static const int _coverPrefetchAhead = 10;
-
-  /// Prefetch the covers of upcoming tracks at player size so a rapid
-  /// skip-forward lands on already-fetched art instead of an empty frame. The
-  /// immediate next is fully decoded; the rest of the window is only
-  /// downloaded to the image disk cache (no decode, so no pressure on the
-  /// bounded in-memory cache). Fire-and-forget.
-  void _precacheUpcomingCovers() {
-    final ps = context.read<AudioPlayerService>();
-    final current = ps.currentTrack;
-    if (current == null || _precachedForTrackId == current.id) return;
-    _precachedForTrackId = current.id;
-
-    final StreamUrlResolver? resolver = context.read<AuthService>().apiService;
-    final pixelSize = (_artRequestSize * MediaQuery.devicePixelRatioOf(context))
-        .round();
-
-    // Immediate next (wrap-aware): decode it so the very next skip is instant.
-    final next = ps.peekNextTrack();
-    final nextUrl = next == null
-        ? null
-        : resolver.resolveCoverUrl(next, size: pixelSize);
-    if (nextUrl != null) {
-      precacheImage(
-        CachedNetworkImageProvider(
-          nextUrl,
-          cacheKey: next!.coverCacheKey(size: pixelSize),
-        ),
-        context,
-      ).catchError((_) {
-        // Cache miss / network blip — the real fetch happens on render.
-      });
-    }
-
-    // Window ahead (queued tracks first, then play-order context): download to
-    // the disk cache so skipping several forward finds covers already fetched.
-    final window = <Track>[
-      ...ps.queue,
-      ...ps.upcomingFromContext,
-    ].take(_coverPrefetchAhead);
-    for (final track in window) {
-      final url = resolver.resolveCoverUrl(track, size: pixelSize);
-      if (url != null) {
-        _warmCoverToDisk(url, track.coverCacheKey(size: pixelSize));
-      }
-    }
-  }
-
-  Future<void> _warmCoverToDisk(String url, String? cacheKey) async {
-    try {
-      await DefaultCacheManager().downloadFile(url, key: cacheKey);
-    } catch (_) {
-      // Best-effort; the on-demand fetch covers a miss.
-    }
-  }
 
   void _openFolder(Track track) {
     if (track.folderPath.isEmpty) return;
@@ -172,7 +110,9 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
       selector: (_, ps) => ps.currentTrack,
       builder: (context, track, _) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _precacheUpcomingCovers();
+          if (mounted) {
+            _coverPrecacher.precache(context, logicalSize: _artRequestSize);
+          }
         });
         // Must be the *builder's* context, not the State's: this runs while
         // the Selector element is building, and by then this State's own
@@ -497,110 +437,55 @@ class _Details extends StatelessWidget {
 }
 
 /// The scrub bar: a slim accent track with a small round handle, elapsed and
-/// total time beneath it.
-class _ScrubBar extends StatefulWidget {
+/// total time beneath it. The drag/seek machinery lives in [ScrubBar].
+class _ScrubBar extends StatelessWidget {
   final Duration duration;
 
   const _ScrubBar({required this.duration});
 
   @override
-  State<_ScrubBar> createState() => _ScrubBarState();
-}
-
-class _ScrubBarState extends State<_ScrubBar> {
-  // While dragging, the bar and its label follow [_dragValue] (a 0..1
-  // fraction) instead of the position stream — this keeps the handle glued to
-  // the pointer and avoids stream-vs-gesture jitter. [_dragStartTrackId] is
-  // captured at drag start so the seek is discarded if the track
-  // auto-advanced mid-drag.
-  bool _isDragging = false;
-  double _dragValue = 0;
-  String? _dragStartTrackId;
-
-  void _onChangeStart(double value) {
-    setState(() {
-      _isDragging = true;
-      _dragValue = value;
-      _dragStartTrackId = context.read<AudioPlayerService>().currentTrack?.id;
-    });
-  }
-
-  void _onChangeEnd(double value) {
-    final ps = context.read<AudioPlayerService>();
-    final sameTrack = ps.currentTrack?.id == _dragStartTrackId;
-    setState(() {
-      _isDragging = false;
-      _dragStartTrackId = null;
-    });
-    if (sameTrack && widget.duration > Duration.zero) {
-      ps.seek(
-        Duration(
-          milliseconds: (value * widget.duration.inMilliseconds).round(),
-        ),
-      );
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final playerService = context.read<AudioPlayerService>();
-    final hasDuration = widget.duration > Duration.zero;
-
-    return StreamBuilder<Duration>(
-      stream: playerService.positionStream,
-      builder: (context, snapshot) {
-        final streamPosition = snapshot.data ?? Duration.zero;
-        final fraction = _isDragging
-            ? _dragValue
-            : (hasDuration
-                  ? streamPosition.inMilliseconds /
-                        widget.duration.inMilliseconds
-                  : 0.0);
-        final position = _isDragging
-            ? Duration(
-                milliseconds: (_dragValue * widget.duration.inMilliseconds)
-                    .round(),
-              )
-            : streamPosition;
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 4,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                // The design's bar runs the full width of the info column;
-                // Slider's default padding would inset it.
-                padding: EdgeInsets.zero,
-              ),
-              child: Slider(
-                value: fraction.clamp(0.0, 1.0),
-                onChanged: hasDuration
-                    ? (value) => setState(() => _dragValue = value)
-                    : null,
-                onChangeStart: hasDuration ? _onChangeStart : null,
-                onChangeEnd: hasDuration ? _onChangeEnd : null,
-              ),
+    final ps = context.read<AudioPlayerService>();
+    return ScrubBar(
+      duration: duration,
+      trackId: ps.currentTrack?.id,
+      position: ps.positionStream,
+      onSeek: ps.seek,
+      builder: (context, view) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 4,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+              // The design's bar runs the full width of the info column;
+              // Slider's default padding would inset it.
+              padding: EdgeInsets.zero,
             ),
-            const SizedBox(height: 6),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  formatPlaybackDuration(position),
-                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
-                ),
-                Text(
-                  formatPlaybackDuration(widget.duration),
-                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
-                ),
-              ],
+            child: Slider(
+              value: view.fraction,
+              onChanged: view.onChanged,
+              onChangeStart: view.onChangeStart,
+              onChangeEnd: view.onChangeEnd,
             ),
-          ],
-        );
-      },
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                formatPlaybackDuration(view.position),
+                style: const TextStyle(fontSize: 12, color: AppColors.muted),
+              ),
+              Text(
+                formatPlaybackDuration(duration),
+                style: const TextStyle(fontSize: 12, color: AppColors.muted),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

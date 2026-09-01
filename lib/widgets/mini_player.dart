@@ -5,7 +5,7 @@ import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import '../services/auth_service.dart';
 import '../services/stream_url_resolver.dart';
-import '../screens/player_screen.dart';
+import 'play_actions.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -34,11 +34,7 @@ class _MiniPlayerContent extends StatelessWidget {
     final coverUrl = resolver.resolveCoverUrl(track, size: pixelSize);
 
     return GestureDetector(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const PlayerScreen()),
-        );
-      },
+      onTap: () => openNowPlaying(context),
       child: Container(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainerHigh,
