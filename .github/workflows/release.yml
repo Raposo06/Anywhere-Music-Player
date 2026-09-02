@@ -96,7 +96,15 @@ jobs:
 
   windows:
     needs: meta
-    runs-on: windows-latest
+    # windows-latest ships VS 18 / MSVC 14.51 + a CMake strict enough to refuse
+    # smtc_windows's tarball extraction through .plugin_symlinks, and to turn
+    # permission_handler_windows's <experimental/coroutine> into a hard error.
+    # Pin to the older image; see docs/operations.md.
+    runs-on: windows-2022
+    env:
+      # permission_handler_windows still includes <experimental/coroutine>;
+      # silence the STL1011 removal assertion regardless of MSVC version.
+      _CL_: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
     steps:
       - uses: actions/checkout@v4
       - run: git config --system core.longpaths true   # docs/operations.md: MAX_PATH trap

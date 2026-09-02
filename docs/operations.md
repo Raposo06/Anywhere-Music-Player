@@ -136,6 +136,37 @@ media_kit native libraries exceed it.
 **Fix:** enable long-path support, then **restart the terminal** — the setting
 isn't picked up by an already-open shell.
 
+### CI Windows build fails on `smtc_windows` tar extraction or `permission_handler` coroutines
+
+**Symptom:** the release workflow's `windows` job fails (a local `flutter build
+windows` on the same commit is fine). One or both of:
+
+```
+CMake Error: Problem with archive_write_header(): Cannot extract through symlink
+  .../windows/flutter/ephemeral/.plugin_symlinks/smtc_windows/windows/smtc_windows-v0.1.3.tar.gz
+
+error C2338: static assertion failed: 'error STL1011: The /await compiler option,
+  <experimental/coroutine> ... are deprecated by Microsoft and will be REMOVED SOON'
+  [...permission_handler_windows_plugin.vcxproj]
+```
+
+**Cause:** `windows-latest` moved to VS 18 / MSVC 14.51 plus a CMake new enough
+that (a) libarchive refuses to extract `smtc_windows`'s bundled prebuilt tarball
+because the path runs through Flutter's `.plugin_symlinks` symlink, and (b)
+`<experimental/coroutine>`, still `#include`d by the pinned
+`permission_handler_windows`, is now a hard `static_assert` instead of a
+deprecation warning. Both are runner-toolchain drift, not a code change here.
+
+**Fix:** in `.github/workflows/release.yml` the `windows` job pins
+`runs-on: windows-2022` (older CMake + MSVC 17.x) and sets
+`env._CL_: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS` (cl.exe reads
+`_CL_` regardless of generator, so it covers the coroutine assert on any MSVC).
+
+**If `windows-2022` is later retired:** pin CMake instead — add
+`jwlawson/actions-setup-cmake` with a 3.30.x version before the Flutter step so
+it wins on `PATH` — and/or bump `smtc_windows` / `permission_handler` to versions
+that dropped the tarball-through-symlink and `<experimental/coroutine>`.
+
 ### Android: audio never starts, only on Android
 
 **Symptom:** playback works on Windows but silently fails on Android.
