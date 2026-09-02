@@ -215,6 +215,29 @@ Two traps in that one command, both of which read as failures and are not:
   `$env:JAVA_HOME` line above. `java -jar
   C:\Android\Sdk\build-tools\36.1.0\lib\apksigner.jar` works too.
 
+### Phone: the APK download sticks at 100% and never finishes
+
+**Symptom:** Brave on Android shows a full-screen "A transferir… / Downloading…"
+with `58,02 MB/58,02 MB` and a live pause/cancel, forever. Nothing is wrong with
+the file — the whole transfer already happened.
+
+**Cause:** the tab was navigated *directly* to the asset URL, so it has no
+document behind it, and Brave's download-owning tab in that state doesn't
+reliably fire the completion handler. Verified server-side that GitHub is not at
+fault: the asset serves `Content-Length: 58017378` (exactly the figure the phone
+displays), `Accept-Ranges: bytes`, no chunked or gzip encoding, correct
+`application/vnd.android.package-archive`.
+
+**Fix:** open the download link in a **new tab** (long-press → Open in new tab)
+so a real page stays as the owner. Downloading from the foxcore.dev cards does
+this naturally, which is the easiest route on a phone. Otherwise the file is
+often already complete in `/storage/emulated/0/Download` — check there before
+retrying, and just install it. `adb install` from a desktop sidesteps the
+browser entirely.
+
+**Not** Play Protect, and not the VPN — both are the obvious suspects for a
+stalled sideload and neither was it here.
+
 ### Android: audio never starts, only on Android
 
 **Symptom:** playback works on Windows but silently fails on Android.
