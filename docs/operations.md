@@ -171,6 +171,33 @@ deprecation warning. Both are runner-toolchain drift, not a code change here.
 it wins on `PATH` — and/or bump `smtc_windows` / `permission_handler` to versions
 that dropped the tarball-through-symlink and `<experimental/coroutine>`.
 
+### Checking which key an APK is signed with
+
+Worth doing after any signing change, and before the first release of a new key:
+`android/app/build.gradle` **falls back to debug signing when
+`android/key.properties` is absent**, and that path builds green, so a missing
+key looks exactly like success until users can't take an update.
+
+```powershell
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio1\jbr"
+& "C:\Android\Sdk\build-tools\36.1.0\apksigner.bat" verify --print-certs app.apk
+```
+
+`Signer #1 certificate DN:` is the answer — `CN=Android Debug, O=Android, C=US`
+means it fell back to the debug key.
+
+Two traps in that one command, both of which read as failures and are not:
+
+- **`keytool -printcert -jarfile` reports "Not a signed jar file"** on a
+  perfectly good APK. keytool only understands v1 (JAR) signing; with
+  `minSdk 21+` AGP signs v2/v3 and skips v1 entirely. Use `apksigner`, which
+  reads all schemes — not keytool.
+- **`apksigner.bat` fails with "JAVA_HOME is not set and no 'java' command
+  could be found"**. This machine has no JDK on `PATH`; the only one is the JBR
+  bundled with Android Studio (at `Android Studio1`, note the `1`). Hence the
+  `$env:JAVA_HOME` line above. `java -jar
+  C:\Android\Sdk\build-tools\36.1.0\lib\apksigner.jar` works too.
+
 ### Android: audio never starts, only on Android
 
 **Symptom:** playback works on Windows but silently fails on Android.

@@ -198,8 +198,12 @@ Download the `android` artifact, unzip, and read the certificate with
 **`apksigner`** (path verified on this machine 2026-09-02):
 
 ```powershell
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio1\jbr"
 & "C:\Android\Sdk\build-tools\36.1.0\apksigner.bat" verify --print-certs AnywhereMusicPlayer-0.0.0-dev.apk
 ```
+
+(`apksigner.bat` shells out to `java`; there is no JDK on this machine's `PATH`,
+so `JAVA_HOME` has to point at Android Studio's bundled JBR. Session-scoped.)
 
 | `Signer #1 certificate DN:` | Meaning |
 |---|---|
