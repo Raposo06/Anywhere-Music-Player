@@ -215,6 +215,29 @@ Two traps in that one command, both of which read as failures and are not:
   `$env:JAVA_HOME` line above. `java -jar
   C:\Android\Sdk\build-tools\36.1.0\lib\apksigner.jar` works too.
 
+### Windows: SmartScreen blocks the installer, "Editor desconhecido"
+
+**Symptom:** running `AnywhereMusicPlayer-<version>-setup.exe` raises a red
+"O Windows protegeu o seu PC" / "Windows protected your PC" dialog naming an
+unrecognised publisher.
+
+**This is expected, and it is not a finding about the binary.** Nothing in the
+pipeline Authenticode-signs the `.exe` — the release signing we do set up is the
+Android upload keystore, which is Android-only and unrelated. SmartScreen weighs
+two things and we fail both by construction: a known-publisher signature, and
+per-file-hash reputation, which a freshly published asset cannot have.
+
+**Fix:** *More info* → *Run anyway* (**Executar mesmo assim**). Correct answer
+for a binary built from your own tag by your own workflow.
+
+**Removing it properly** means a code-signing certificate, and since mid-2023 the
+private key has to sit on FIPS-140-2 L2 hardware (USB token or cloud HSM), which
+is the part that makes it awkward rather than merely paid. An OV certificate
+still shows the prompt until each release accrues reputation; only EV grants
+immediate trust. Azure Trusted Signing is the cheap path if you can satisfy its
+business-identity check. Deliberately not done — see [decisions.md](decisions.md),
+2026-09-02 "The Windows installer is not code-signed".
+
 ### Phone: the APK download sticks at 100% and never finishes
 
 **Symptom:** Brave on Android shows a full-screen "A transferir… / Downloading…"

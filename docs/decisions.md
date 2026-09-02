@@ -14,6 +14,29 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## The Windows installer is not code-signed (2026-09-02)
+
+**Decided.** No Authenticode signing in the release pipeline. Users click through
+Defender SmartScreen's "unrecognised publisher" dialog. This is a deliberate
+non-purchase, not an oversight — do not read the missing signing step in
+`.github/workflows/release.yml` as a gap to fill.
+
+**Why.** A publicly-trusted code-signing certificate has required its private key
+on FIPS-140-2 L2 hardware (USB token or cloud HSM) since mid-2023, so it is a
+recurring subscription plus key custody, not a one-off file. And it would not
+even remove the prompt: SmartScreen reputation is per *file hash*, so an OV
+certificate leaves every new tag warning until that specific asset accrues
+downloads — a threshold one user will never cross. Only EV buys immediate trust.
+Against that, the audience is one person installing a binary built from their own
+tag, for whom the dialog is a single extra click.
+
+**What would reverse it.** Distributing to people who did not build it — at which
+point "unknown publisher" stops being a formality and starts costing trust. Go
+EV, or Azure Trusted Signing if its business-identity check can be satisfied; an
+OV certificate is the worst of both, paying the money and keeping the dialog.
+
+---
+
 ## Linux releases drop the `.tar.gz` — Arch package only (2026-09-02)
 
 **Decided.** The `linux` job no longer builds
