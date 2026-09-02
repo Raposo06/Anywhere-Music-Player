@@ -202,16 +202,29 @@ jobs:
           tar -C build/linux/x64/release/bundle -czf \
             AnywhereMusicPlayer-${{ needs.meta.outputs.version }}-linux-x64.tar.gz .
 
-      - name: AppImage (best-effort — see script header)
-        continue-on-error: true
-        run: bash scripts/package-linux-appimage.sh ${{ needs.meta.outputs.version }}
+      # Arch package, built by wrapping the bundle above in an Arch container.
+      # No Flutter needed inside it — PKGBUILD.bin has no build() step.
+      - name: Arch package
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          docker run --rm -e VERSION -v "$PWD:/w" -w /w archlinux:base-devel bash -c '
+            set -eu
+            useradd -m builder
+            sed -i "s/^pkgver=.*/pkgver=$VERSION/" packaging/arch/PKGBUILD.bin
+            chown -R builder /w
+            su builder -c "cd /w/packaging/arch && makepkg -p PKGBUILD.bin -f --nodeps"
+          '
+          sudo chown -R "$(id -u):$(id -g)" packaging/arch
+          mv packaging/arch/*.pkg.tar.zst \
+            "AnywhereMusicPlayer-${VERSION}-x86_64.pkg.tar.zst"
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: |
             AnywhereMusicPlayer-*-linux-x64.tar.gz
-            AnywhereMusicPlayer-*-x86_64.AppImage
+            AnywhereMusicPlayer-*-x86_64.pkg.tar.zst
           if-no-files-found: error
 
   release:

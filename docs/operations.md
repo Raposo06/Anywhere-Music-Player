@@ -50,10 +50,26 @@ GitHub Release on any `v*` tag:
 git tag v1.2.0 && git push origin v1.2.0
 ```
 
-Assets: `.apk` (phone + TV, one APK), `-setup.exe`, `-linux-x64.tar.gz`, an
-`.AppImage` when `scripts/package-linux-appimage.sh` succeeds (best-effort —
-see that script's header), and `SHA256SUMS`. `versionCode` is the workflow run
-number, so it always increases.
+Assets: `.apk` (phone + TV, one APK), `-setup.exe`, `-linux-x64.tar.gz`,
+`-x86_64.pkg.tar.zst` (Arch package) and `SHA256SUMS`. `versionCode` is the
+workflow run number, so it always increases.
+
+**Installing on Arch/Omarchy** — download the `.pkg.tar.zst` from the release
+(or the foxcore.dev card) and:
+
+```bash
+sudo pacman -U anywhere-music-player-*.pkg.tar.zst
+```
+
+That gets the `/usr/bin/anywhere-music-player` symlink, desktop entry and icon,
+with `sudo pacman -R anywhere-music-player` to remove — same layout as building
+locally with `packaging/arch/PKGBUILD`, but with nothing to compile. `pacman`
+pulls `gtk3`, `mpv` and `libsecret` as normal dependencies.
+
+The CI package is built by `packaging/arch/PKGBUILD.bin` inside an
+`archlinux:base-devel` container, wrapping the bundle the `linux` job already
+compiled on Ubuntu — see that file's header for why there are two PKGBUILDs and
+why an Ubuntu-built binary is safe to install on Arch.
 
 A `test` job (`flutter analyze` + `flutter test`) gates all three build jobs, so
 a tag whose suite is red fails before anything is published. It is the only

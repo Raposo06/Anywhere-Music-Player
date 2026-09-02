@@ -1,0 +1,62 @@
+# Maintainer: David Raposo <davidox06@gmail.com>
+#
+# Binary-packaging variant of ./PKGBUILD, used by CI.
+#
+# The difference is that this one has **no build() function**: it packages a
+# Flutter Linux bundle that already exists at build/linux/x64/release/bundle,
+# rather than invoking Flutter itself. That is what lets the release workflow
+# build once on ubuntu-latest and then wrap the result in an Arch package,
+# without installing the Flutter SDK into an Arch container.
+#
+# `pkgver` is a placeholder — CI rewrites it from the git tag before calling
+# makepkg, so the package version matches the release like every other asset
+# (see docs/decisions.md, 2026-09-01). That is also why there is no pkgver()
+# function here: ./PKGBUILD derives it from pubspec.yaml because a local
+# makepkg has no tag to read, but a tagged release does, and the tag wins.
+#
+# Cross-distro note: the bundle is compiled on Ubuntu and installed on Arch.
+# That direction is safe — glibc is backward compatible, so a binary linked
+# against an older glibc runs against a newer one. The reverse would not be.
+#
+# Local use:
+#   flutter build linux --release
+#   cd packaging/arch && makepkg -p PKGBUILD.bin -f --nodeps
+#   sudo pacman -U anywhere-music-player-*.pkg.tar.zst
+
+pkgname=anywhere-music-player
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="Self-hosted Navidrome (Subsonic API) music client"
+arch=('x86_64')
+url="https://foxcore.dev/"
+license=('custom:non-commercial')
+# Runtime only. mpv supplies the libmpv that media_kit dlopen()s; libsecret
+# backs flutter_secure_storage. Nothing is bundled — pacman resolves them,
+# which is the whole reason this beats an AppImage here.
+depends=('gtk3' 'mpv' 'libsecret')
+source=()
+sha256sums=()
+options=(!strip !debug)
+
+_repo_root="$startdir/../.."
+
+package() {
+  cd "$_repo_root"
+  local bundle="build/linux/x64/release/bundle"
+
+  [ -d "$bundle" ] || {
+    echo "no bundle at $bundle — run 'flutter build linux --release' first" >&2
+    return 1
+  }
+
+  install -d "$pkgdir/usr/lib/$pkgname"
+  cp -r "$bundle"/. "$pkgdir/usr/lib/$pkgname/"
+
+  install -d "$pkgdir/usr/bin"
+  ln -s "/usr/lib/$pkgname/anywhere_music_player" "$pkgdir/usr/bin/$pkgname"
+
+  install -Dm644 "packaging/arch/$pkgname.desktop" \
+    "$pkgdir/usr/share/applications/$pkgname.desktop"
+  install -Dm644 "assets/icons/psx.png" \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/$pkgname.png"
+}

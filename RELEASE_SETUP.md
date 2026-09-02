@@ -53,8 +53,7 @@ unchecked**. This builds Windows + Linux, publishes nothing, creates no tag.
       red the build jobs never start. Check locally first with `flutter test`
 - [ ] `windows` green — `flutter build windows`, then Inno Setup 6.7.3 (pinned by
       SHA256) compiles `installer.iss` → `-setup.exe` artifact
-- [ ] `linux` green — `.tar.gz` artifact produced. The AppImage step is
-      `continue-on-error`; amber there is fine
+- [ ] `linux` green — `.tar.gz` and `.pkg.tar.zst` (Arch package) artifacts
 - [ ] `android` shows as **skipped** (not failed)
 - [ ] download both artifacts from the run summary, confirm the installer runs
       and the tarball extracts + launches
@@ -231,7 +230,7 @@ git push origin v1.1.0
 - [ ] all build jobs green
 - [ ] `release` job green
 - [ ] `github.com/Raposo06/Anywhere-Music-Player/releases` shows `v1.1.0` with
-      `.apk`, `-setup.exe`, `-linux-x64.tar.gz`, maybe `.AppImage`, `SHA256SUMS`
+      `.apk`, `-setup.exe`, `-linux-x64.tar.gz`, `-x86_64.pkg.tar.zst`, `SHA256SUMS`
 - [ ] APK installs + runs on the phone
 - [ ] Windows installer runs (click through SmartScreen)
 
@@ -259,7 +258,7 @@ GitHub API client-side, so future tags need no redeploy.
 | `android` fails on an AGP/Kotlin version floor | `FLUTTER_VERSION` in the workflow drifted from what the tree builds against — see docs/operations.md "three version floors". Pin to what `flutter --version` reports locally |
 | `windows` fails at "Build installer" | `installer.iss` compile error, or the pinned Inno Setup SHA256 no longer matches (a new 6.x point release) — bump URL + hash per the comment in the workflow step |
 | `windows` fails at MAX_PATH | the `core.longpaths` step should cover it; if not, the runner image changed |
-| `linux` AppImage step amber/red | expected — `continue-on-error`. The `.tar.gz` is the real artifact. Fix the AppImage by iterating `scripts/package-linux-appimage.sh` on the Omarchy box, not in CI |
+| `linux` "Arch package" step fails | `makepkg` refuses to run as root, hence the `builder` user in the container step. Reproduce on Omarchy with `flutter build linux --release && cd packaging/arch && makepkg -p PKGBUILD.bin -f --nodeps` |
 | `release` skipped | you used "Run workflow", not a tag push — `publish` is only `true` on `v*` tags |
 | dispatch run and `android` skipped | expected unless you ticked **include_android** |
 
@@ -270,7 +269,7 @@ GitHub API client-side, so future tags need no redeploy.
 | File | Role |
 |---|---|
 | `.github/workflows/release.yml` | the pipeline |
-| `scripts/package-linux-appimage.sh` | AppImage packaging (best-effort) |
+| `packaging/arch/PKGBUILD.bin` | Arch package built in CI from the prebuilt bundle |
 | `android/app/build.gradle` | `signingConfigs.release` from `key.properties`, debug fallback |
 | `installer.iss` | `#ifndef MyAppVersion` so CI sets it via `/DMyAppVersion=` |
 | `android/key.properties` | **gitignored**, local only — CI rebuilds from secrets |

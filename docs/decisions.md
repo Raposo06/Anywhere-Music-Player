@@ -146,6 +146,40 @@ return to per-screen copies.
 
 ---
 
+## Linux ships an Arch package, not an AppImage (2026-09-02)
+
+**Decided.** The release workflow builds a `.pkg.tar.zst` via
+`packaging/arch/PKGBUILD.bin` in an `archlinux:base-devel` container, alongside
+the plain `.tar.gz`. The AppImage attempt and
+`scripts/package-linux-appimage.sh` are deleted. Installing on Arch/Omarchy is
+`sudo pacman -U anywhere-music-player-*.pkg.tar.zst`.
+
+**Why.** The AppImage never worked — it shipped as `continue-on-error` and
+silently produced nothing on `v1.1.0`. The reason it was hard is the reason the
+package is easy: media_kit `dlopen()`s libmpv and `flutter_secure_storage`
+needs a Secret Service daemon, so an AppImage has to vendor libmpv's whole
+ffmpeg tree and *still* can't supply a keyring. A pacman package declares
+`depends=('gtk3' 'mpv' 'libsecret')` and the distro solves all of it. It also
+gives what the AppImage never would: a desktop entry, an icon, a `/usr/bin`
+symlink and `pacman -R` to uninstall.
+
+**Why a second PKGBUILD rather than reusing the existing one.**
+`packaging/arch/PKGBUILD` runs `flutter build linux` in `build()`, which would
+mean installing the Flutter SDK into an Arch container. `PKGBUILD.bin` drops
+`build()` and packages the bundle the `linux` job already compiled on Ubuntu.
+Ubuntu-built → Arch-installed is safe in that direction only: glibc is
+backward compatible, so a binary linked against an older glibc runs against a
+newer one. The two files also differ on version — the local one derives
+`pkgver` from `pubspec.yaml` because a local `makepkg` has no tag to read; the
+CI one has it rewritten from the git tag, consistent with every other asset.
+
+**What would reverse it.** A non-Arch Linux user actually needing an install
+(then it's a `.deb`/Flatpak, not a revived AppImage — Flatpak solves the
+keyring and portal story properly, which is where AppImage failed). The
+`.tar.gz` stays either way as the distro-agnostic fallback.
+
+---
+
 ## Releases are built in CI, and the git tag is the version (2026-09-01)
 
 **Decided.** `.github/workflows/release.yml` builds Android / Windows / Linux on
