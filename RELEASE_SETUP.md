@@ -194,16 +194,22 @@ A green job is **not** proof. `android/app/build.gradle` falls back to debug
 signing when `key.properties` is missing, and that path builds fine — so a
 missing secret looks identical to success until users can't take an update.
 
-Download the `android` artifact, unzip, and read the certificate:
+Download the `android` artifact, unzip, and read the certificate with
+**`apksigner`** (path verified on this machine 2026-09-02):
 
 ```powershell
-& "C:\Program Files\Android\Android Studio1\jbr\bin\keytool.exe" -printcert -jarfile AnywhereMusicPlayer-0.0.0-dev.apk
+& "C:\Android\Sdk\build-tools\36.1.0\apksigner.bat" verify --print-certs AnywhereMusicPlayer-0.0.0-dev.apk
 ```
 
-| `Owner:` line | Meaning |
+| `Signer #1 certificate DN:` | Meaning |
 |---|---|
 | the DN you typed in B2 (e.g. `CN=Anywhere Music Player`) | ✅ upload-signed, proceed |
 | `CN=Android Debug, O=Android, C=US` | ❌ secrets never reached the build — fix before tagging |
+
+⚠️ **Don't use `keytool -printcert -jarfile` here.** It only reads the old v1
+(JAR) signature scheme. With `minSdk 21+` AGP signs v2/v3 and skips v1, so
+keytool reports **"Not a signed jar file"** on a perfectly well-signed APK —
+a false alarm, not a finding.
 
 - [ ] Certificate shows the upload key, not the Android debug key
 
