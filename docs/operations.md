@@ -53,8 +53,13 @@ git tag v1.2.0 && git push origin v1.2.0
 Assets: `.apk` (phone + TV, one APK), `-setup.exe`, `-linux-x64.tar.gz`, an
 `.AppImage` when `scripts/package-linux-appimage.sh` succeeds (best-effort —
 see that script's header), and `SHA256SUMS`. `versionCode` is the workflow run
-number, so it always increases. `workflow_dispatch` runs the same builds without
-publishing, for a smoke test.
+number, so it always increases.
+
+`workflow_dispatch` (Actions → Release → Run workflow) is a smoke test —
+publishes nothing, tags nothing. It builds **Windows + Linux only**, which need
+just the `API_BASE_URL` variable; tick **include_android** to also build the APK
+once the keystore secrets exist. This is the intended order: dry-run the
+credential-free platforms first, then set up signing.
 
 **One-time setup — repo variable:**
 

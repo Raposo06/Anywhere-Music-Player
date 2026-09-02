@@ -6,8 +6,9 @@ name: Release
 #
 #   git tag v1.2.0 && git push origin v1.2.0
 #
-# workflow_dispatch builds the same artifacts for a smoke test but does NOT
-# publish (no tag, so nothing to attach a release to).
+# workflow_dispatch builds Windows + Linux only, for a smoke test — no publish,
+# no tag. Those two need just the API_BASE_URL variable. Tick "include_android"
+# to also build the APK, once the keystore secrets are set up.
 
 on:
   push:
@@ -17,6 +18,10 @@ on:
       version:
         description: Version string for a manual test build
         default: 0.0.0-dev
+      include_android:
+        description: Also build Android (needs the keystore secrets)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -50,6 +55,7 @@ jobs:
 
   android:
     needs: meta
+    if: github.event_name == 'push' || inputs.include_android
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
