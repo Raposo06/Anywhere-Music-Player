@@ -212,7 +212,11 @@ jobs:
             set -eu
             useradd -m builder
             sed -i "s/^pkgver=.*/pkgver=$VERSION/" packaging/arch/PKGBUILD.bin
-            chown -R builder /w
+            # Only $startdir needs to be writable by the build user — makepkg
+            # keeps src/, pkg/ and the output package there, and reads the rest
+            # of the tree read-only. Chowning all of /w would hand the repo root
+            # to the container uid and break the mv below.
+            chown -R builder /w/packaging/arch
             su builder -c "cd /w/packaging/arch && makepkg -p PKGBUILD.bin -f --nodeps"
           '
           sudo chown -R "$(id -u):$(id -g)" packaging/arch
