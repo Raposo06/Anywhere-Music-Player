@@ -68,20 +68,24 @@ this is green.
 
 ## B1 — Find keytool
 
-Ships with any JDK. Try in order:
+**Already located on this machine** (verified 2026-09-02) — note the `Studio1`,
+not `Studio`:
 
-- `keytool` (if a JDK is on PATH)
-- `& "C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe"` (Android Studio's JBR)
-- `flutter doctor -v` → "Java binary at:" path → `keytool.exe` sits next to `java.exe`
+```
+C:\Program Files\Android\Android Studio1\jbr\bin\keytool.exe
+```
 
-- [ ] `keytool` resolved
+It is **not** on `PATH`, so it must be called by full path. On another machine:
+`flutter doctor -v` → "Java binary at:" → `keytool.exe` sits next to `java.exe`.
+
+- [x] `keytool` resolved
 
 ## B2 — Generate the upload keystore
 
-From the repo root. Replace `<KEYTOOL>`:
+From the repo root, in PowerShell:
 
 ```powershell
-<KEYTOOL> -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+& "C:\Program Files\Android\Android Studio1\jbr\bin\keytool.exe" -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
 ```
 
 Prompts:
@@ -105,15 +109,21 @@ is fine.
 
 ## B3 — Confirm it's gitignored
 
+**Already verified 2026-09-02** — `git check-ignore -v` resolves both paths to
+explicit rules, and nothing matching `*.jks` / `key.properties` is tracked:
+
+```
+android/.gitignore:14:**/*.jks        android/app/upload-keystore.jks
+android/.gitignore:12:key.properties  android/key.properties
+```
+
+Re-check after B2 if you want belt and braces:
+
 ```powershell
 git status --porcelain android/
 ```
 
-**Nothing** should appear for `upload-keystore.jks` or `key.properties`
-(`android/.gitignore` covers `**/*.jks`, `key.properties`). If either shows, stop
-and fix `.gitignore` first.
-
-- [ ] Both confirmed ignored
+- [x] Ignore rules confirmed (nothing to do unless `git status` surprises you)
 
 ## B4 — Back up the keystore (now, not later)
 
