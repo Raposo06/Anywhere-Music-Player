@@ -185,9 +185,27 @@ Settings → Secrets and variables → **Actions** → **Secrets** tab → **New
 
 **Actions** → **Release** → **Run workflow**, this time **tick include_android**.
 
-- [ ] `android` green — APK built and **signed with the upload key** (check the
-      job log for `signingConfig` = release, not debug)
+- [ ] `android` green
 - [ ] `windows` + `linux` still green
+
+### Verify the APK is actually upload-signed
+
+A green job is **not** proof. `android/app/build.gradle` falls back to debug
+signing when `key.properties` is missing, and that path builds fine — so a
+missing secret looks identical to success until users can't take an update.
+
+Download the `android` artifact, unzip, and read the certificate:
+
+```powershell
+& "C:\Program Files\Android\Android Studio1\jbr\bin\keytool.exe" -printcert -jarfile AnywhereMusicPlayer-0.0.0-dev.apk
+```
+
+| `Owner:` line | Meaning |
+|---|---|
+| the DN you typed in B2 (e.g. `CN=Anywhere Music Player`) | ✅ upload-signed, proceed |
+| `CN=Android Debug, O=Android, C=US` | ❌ secrets never reached the build — fix before tagging |
+
+- [ ] Certificate shows the upload key, not the Android debug key
 
 ---
 
