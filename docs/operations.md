@@ -55,6 +55,10 @@ Assets: `.apk` (phone + TV, one APK), `-setup.exe`, `-linux-x64.tar.gz`, an
 see that script's header), and `SHA256SUMS`. `versionCode` is the workflow run
 number, so it always increases.
 
+A `test` job (`flutter analyze` + `flutter test`) gates all three build jobs, so
+a tag whose suite is red fails before anything is published. It is the only
+place either command runs in CI.
+
 `workflow_dispatch` (Actions → Release → Run workflow) is a smoke test —
 publishes nothing, tags nothing. It builds **Windows + Linux only**, which need
 just the `API_BASE_URL` variable; tick **include_android** to also build the APK

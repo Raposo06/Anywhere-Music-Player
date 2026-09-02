@@ -49,6 +49,8 @@ GitHub → **Actions** → **Release** → **Run workflow**. Leave **include_and
 unchecked**. This builds Windows + Linux, publishes nothing, creates no tag.
 
 - [ ] `meta` green (proves the variable is set)
+- [ ] `test` green — `flutter analyze` + `flutter test` gate every build; if it's
+      red the build jobs never start. Check locally first with `flutter test`
 - [ ] `windows` green — `flutter build windows`, then Inno Setup 6.7.3 (pinned by
       SHA256) compiles `installer.iss` → `-setup.exe` artifact
 - [ ] `linux` green — `.tar.gz` artifact produced. The AppImage step is
@@ -91,8 +93,15 @@ Prompts:
 | Name / org / etc. | anything (name = `Anywhere Music Player`, rest `.`) — not verified |
 | Enter key password for `<upload>` | **RETURN** to reuse the keystore password (simplest), or set + save a separate one |
 
+⚠️ **Avoid `\` in the password.** CI writes it into `android/key.properties`, and
+Java's `.properties` format treats a backslash as an escape character — it would
+be silently swallowed and signing would fail with a wrong-password error. `$`,
+backticks and spaces are safe (the workflow passes secrets through `env` and
+`printf`, so the shell never re-expands them). Long + alphanumeric + `!@#%^&*-_`
+is fine.
+
 - [ ] `android/app/upload-keystore.jks` created
-- [ ] Password(s) in Vaultwarden
+- [ ] Password(s) in Vaultwarden, no backslash
 
 ## B3 — Confirm it's gitignored
 
