@@ -50,9 +50,10 @@ GitHub Release on any `v*` tag:
 git tag v1.2.0 && git push origin v1.2.0
 ```
 
-Assets: `.apk` (phone + TV, one APK), `-setup.exe`, `-linux-x64.tar.gz`,
-`-x86_64.pkg.tar.zst` (Arch package) and `SHA256SUMS`. `versionCode` is the
-workflow run number, so it always increases.
+Assets: `.apk` (phone + TV, one APK), `-setup.exe`, `-x86_64.pkg.tar.zst` (Arch
+package) and `SHA256SUMS`. Linux ships **only** the Arch package — see
+[decisions.md](decisions.md), 2026-09-02. `versionCode` is the workflow run
+number, so it always increases.
 
 **Installing on Arch/Omarchy** — download the `.pkg.tar.zst` from the release
 (or the foxcore.dev card) and:

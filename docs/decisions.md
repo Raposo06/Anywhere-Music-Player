@@ -14,6 +14,32 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Linux releases drop the `.tar.gz` — Arch package only (2026-09-02)
+
+**Decided.** The `linux` job no longer builds
+`AnywhereMusicPlayer-<version>-linux-x64.tar.gz`; the only Linux release asset is
+the `.pkg.tar.zst`. Supersedes the closing line of **2026-09-02 — Linux ships an
+Arch package, not an AppImage**, which kept the tarball "as the distro-agnostic
+fallback".
+
+**Why.** There is no non-Arch Linux user. The only Linux target is Omarchy, which
+takes the pacman package — so the tarball was an asset nobody downloads, sitting
+next to the one they do, on a page whose whole point is one obvious button per
+platform. It also can't be installed, only extracted, so it is the *worse* of the
+two even for the Arch user who finds it first.
+
+**What would reverse it.** A non-Arch Linux install actually being needed. The
+tarball is two lines (`tar -C build/linux/x64/release/bundle -czf …`) and is in
+git history, but the better answer at that point is still a Flatpak or `.deb`,
+per the entry below — a raw bundle with an undeclared libmpv dependency is not
+much of a distribution channel.
+
+**Note.** This does not touch how Linux is *built*: the Arch package is made from
+`build/linux/x64/release/bundle` directly by `packaging/arch/PKGBUILD.bin`, never
+from the tarball, so nothing else in the job depends on it.
+
+---
+
 ## The standalone All Tracks screens are deleted (2026-09-01)
 
 **Decided.** `screens/all_tracks_screen.dart`, `screens/desktop/desktop_all_tracks_screen.dart`
@@ -147,6 +173,10 @@ return to per-screen copies.
 ---
 
 ## Linux ships an Arch package, not an AppImage (2026-09-02)
+
+> **Partly superseded** by *Linux releases drop the `.tar.gz` — Arch package
+> only* (2026-09-02). The AppImage reasoning below stands; the `.tar.gz` no
+> longer ships.
 
 **Decided.** The release workflow builds a `.pkg.tar.zst` via
 `packaging/arch/PKGBUILD.bin` in an `archlinux:base-devel` container, alongside

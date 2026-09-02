@@ -114,7 +114,7 @@ jobs:
           --build-number=${{ needs.meta.outputs.build_number }}
 
       - run: mv build/app/outputs/flutter-apk/app-release.apk AnywhereMusicPlayer-${{ needs.meta.outputs.version }}.apk
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: android
           path: AnywhereMusicPlayer-*.apk
@@ -167,7 +167,7 @@ jobs:
           installer.iss
 
       - run: Move-Item Output\AnywhereMusicPlayer_Setup.exe AnywhereMusicPlayer-${{ needs.meta.outputs.version }}-setup.exe
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: AnywhereMusicPlayer-*-setup.exe
@@ -197,11 +197,6 @@ jobs:
           --build-name=${{ needs.meta.outputs.version }}
           --build-number=${{ needs.meta.outputs.build_number }}
 
-      - name: Tarball
-        run: |
-          tar -C build/linux/x64/release/bundle -czf \
-            AnywhereMusicPlayer-${{ needs.meta.outputs.version }}-linux-x64.tar.gz .
-
       # Arch package, built by wrapping the bundle above in an Arch container.
       # No Flutter needed inside it — PKGBUILD.bin has no build() step.
       - name: Arch package
@@ -223,12 +218,10 @@ jobs:
           mv packaging/arch/*.pkg.tar.zst \
             "AnywhereMusicPlayer-${VERSION}-x86_64.pkg.tar.zst"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
-          path: |
-            AnywhereMusicPlayer-*-linux-x64.tar.gz
-            AnywhereMusicPlayer-*-x86_64.pkg.tar.zst
+          path: AnywhereMusicPlayer-*-x86_64.pkg.tar.zst
           if-no-files-found: error
 
   release:
@@ -236,11 +229,11 @@ jobs:
     if: needs.meta.outputs.publish == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with: { path: dist, merge-multiple: true }
       - name: Checksums
         run: cd dist && sha256sum AnywhereMusicPlayer-* > SHA256SUMS
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}

@@ -53,10 +53,10 @@ unchecked**. This builds Windows + Linux, publishes nothing, creates no tag.
       red the build jobs never start. Check locally first with `flutter test`
 - [ ] `windows` green — `flutter build windows`, then Inno Setup 6.7.3 (pinned by
       SHA256) compiles `installer.iss` → `-setup.exe` artifact
-- [ ] `linux` green — `.tar.gz` and `.pkg.tar.zst` (Arch package) artifacts
+- [ ] `linux` green — `.pkg.tar.zst` (Arch package) artifact
 - [ ] `android` shows as **skipped** (not failed)
 - [ ] download both artifacts from the run summary, confirm the installer runs
-      and the tarball extracts + launches
+      and the package installs + launches
 
 If a job fails, see Troubleshooting, fix, push, re-run. Don't start Phase B until
 this is green.
@@ -230,7 +230,7 @@ git push origin v1.1.0
 - [ ] all build jobs green
 - [ ] `release` job green
 - [ ] `github.com/Raposo06/Anywhere-Music-Player/releases` shows `v1.1.0` with
-      `.apk`, `-setup.exe`, `-linux-x64.tar.gz`, `-x86_64.pkg.tar.zst`, `SHA256SUMS`
+      `.apk`, `-setup.exe`, `-x86_64.pkg.tar.zst`, `SHA256SUMS`
 - [ ] APK installs + runs on the phone
 - [ ] Windows installer runs (click through SmartScreen)
 

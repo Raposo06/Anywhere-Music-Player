@@ -66,7 +66,7 @@ no backend of its own.
 | Android TV | Shipped — D-pad UI, `LEANBACK_LAUNCHER` |
 | Windows | Shipped — Inno Setup installer (`installer.iss`) |
 | iOS | Scaffolded (`ios/`), not distributed — needs an Apple Developer account, and iOS has no download-page path regardless |
-| Linux | Shipped — Arch package (`pacman -U`) + `.tar.gz`. Needs the system's libmpv, see [operations](operations.md) |
+| Linux | Shipped — Arch package only (`pacman -U`). Needs the system's libmpv, see [operations](operations.md) |
 | macOS | Scaffolded by Flutter, not built or distributed |
 | Web | **Not supported** — there is no `web/` directory |
 
