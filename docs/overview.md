@@ -83,7 +83,7 @@ on foxcore.dev pointing at the latest — see [operations](operations.md) and
 
 | Layer | Tech | Notes |
 |---|---|---|
-| App | **Flutter** | SDK `>=3.8.0 <4.0.0`; version `1.1.0+2` |
+| App | **Flutter** | SDK `>=3.8.0 <4.0.0`; version `1.0.0+2` |
 | Audio | **just_audio** | `just_audio_media_kit` (MPV) on Windows/Linux — see [decisions](decisions.md) |
 | Background playback | **audio_service** | Android notification + lock screen controls |
 | Windows media keys | **smtc_windows** | System Media Transport Controls |

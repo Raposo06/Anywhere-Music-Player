@@ -5,7 +5,7 @@
 #define MyAppName "Anywhere Music Player"
 ; CI overrides this with the git tag: ISCC /DMyAppVersion=1.2.0 installer.iss
 #ifndef MyAppVersion
-  #define MyAppVersion "1.3"
+  #define MyAppVersion "1.0.0"
 #endif
 #define MyAppPublisher "FoxCore"
 #define MyAppURL "https://foxcore.dev/"
