@@ -435,7 +435,7 @@ class AudioPlayerService with ChangeNotifier {
         }),
       );
       _presence.show(track);
-      // Same moment we tell the OS, tell the server — this drives Navidrome's
+      // Same moment we tell the OS, tell the server — this drives the server's
       // "now playing" panel. Re-sent on drop recovery, which is fine: it is a
       // heartbeat, not a play count.
       _report('now-playing', () => _reporter.nowPlaying(track.id));

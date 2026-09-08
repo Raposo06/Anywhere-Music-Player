@@ -12,24 +12,33 @@ Track _track(String folderPath) => Track(
 
 void main() {
   group('nowPlayingFolderPath', () {
-    test('drops the top-level category segment', () {
+    test('shows the full path, including the top-level category', () {
       expect(
-        nowPlayingFolderPath(_track(
-          'SOUNDTRACKS/MOVIES & SERIES/Harry Potter/Philosophers Stone',
-        )),
-        'MOVIES & SERIES/Harry Potter/Philosophers Stone',
+        nowPlayingFolderPath(
+          _track('ANIMES & ANIMATIONS/Bleach/Bleach Original Soundtrack 1'),
+        ),
+        'ANIMES & ANIMATIONS/Bleach/Bleach Original Soundtrack 1',
       );
     });
 
-    test('drops the first segment of a tag-based path too', () {
+    test('keeps every segment of a deep path', () {
       expect(
-        nowPlayingFolderPath(_track('John Williams/Philosophers Stone')),
-        'Philosophers Stone',
+        nowPlayingFolderPath(
+          _track(
+            'ANIMES & ANIMATIONS/Dragon Ball/Dragon Ball Z BGM Collection/Vol. 01',
+          ),
+        ),
+        'ANIMES & ANIMATIONS/Dragon Ball/Dragon Ball Z BGM Collection/Vol. 01',
       );
     });
 
-    test('is empty when only the top-level segment exists', () {
-      expect(nowPlayingFolderPath(_track('SOUNDTRACKS')), '');
+    test('a single-segment path still shows, rather than blanking the line', () {
+      // Regression: the old drop-the-first-segment rule emptied this, hiding
+      // the folder line for every track sitting directly in a category folder.
+      expect(
+        nowPlayingFolderPath(_track('MIXES & COMPILATIONS')),
+        'MIXES & COMPILATIONS',
+      );
     });
 
     test('is empty for a track with no folder', () {

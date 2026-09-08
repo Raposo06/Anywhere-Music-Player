@@ -1,9 +1,11 @@
 # Anywhere Music Player
 
-> **Self-hosted, cross-platform music streaming powered by Navidrome.**
-> *Write Once (Flutter), Host Anywhere (Navidrome), Play Everywhere (TV, PC, Phone).*
+> **Self-hosted, cross-platform music streaming powered by Gonic.**
+> *Write Once (Flutter), Host Anywhere (Gonic), Play Everywhere (TV, PC, Phone).*
 
-A private music streaming app that connects to a [Navidrome](https://www.navidrome.org/) server via the Subsonic API. Built with Flutter for Android TV, Android phones, Windows and Linux.
+A private music streaming app that connects to a [Gonic](https://github.com/sentriz/gonic) server via the Subsonic API. Built with Flutter for Android TV, Android phones, Windows and Linux.
+
+Browsing follows your **actual folder tree**, not an artist/album index derived from tags — which is why the server is Gonic, whose browse-by-folder keeps that tree intact. Any Subsonic-compatible server that does the same should work; see [docs/decisions.md](docs/decisions.md).
 
 ## Downloads
 
@@ -45,26 +47,27 @@ Current release: **v1.0.0** (`pubspec.yaml` reads `1.0.0+2`; the two hardcoded v
 ## Architecture
 
 ```
-Flutter App  -->  Navidrome Server (/rest/*)
+Flutter App  -->  Gonic Server (/rest/*)
                     - Subsonic API (authentication, browsing, streaming)
                     - Scans and indexes your music library
+                    - Keeps the real folder tree intact
                     - Serves audio streams and cover art
 ```
 
-The Flutter app communicates exclusively through the **Subsonic API**. Navidrome handles music scanning, metadata, user management, streaming, and cover art out of the box.
+The Flutter app communicates exclusively through the **Subsonic API**. The server handles music scanning, metadata, user management, streaming, and cover art out of the box.
 
 ### Key Endpoints Used
 
 Everything goes through `SubsonicApiService`, which builds `$baseUrl/rest/<endpoint>`
-and appends token auth. Two calls are the exception and use Navidrome's **native**
-REST API with a JWT instead — see [docs/decisions.md](docs/decisions.md) for why
-browsing doesn't use the Subsonic tag-based endpoints.
+and appends token auth. The library scan walks the server's real directory tree
+rather than using the tag-based (artist/album) endpoints — see
+[docs/decisions.md](docs/decisions.md) for why.
 
 | Function | Endpoint |
 |---|---|
 | Auth check | `GET /rest/ping` |
-| Log in (native) | `POST /auth/login` — returns the JWT below |
-| Browse library (native) | `GET /api/song` — paged 500 at a time, `x-nd-authorization: Bearer <jwt>` |
+| Music folders | `GET /rest/getMusicFolders` — the roots the walk starts from |
+| Browse library | `GET /rest/getIndexes`, then `GET /rest/getMusicDirectory?id=X` recursively, 8 directories at a time |
 | Search | `GET /rest/search3` |
 | Stream audio | `GET /rest/stream?id=X&format=raw` |
 | Cover art | `GET /rest/getCoverArt?id=X` |
@@ -76,28 +79,34 @@ browsing doesn't use the Subsonic tag-based endpoints.
 ## Prerequisites
 
 - **Flutter SDK** (3.8.0+)
-- A running **Navidrome** instance with music indexed
+- A running **Gonic** instance with music indexed
 
 ## Quick Start
 
-### 1. Deploy Navidrome
+### 1. Deploy Gonic
 
 ```yaml
 # docker-compose.yml
 services:
-  navidrome:
-    image: deluan/navidrome:latest
+  gonic:
+    image: sentriz/gonic:latest
     ports:
-      - "4533:4533"
+      - "4747:80"
     environment:
-      ND_SCANSCHEDULE: 1h
-      ND_LOGLEVEL: info
+      GONIC_SCAN_INTERVAL: 60          # minutes
+      GONIC_SCAN_AT_START_ENABLED: "true"
+      GONIC_PLAYLISTS_PATH: /playlists
     volumes:
       - ./data:/data
+      - ./playlists:/playlists
       - /path/to/music:/music:ro
 ```
 
-The first user created via the Navidrome web UI becomes admin.
+The first user is created on first visit to Gonic's own web UI and becomes admin.
+
+Two layout rules Gonic enforces on the music path: every file in a folder must
+belong to the same album, and one album must not span folders. Browsing gets
+strange otherwise, and no client-side setting compensates.
 
 ### 2. Configure the Flutter App
 
@@ -109,7 +118,7 @@ cp .env.example .env
 Edit `.env`:
 
 ```env
-API_BASE_URL=https://your-navidrome-server.com
+API_BASE_URL=https://your-gonic-server.com
 ```
 
 Then install dependencies and run:
@@ -153,7 +162,7 @@ sudo pacman -U anywhere-music-player-*.pkg.tar.zst
 - ReplayGain volume normalization, attenuate-only so clipping is impossible
 - Album cover art, with prefetching for upcoming tracks
 
-**Server-side, shared with Navidrome's web UI**
+**Server-side, shared with anything else pointed at the same server**
 - Playlists (desktop + phone): create, rename, delete, add and remove tracks
 - Favourites: star songs from any track row, the mini player or Now Playing, with a dedicated list on both layouts
 - Scrobbling: plays reported back past half the track or four minutes, so play counts and "recently played" reflect this app
@@ -268,7 +277,7 @@ is why the suite runs with no real Windows or Android platform channel.
 
 ## Authentication
 
-The app uses Subsonic token authentication: for every request it generates a random salt and computes `token = MD5(password + salt)`. Credentials are stored locally in encrypted storage (`flutter_secure_storage`); older installs that still had them in SharedPreferences get migrated automatically on the next launch. No signup flow — users are created via the Navidrome web UI.
+The app uses Subsonic token authentication: for every request it generates a random salt and computes `token = MD5(password + salt)`. Credentials are stored locally in encrypted storage (`flutter_secure_storage`); older installs that still had them in SharedPreferences get migrated automatically on the next launch. No signup flow — users are created via the server's own web UI.
 
 ## Android TV
 
@@ -307,11 +316,11 @@ The Android manifest includes `LEANBACK_LAUNCHER` for TV launcher integration.
 
 ### App won't connect
 - Verify `.env` exists in `anywhere_music_player/` and contains a valid `API_BASE_URL`
-- Check that the Navidrome server is reachable from the device
+- Check that the server is reachable from the device
 
 ### Audio not playing
 - Check device logs (`adb logcat` on Android, `flutter logs` for others)
-- Verify the Navidrome user has streaming permissions
+- Verify the server user exists and can stream
 
 ### Android TV: app not in launcher
 - Ensure `tv_banner.png` exists at `android/app/src/main/res/drawable/`

@@ -1,6 +1,6 @@
 import 'cover_art_ref.dart';
 
-/// A server-side playlist, as Navidrome holds it.
+/// A server-side playlist, as the server holds it.
 ///
 /// Distinct from the *play queue* and from `PlaybackCursor`'s "playlist" (the
 /// browsing context currently feeding playback) — this one is user-created,
@@ -22,10 +22,10 @@ class Playlist with CoverArtRef {
   /// The server's own verdict on whether this playlist can be edited, from
   /// OpenSubsonic's `readonly` field.
   ///
-  /// Authoritative where [owner] is only a guess: Navidrome sets it for smart
-  /// playlists (`.nsp`), for playlists belonging to someone else, and for
-  /// anything else it considers non-editable. Absent on servers that predate
-  /// the field, in which case ownership is all we have.
+  /// Authoritative where [owner] is only a guess: a server sets it for any
+  /// playlist it will refuse to modify — someone else's, or one it generates
+  /// rather than stores. Absent on servers that predate the field (and on some
+  /// that simply don't send it), in which case ownership is all we have.
   final bool readonly;
 
   @override
@@ -58,9 +58,10 @@ class Playlist with CoverArtRef {
   /// Whether [username] may add to, remove from, rename or delete this.
   ///
   /// [readonly] wins when the server sends it — it is the server's own answer,
-  /// and it is the only way to detect a Navidrome **smart playlist** (`.nsp`),
-  /// which is read-only even to its owner. Editing one otherwise fails
-  /// server-side and surfaces as an error after the fact.
+  /// and the only way to detect a playlist that is read-only even to its owner
+  /// (Navidrome's smart playlists, `.nsp`, were the case this was written for).
+  /// Editing one otherwise fails server-side and surfaces as an error after the
+  /// fact.
   ///
   /// Falling back, unknown ownership is treated as editable: the server is the
   /// real authority and will refuse if we're wrong, whereas hiding the controls

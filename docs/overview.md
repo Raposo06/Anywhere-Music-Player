@@ -4,10 +4,10 @@
 > *meaningful* changes (architecture, stack, platform support, major features,
 > or implemented/remaining status) — not on every commit. Migrated from WikiJS
 > (`projects/anywhere-music-player`) on 2026-08-17 so the docs live next to the
-> code they describe. Last reviewed: 2026-08-30.
+> code they describe. Last reviewed: 2026-09-08.
 
 Self-hosted, cross-platform music streaming: **write once (Flutter), host
-anywhere (Navidrome), play everywhere**. A private client for a personal music
+anywhere (Gonic), play everywhere**. A private client for a personal music
 library — no accounts to create, no catalogue but your own.
 
 ## Index
@@ -28,12 +28,13 @@ library — no accounts to create, no catalogue but your own.
                    │ Subsonic API (/rest/*)
                    ▼
 ┌────────────────────────────────────────┐
-│         Navidrome Server               │
-│      https://navidrome.foxcore.dev     │
-│  • Scans & indexes /music              │
+│           Gonic Server                 │
+│       https://gonic.foxcore.dev        │
+│  • Scans & indexes the music path      │
+│  • Keeps the real folder tree intact   │
 │  • Serves audio streams & cover art    │
 │  • User management                     │
-│  • Subsonic API compatibility layer    │
+│  • Subsonic API implementation         │
 └──────────────────┬─────────────────────┘
                    │ read-only bind mount
                    ▼
@@ -41,16 +42,21 @@ library — no accounts to create, no catalogue but your own.
         (CIFS mount on the fox-core VPS)
 ```
 
-The app talks **exclusively** through the Subsonic API. Navidrome owns scanning,
-metadata, user management, streaming and cover art — the client deliberately has
-no backend of its own.
+The app talks **exclusively** through the Subsonic API. The server owns
+scanning, metadata, user management, streaming and cover art — the client
+deliberately has no backend of its own.
+
+The server is **Gonic**, which is folder-native: it browses the real directory
+tree rather than deriving one from tags. That is why the library scan is a
+`getIndexes`/`getMusicDirectory` walk and not a whole-library fetch — see
+[decisions](decisions.md), "Migrated from Navidrome to Gonic".
 
 ### Subsonic endpoints used
 
 | Function | Endpoint |
 |---|---|
 | Auth check | `GET /rest/ping` |
-| Browse library | `GET /api/song` (Navidrome's native REST API, JWT via `/auth/login`) — not the Subsonic tag-based endpoints; see [decisions](decisions.md) |
+| Browse library | `GET /rest/getMusicFolders`, `/rest/getIndexes`, `/rest/getMusicDirectory` — walked recursively; the folder tree is the server's own, not one derived from tags. See [decisions](decisions.md) |
 | Search | `GET /rest/search3` |
 | Stream audio | `GET /rest/stream?id=X` |
 | Cover art | `GET /rest/getCoverArt?id=X` |
@@ -91,7 +97,7 @@ on foxcore.dev pointing at the latest — see [operations](operations.md) and
 | State | **provider** | |
 | Theme | Hand-rolled `ThemeData` | `lib/theme/` — warm off-black + one teal accent; tokens converted from the design's OKLCH values, see [decisions](decisions.md) |
 | Fonts | **Work Sans**, **Source Serif 4** | Bundled static TTFs in `assets/fonts/` (OFL). Serif for titles and track names, sans for everything else |
-| Server | **Navidrome** | Subsonic-compatible; Docker on the fox-core VPS, managed by Coolify |
+| Server | **Gonic** | Subsonic API implementation, folder-native browsing. `serverVersion` 0.22.0, API 1.15.0, OpenSubsonic enabled (check yours with `/rest/ping.view`) |
 | Config | **flutter_dotenv** | Runtime `.env` → `API_BASE_URL` |
 | Credentials | **flutter_secure_storage** | Encrypted, local only. `shared_preferences` is a one-time legacy migration source, not an active store |
 
@@ -109,18 +115,20 @@ on foxcore.dev pointing at the latest — see [operations](operations.md) and
 - Caching: on-disk library cache for instant cold start, Android on-disk stream
   cache (seekable replay, 2 GB cap), cover-art prefetching
 - Scrobbling: plays are reported back to the server (past half the track or
-  four minutes), so Navidrome's play counts and "recently played" reflect this
+  four minutes), so the server's play counts and "recently played" reflect this
   app; a "now playing" announcement drives its live panel
 - Desktop keyboard shortcuts: space, arrow-key seek/volume, Ctrl+arrow skip,
   Ctrl+F to focus search,
   Alt+← (or Escape) to go back a folder or playlist / leave Now Playing — the
   title bar's back chevron does the same thing for the mouse
 - Playlists (desktop + phone): create, rename, delete, add and remove tracks on
-  server-side playlists — shared with Navidrome's web UI. Reordering is not
-  supported, see [decisions](decisions.md)
+  server-side playlists — stored by the server, so anything else pointed at it
+  sees the same lists. Reordering is not supported, see
+  [decisions](decisions.md)
 - Favourites: star songs from any track row, the mini player or Now Playing,
   with a dedicated list on both desktop (sidebar) and phone (tab, pull to
-  refresh). Server-side, so it stays in sync with Navidrome's web UI
+  refresh). Server-side, so it stays in sync with anything else pointed at the
+  same server
 - Automatic recovery from mid-stream connection drops
 - Lock screen / notification controls (Android); SMTC + keep-awake (Windows);
   MPRIS media keys (Linux)
@@ -155,28 +163,61 @@ live in `flutter_secure_storage` (encrypted) on the device. Older installs that
 still had them in `SharedPreferences` get migrated automatically on the next
 launch, then the legacy copy is deleted.
 
-**There is no in-app signup.** Users are created in the Navidrome web UI. That's
-a deliberate consequence of having no backend: the client has nothing to register
-against.
+**There is no in-app signup.** Users are created in Gonic's own admin web UI.
+That's a deliberate consequence of having no backend: the client has nothing to
+register against.
 
 ## Infrastructure dependency
 
-Navidrome runs as a Docker service on the **fox-core** Hetzner VPS, managed by
-Coolify:
+The server is **Gonic**, reachable at `https://gonic.foxcore.dev`: `type: gonic`,
+`serverVersion: 0.22.0`, Subsonic API `1.15.0`, `openSubsonic: true`.
 
-- **URL:** `https://navidrome.foxcore.dev`
-- **Music volume:** `/mnt/storagebox/music` — a Hetzner Storage Box mounted via
-  CIFS (`//u612406.your-storagebox.de/backup` at `/mnt/storagebox`, per
-  `/etc/fstab`), bind-mounted read-only into the container as `/music`. The
-  mount is `nofail`, so when it doesn't come up the library silently reads as
-  empty rather than erroring — see `docs/operations.md`.
-- **All Tracks** is a Navidrome **smart playlist**, not an app feature:
-  `all-tracks.nsp` at the music-folder root. Navidrome imports any `.nsp` under
-  the library because `PlaylistsPath` defaults to empty, which means "every
-  folder".
+Everything below is a **runtime fact about one deployment**, measured on
+2026-09-08 by walking the live server. Re-measure rather than assume — the
+figures move as the library does. `curl "$API_BASE_URL/rest/ping.view?..."` is
+the fastest first check.
 
-The app is useless without a reachable Navidrome instance; there is no offline
-library mode (the caches accelerate a working setup, they don't replace it).
+| Measured | Value |
+|---|---|
+| Music folders | 1, named `music` — so the walk leaves it out of every path |
+| Top-level directories | 5: `ANIMES & ANIMATIONS`, `GAMES`, `MIXES & COMPILATIONS`, `MOVIES & SERIES`, `SPECIALS` |
+| Loose songs at the music root | 0 |
+| Directories total | 239 |
+| Songs total | 4,384 |
+| Full scan wall clock | ~7.5 s at 8 concurrent directory fetches |
+
+Field coverage on song responses, which is what the client can actually rely on:
+`path`, `suffix`, `duration`, `size`, `created`, `artist`, `album` are present on
+100%; `coverArt` on all but one track; `track` on 67% and `year` on 74%.
+**`replayGain.trackGain` is present on only 3%** — see below.
+
+- **Hosting.** The Navidrome instance this replaced ran as a Docker service on
+  the **fox-core** Hetzner VPS under Coolify, with the music volume at
+  `/mnt/storagebox/music` — a Hetzner Storage Box over CIFS
+  (`//u612406.your-storagebox.de/backup` at `/mnt/storagebox`, per `/etc/fstab`),
+  bind-mounted read-only into the container. **Not re-verified for the Gonic
+  deployment** — only the Subsonic surface above was. If the CIFS mount is still
+  in the picture, the `nofail` trap in `docs/operations.md` still applies: when
+  it doesn't come up, the library reads as empty rather than erroring.
+- **ReplayGain is effectively inactive.** 112 of 4,384 tracks carry a track gain;
+  the rest send `replayGain: null`. The client handles that correctly — no gain
+  means no attenuation, which is the safe direction — but volume normalization
+  is not doing anything for 97% of this library. Fixing it is a server-side
+  tagging job (write `REPLAYGAIN_TRACK_GAIN` into the files, then rescan), not a
+  client change.
+- **No playlists and no starred songs exist on this server.** Both features work;
+  there is simply nothing in them yet. Under Navidrome, **All Tracks** was a
+  smart playlist (`all-tracks.nsp`) rather than app code — Gonic has no smart
+  playlists, its playlists are m3u files under `GONIC_PLAYLISTS_PATH` named
+  `<userid>/<name>.m3u`, so that entry is gone until an equivalent is created
+  there.
+- **Library layout.** Gonic asks that all files in a folder belong to one album,
+  and that one album not span folders. This library keeps loose tracks directly
+  inside top-level category folders and browses fine regardless; the rule is
+  about how cleanly albums group, not a hard parse requirement.
+
+The app is useless without a reachable server; there is no offline library mode
+(the caches accelerate a working setup, they don't replace it).
 
 ## Current state
 

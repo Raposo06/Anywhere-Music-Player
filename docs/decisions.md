@@ -14,6 +14,141 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Now Playing's folder line shows the full path again (2026-09-08)
+
+**Decided.** `nowPlayingFolderPath` returns `canonical.folderPath` unchanged. It
+no longer drops the first segment. The line still hides when a track has no
+folder at all.
+
+**Why.** The rule it reverses was sound for the library it was written against:
+everything sat under one `SOUNDTRACKS` root, so the first segment was a constant
+and showing it was pure noise. The move to Gonic reshaped the tree — that root is
+gone, and the top level is now five sibling categories (`ANIMES & ANIMATIONS`,
+`GAMES`, `MIXES & COMPILATIONS`, `MOVIES & SERIES`, `SPECIALS`). Against that
+shape the same rule does real damage:
+
+- it discards the category, which is now discriminating rather than constant —
+  `ANIMES & ANIMATIONS/Bleach/…` displayed as `Bleach/…`, one level less context
+  than the *old* library showed for the same track; and
+- it blanks the line entirely for the 9 tracks that sit directly inside a
+  category folder, since nothing survives the drop.
+
+The 2026-08-31 entry named this exact situation as its reversal condition
+("libraries that don't use a top-level category folder — there the dropped
+segment would be meaningful"). This is that case, reached by the library moving
+rather than by anyone changing their mind.
+
+**What would reverse it.** A tree that grows a constant root again, or folder
+lines proving too long in the phone player — the deepest paths here are four
+segments. A last-two-segments rule was the considered alternative and is a
+one-line change; it was rejected because it hides the category on deep tracks,
+which is the information the full path was wanted for.
+
+---
+
+## Migrated from Navidrome to Gonic; the library scan is a folder walk (2026-09-08)
+
+**Decided.** The server is now **Gonic** (`https://gonic.foxcore.dev`, verified
+live: `type: gonic`, `serverVersion: 0.22.0`, Subsonic API `1.15.0`,
+`openSubsonic: true`). The library scan changed with it:
+
+- `getAllSongsNativeApi`/`_getNativeApiToken` are **deleted**. They drove
+  Navidrome's native REST API (`POST /auth/login` for a JWT, then paginated
+  `GET /api/song`), which Gonic does not implement at all — against Gonic they
+  fail on every launch.
+- `SubsonicApiService.getAllTracksByFolder()` replaces them: a breadth-first
+  walk of `getMusicFolders` → `getIndexes` → `getMusicDirectory`, eight
+  directories per round trip.
+- `Track.fromNativeApi` is deleted; `Track.fromSubsonic` gained a
+  `pathOverride`.
+- `LibraryCache._version` 4 → 5.
+
+**Why.** The native-API scan existed for one reason: Navidrome exposes only
+tag-based browsing over Subsonic, so the real filesystem paths this app browses
+by had to be scraped out of a non-Subsonic endpoint and reassembled into a
+virtual tree. Gonic is folder-native — it keeps the tree intact and serves it
+through the standard browse endpoints — so the workaround has nothing left to
+work around. The app's folder-hierarchy browsing is now reading the server's
+actual hierarchy rather than reconstructing one.
+
+Four details that are load-bearing rather than incidental:
+
+1. **Each track's path is synthesized from the descent, not read from the
+   song's `path` field.** The walk knows which directories it went through; the
+   server's `path` is relative to a music folder it doesn't have to agree with.
+   Synthesizing guarantees the tree `LibraryScanner` rebuilds is the tree that
+   was actually browsed. `path` is still consulted, but only for the file-name
+   segment (falling back to `title` + `suffix`).
+2. **The music folder's name is included in the path only when there is more
+   than one.** With a single folder, paths stay relative to the music root —
+   the shape the folder tree, the on-disk cache and Now Playing's folder line
+   were all built around. With several, the name is the only thing telling two
+   identically-named top-level directories apart.
+3. **Results are sorted by path.** The walk finishes breadth-first, so the flat
+   list would otherwise interleave depths. Path order is what the previous
+   whole-library fetch produced (`_sort=path`) and what every list in the UI
+   still expects.
+4. **The cache version bump is about ids, not shape.** The serialized schema
+   didn't change at v5. Song ids are server-assigned, so a cache written against
+   Navidrome hydrates tracks whose ids mean nothing to Gonic — rows that look
+   playable and fail on tap. Discarding is the only safe read of a cache from a
+   different server.
+
+**Cost.** A folder-native server answers one directory per request, so the scan
+is now O(directories) round trips instead of O(library/500). The concurrency
+window is the mitigation; if a large library scans too slowly, raise
+`_walkConcurrency` before reaching for a different shape.
+
+**What would reverse it.** Moving back to a tag-based server, or wanting
+tag-based browsing (artist/album) as a real feature alongside folders — Gonic
+serves the tag endpoints too, and they carry index data the filesystem walk
+doesn't. Recover the deleted native-API methods and `Track.fromNativeApi` from
+git history (the commit carrying this entry) rather than re-deriving them.
+
+**Known follow-ups, not resolved here.**
+
+- **ReplayGain** depends on the server sending `replayGain.trackGain` on song
+  responses. `Track.fromSubsonic` already reads it; whether Gonic populates it
+  for this library is a runtime fact — check a real response before assuming
+  normalization is live. Absent the field it reads null, which means no
+  attenuation, not a crash.
+- **All Tracks** was a Navidrome smart playlist (`all-tracks.nsp`), not app
+  code. Gonic has no smart playlists; its playlists are m3u files under
+  `GONIC_PLAYLISTS_PATH`. The entry disappears until an equivalent is created
+  server-side.
+- **Playlist covers.** Navidrome generated a mosaic for every playlist; Gonic
+  sends `coverArt` only when it has one, so the fallback glyph will be visible
+  far more often.
+- **Gonic constrains the library layout**: one album per folder, no album
+  spanning folders. Not enforceable client-side.
+
+**Update (2026-09-08, same day) — verified against the live server.** The walk
+was run end to end with real credentials. It works: 1 music folder (`music`, so
+no name prefix), 5 top-level directories, 239 directories, **4,384 songs, full
+scan ~7.5 s** at 8 concurrent fetches. The round-trip cost flagged above is a
+non-issue at this size.
+
+Three of the four follow-ups are now settled:
+
+- **`path` is present on 100% of song responses**, and is already the full
+  library-relative path. The `title` + `suffix` fallback in `_fileNameOf` is
+  therefore dead weight in practice — keep it anyway; it costs nothing and the
+  Subsonic spec does not require `path`.
+- **ReplayGain is effectively inactive**: `replayGain.trackGain` is present on
+  112 of 4,384 tracks (3%); the rest send `replayGain: null`, which the parser
+  reads as no gain — no attenuation, no crash. Restoring normalization is a
+  server-side tagging job, not a client change.
+- **Playlists and starred songs are both empty** on this server. The features
+  work; there is nothing in them. All Tracks is gone as predicted.
+
+A fourth item surfaced that was **not** anticipated: the library's top-level
+shape changed with the server move (the old tree's single `SOUNDTRACKS` root is
+now 5 sibling categories), which trips the reversal condition recorded in "Now
+Playing's folder line uses the real path, minus its top-level segment
+(2026-08-31)". See that entry.
+
+---
+
 ## The Windows installer is not code-signed (2026-09-02)
 
 **Decided.** No Authenticode signing in the release pipeline. Users click through
@@ -295,6 +430,11 @@ entry on why sequencing is hand-rolled before going there.
 ---
 
 ## Now Playing's folder line uses the real path, minus its top-level segment (2026-08-31)
+
+> **Step 2 reversed (2026-09-08)** by "Now Playing's folder line shows the
+> full path". Step 1 — resolving the playing track to its scanned copy by
+> id — stands unchanged and is still what keeps the line consistent across
+> playback sources.
 
 **Decided.** The folder line on every player (`player_screen.dart`,
 `desktop_player_screen.dart`, `tv_player_screen.dart`) now:
@@ -580,6 +720,13 @@ clean up is real but not a live risk.
 
 ## `SubsonicApiService` dropped its tag-based directory browsing methods (2026-08-24)
 
+> **Partly superseded (2026-09-08)** by "Migrated from Navidrome to Gonic".
+> `getMusicFolders`/`getIndexes`/`getMusicDirectory` are back — not as the
+> tag-based browsing this entry deleted, but as the folder-native browsing
+> that replaced the native-API scan. The reversal condition below named
+> tag-based browsing specifically; that part still stands, and the tag
+> endpoints (`getArtists`, `getAlbumList2`, …) remain deleted.
+
 **Decided.** Removed `getMusicFolders`, `getIndexes`, `getMusicDirectory`,
 `getFolders`, `getRootTracks`, `getDirectoryContents`,
 `getAllTracksInDirectory`, `getRandomSongs`, `getAlbumList2`, and the in-memory
@@ -818,6 +965,10 @@ tune the bound — don't remove the paused-state guard.
 ---
 
 ## No backend of our own: Navidrome via the Subsonic API
+
+> **Server superseded (2026-09-08)** by "Migrated from Navidrome to Gonic".
+> The decision this entry records — no backend of our own, everything over
+> the Subsonic API — is unchanged; only the server on the other end moved.
 
 **Decided.** The app is a pure Subsonic client. Navidrome owns scanning,
 metadata, users, streaming and cover art. There is **no in-app signup** — users

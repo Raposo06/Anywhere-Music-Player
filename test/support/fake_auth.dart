@@ -22,6 +22,6 @@ Future<AuthService> loggedInAuthService({String username = 'alice'}) async {
       )),
     ),
   );
-  await auth.login('https://navidrome.example.com', username, 'secret');
+  await auth.login('https://gonic.example.com', username, 'secret');
   return auth;
 }

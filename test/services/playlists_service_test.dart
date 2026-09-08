@@ -66,7 +66,7 @@ void main() {
     return (
       playlists: PlaylistsService(
         SubsonicApiService(
-          serverUrl: 'https://navidrome.example.com',
+          serverUrl: 'https://gonic.example.com',
           username: 'alice',
           password: 'p',
           httpClient: client,
@@ -380,7 +380,7 @@ void main() {
       return (
         playlists: PlaylistsService(
           SubsonicApiService(
-            serverUrl: 'https://navidrome.example.com',
+            serverUrl: 'https://gonic.example.com',
             username: 'alice',
             password: 'p',
             httpClient: client,

@@ -1,8 +1,13 @@
 # Anywhere Music Player
 
-Flutter client for a self-hosted **Navidrome** server, over the **Subsonic API**
+Flutter client for a self-hosted **Gonic** server, over the **Subsonic API**
 (`/rest/*`). Targets Android phone, Android TV and Windows. See `README.md` for
 setup, `docs/overview.md` for how it fits together.
+
+Migrated from Navidrome on 2026-09-08 — see `docs/decisions.md`. Gonic is
+folder-native, so the library scan **walks the server's own directory tree**
+(`getMusicFolders` → `getIndexes` → `getMusicDirectory`) instead of scraping
+filesystem paths out of a non-Subsonic endpoint.
 
 ## Load-bearing — do not "simplify" these
 
@@ -17,14 +22,19 @@ Each of these looks like an obvious cleanup and is not. The reasoning is in
    URL silently produces a 100% miss rate.
 3. **ReplayGain is attenuate-only** (`clamp(0, 1)`). The clamp is what makes
    clipping impossible; the `+6 dB` pre-amp is the tuning knob, not the clamp.
-4. **The library cache stores `cover_art_id`, never a resolved cover-art URL.**
+4. **The scan synthesizes each track's path from the directories it walked**,
+   rather than reading the song's own `path` field. The walk knows what it
+   descended through; the server's `path` is relative to a music folder it need
+   not agree with, and the synthesized path is what the entire folder tree gets
+   rebuilt from. `path` is still read — but only for the file-name segment.
+5. **The library cache stores `cover_art_id`, never a resolved cover-art URL.**
    A resolved URL carries a live, password-equivalent credential into a plaintext
    file on disk. Schema v3 exists to enforce this.
-5. **Cleartext is permitted for loopback only.** Never widen it to
+6. **Cleartext is permitted for loopback only.** Never widen it to
    `usesCleartextTraffic="true"` — that unblocks cleartext for the real server too.
-6. **Drop recovery never auto-resumes while paused.** Idle connections drop when
+7. **Drop recovery never auto-resumes while paused.** Idle connections drop when
    paused; resuming there starts music the user deliberately stopped.
-7. **`just_audio`'s `play()` is never awaited.** It completes when playback
+8. **`just_audio`'s `play()` is never awaited.** It completes when playback
    *stops*, not when it starts — on Android the platform holds that future until
    the track ends, so awaiting it pins `_isLoading` true for the whole song and
    silently kills end-of-track advance. media_kit returns immediately, so the
@@ -68,7 +78,7 @@ cost more than a few minutes and would cost that again next time, record the
 **Distinguish repo facts from runtime facts.** A repo fact is verifiable from the
 code and true for everyone (versions in `pubspec.yaml`, which platform folders
 exist). A runtime fact depends on the device or server (what's installed, what
-the Navidrome library contains, whether the CIFS mount is up) and is **not** the
+the server's library contains, whether the CIFS mount is up) and is **not** the
 same everywhere. Never state a runtime fact as if it were global — say how to
 check it instead.
 

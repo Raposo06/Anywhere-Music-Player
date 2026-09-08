@@ -27,13 +27,18 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
   static const String _apiVersion = '1.16.1';
 
   /// Sent as Subsonic's `c` param on every request. This is the name the
-  /// server shows for the client — Navidrome's "now playing" panel and play
+  /// server shows for the client — the server's "now playing" panel and play
   /// history both display it — so it is the app's real name, not an
   /// identifier. Spaces are fine; it is URI-encoded like any other param.
   static const String _clientName = 'Anywhere Music Player';
   static const _saltChars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   static const int _saltLength = 12;
   static const Duration _httpTimeout = Duration(seconds: 15);
+
+  /// Directories fetched in parallel by [getAllTracksByFolder]. Enough to
+  /// keep a scan from being latency-bound, low enough not to look like a
+  /// burst to a small self-hosted server.
+  static const int _walkConcurrency = 8;
 
   final _random = Random.secure();
   final http.Client _httpClient;
@@ -110,7 +115,7 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
   ///
   /// Always requests the original file. Android wraps this URL in
   /// [LockCachingAudioSource] so ExoPlayer seeks against a local byte-range
-  /// cache instead of Navidrome's live transcoder output.
+  /// cache instead of the server's live transcoder output.
   @override
   String buildStreamUrl(String songId) {
     return '$_baseUrl/rest/stream?id=$songId&format=raw&estimateContentLength=true&${_authQueryString()}';
@@ -258,10 +263,11 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
 
   /// Remove the tracks at [indexes] from a playlist.
   ///
-  /// **Zero-based**, confirmed against Navidrome's implementation
-  /// (`core/playlists/playlists.go` converts with `idx + 1` internally). The
-  /// Subsonic spec does not state the base, so this is a behavioural
-  /// dependency, not a documented one — see docs/decisions.md.
+  /// **Zero-based**. The Subsonic spec does not state the base, so this is a
+  /// behavioural dependency on the server, not a documented one — it was
+  /// confirmed against Navidrome (`core/playlists/playlists.go` converts
+  /// with `idx + 1` internally) and carried over to Gonic unchanged. See
+  /// docs/decisions.md.
   ///
   /// Positions refer to the playlist's *current server-side* order, so a
   /// caller must re-read immediately beforehand rather than trusting a cached
@@ -346,8 +352,9 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
   /// increments the server's play count.
   ///
   /// [startedAt] is sent as `time` in milliseconds since the epoch — Subsonic
-  /// 1.8+, and understood by Navidrome. It is when the listen *began*, so a
-  /// play submitted partway through a long track is still timed correctly.
+  /// 1.8+, and understood by both Navidrome and Gonic. It is when the listen
+  /// *began*, so a play submitted partway through a long track is still timed
+  /// correctly.
   /// Omitting it lets the server stamp the play at receipt instead.
   @override
   Future<void> scrobble(String songId, {DateTime? startedAt}) async {
@@ -409,82 +416,232 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
     return (songs: songs, albums: albums);
   }
 
-  /// Authenticate with Navidrome's native REST API and get a JWT token.
-  Future<String> _getNativeApiToken() async {
-    final uri = Uri.parse('$_baseUrl/auth/login');
+  // -------- Browsing by folder --------
 
-    try {
-      final response = await _httpClient
-          .post(
-            uri,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'username': username, 'password': password}),
-          )
-          .timeout(_httpTimeout);
-
-      if (response.statusCode != 200) {
-        throw SubsonicApiException(
-          'Native API login failed: HTTP ${response.statusCode}',
-        );
-      }
-
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final token = data['token'] as String?;
-      if (token == null) {
-        throw SubsonicApiException('Native API login: no token in response');
-      }
-      return token;
-    } on Exception catch (e) {
-      if (e is SubsonicApiException) rethrow;
-      throw SubsonicApiException('Native API login failed: $e');
-    }
+  /// The server's configured music folders.
+  ///
+  /// Gonic exposes every `-music-path` it was given as one of these, so a
+  /// library built on a single path yields a single entry.
+  Future<List<({String id, String name})>> getMusicFolders() async {
+    final data = await _request(
+      'getMusicFolders',
+      null,
+      'Could not load music folders',
+    );
+    final folders = data['musicFolders'] as Map<String, dynamic>?;
+    return _dirEntries(folders?['musicFolder']);
   }
 
-  /// Fetch all songs from Navidrome's native REST API with real filesystem paths.
-  /// The native API returns the actual `path` field from the database,
-  /// which is the real filesystem path (unlike the Subsonic API which returns
-  /// tag-based virtual paths).
-  Future<List<Map<String, dynamic>>> getAllSongsNativeApi() async {
-    final token = await _getNativeApiToken();
-    final allSongs = <Map<String, dynamic>>[];
-    const pageSize = 500;
-    var offset = 0;
+  /// The top level of a music folder: its immediate child directories, plus
+  /// any songs sitting loose at the music-folder root.
+  ///
+  /// `getIndexes` buckets the top-level directories alphabetically
+  /// (`index[].artist[]`). That grouping is a display convenience for
+  /// Subsonic's own browser and is flattened away here — the folder tree this
+  /// app shows is the server's, not an alphabet.
+  Future<
+    ({
+      List<({String id, String name})> directories,
+      List<Map<String, dynamic>> songs,
+    })
+  >
+  getIndexes({String? musicFolderId}) async {
+    final params = <String, dynamic>{};
+    if (musicFolderId != null) params['musicFolderId'] = musicFolderId;
+    final data = await _request(
+      'getIndexes',
+      params,
+      'Could not load the library index',
+    );
 
-    while (true) {
-      final uri = Uri.parse(
-        '$_baseUrl/api/song?_start=$offset&_end=${offset + pageSize}&_order=ASC&_sort=path',
+    final indexes = data['indexes'] as Map<String, dynamic>?;
+    if (indexes == null) {
+      return (
+        directories: <({String id, String name})>[],
+        songs: <Map<String, dynamic>>[],
       );
-      try {
-        final response = await _httpClient
-            .get(uri, headers: {'x-nd-authorization': 'Bearer $token'})
-            .timeout(const Duration(seconds: 30));
+    }
 
-        if (response.statusCode != 200) {
-          throw SubsonicApiException(
-            'Native API error: HTTP ${response.statusCode}',
-          );
-        }
+    final directories = <({String id, String name})>[];
+    for (final bucket in _asList(indexes['index'])) {
+      directories.addAll(
+        _dirEntries((bucket as Map<String, dynamic>)['artist']),
+      );
+    }
 
-        final List<dynamic> songs = jsonDecode(response.body);
-        if (songs.isEmpty) break;
+    return (directories: directories, songs: _songEntries(indexes['child']));
+  }
 
-        for (final song in songs) {
-          allSongs.add(song as Map<String, dynamic>);
-        }
+  /// One directory's immediate children, split into subdirectories and songs.
+  Future<
+    ({
+      List<({String id, String name})> directories,
+      List<Map<String, dynamic>> songs,
+    })
+  >
+  getMusicDirectory(String id) async {
+    final data = await _request('getMusicDirectory', {
+      'id': id,
+    }, 'Could not load folder');
 
-        debugPrint(
-          'SubsonicApi: Fetched ${songs.length} songs (offset=$offset, total so far=${allSongs.length})',
-        );
+    final directory = data['directory'] as Map<String, dynamic>?;
 
-        if (songs.length < pageSize) break;
-        offset += pageSize;
-      } catch (e) {
-        if (e is SubsonicApiException) rethrow;
-        throw SubsonicApiException('Native API request failed: $e');
+    final directories = <({String id, String name})>[];
+    final songs = <Map<String, dynamic>>[];
+    for (final child in _asList(directory?['child'])) {
+      final json = child as Map<String, dynamic>;
+      if (json['isDir'] == true) {
+        final childId = json['id']?.toString();
+        if (childId == null) continue;
+        directories.add((
+          id: childId,
+          name:
+              json['title'] as String? ?? json['name'] as String? ?? childId,
+        ));
+      } else {
+        songs.add(json);
       }
     }
 
-    return allSongs;
+    return (directories: directories, songs: songs);
+  }
+
+  /// Walk the server's real directory tree and return every song under it.
+  /// This is the library scan.
+  ///
+  /// Each [Track] carries the library-relative path the walk *arrived at it
+  /// by* (`Anime/Naruto/01 - Opening.flac`), synthesized from the descent
+  /// rather than read out of the song's own `path` field. That is deliberate:
+  /// the path is what [LibraryScanner] rebuilds the browsable tree from, and
+  /// synthesizing it guarantees the tree matches the directories actually
+  /// browsed, on a server whose `path` field this app never has to trust.
+  /// See docs/decisions.md.
+  ///
+  /// Walked breadth-first, [_walkConcurrency] directories per round trip. A
+  /// folder-native server answers one directory per request, so a library of
+  /// a few thousand directories is a few thousand requests — issuing them
+  /// strictly one after another is what would make a scan feel slow.
+  Future<List<Track>> getAllTracksByFolder({
+    void Function(int songsSoFar)? onProgress,
+  }) async {
+    final musicFolders = await getMusicFolders();
+
+    // With one music folder its name is left out of the path, so paths stay
+    // relative to the music root — the shape the folder tree, the on-disk
+    // cache and the now-playing folder line were all built around. With
+    // several, the name becomes the top-level segment that tells them apart.
+    final prefixWithFolderName = musicFolders.length > 1;
+
+    final tracks = <Track>[];
+    // Every directory id this walk has already queued. A server that reports a
+    // directory as its own descendant — or the same shared directory under two
+    // music folders — would otherwise loop forever, or at best duplicate every
+    // track under it. Nothing observed does this; the walk is recursive over
+    // data from the network, which is reason enough not to trust it to
+    // terminate on its own.
+    final visited = <String>{};
+    var level = <({String id, String path})>[];
+
+    for (final folder in musicFolders) {
+      final root = prefixWithFolderName ? folder.name : '';
+      final top = await getIndexes(musicFolderId: folder.id);
+      tracks.addAll(_tracksIn(top.songs, root));
+      for (final dir in top.directories) {
+        if (!visited.add(dir.id)) continue;
+        level.add((id: dir.id, path: _joinPath(root, dir.name)));
+      }
+    }
+
+    while (level.isNotEmpty) {
+      final next = <({String id, String path})>[];
+      for (var i = 0; i < level.length; i += _walkConcurrency) {
+        final batch = level.skip(i).take(_walkConcurrency);
+        final listings = await Future.wait([
+          for (final entry in batch)
+            getMusicDirectory(
+              entry.id,
+            ).then((contents) => (entry: entry, contents: contents)),
+        ]);
+        for (final listing in listings) {
+          tracks.addAll(_tracksIn(listing.contents.songs, listing.entry.path));
+          for (final dir in listing.contents.directories) {
+            if (!visited.add(dir.id)) continue;
+            next.add((
+              id: dir.id,
+              path: _joinPath(listing.entry.path, dir.name),
+            ));
+          }
+        }
+        onProgress?.call(tracks.length);
+      }
+      level = next;
+    }
+
+    // Path order — what the previous whole-library fetch sorted by, and what
+    // every list in the UI still expects. The walk finishes breadth-first, so
+    // without this the flat list interleaves depths.
+    tracks.sort((a, b) => a.path.toLowerCase().compareTo(b.path.toLowerCase()));
+    return tracks;
+  }
+
+  /// Subsonic collapses a single-element list into a bare object, so every
+  /// list in a browse response has to be read through this.
+  static List<dynamic> _asList(dynamic value) {
+    if (value == null) return const [];
+    return value is List ? value : [value];
+  }
+
+  /// The `(id, name)` pairs in a browse response's directory list. Entries
+  /// without an id are skipped — there is nothing to fetch for them.
+  static List<({String id, String name})> _dirEntries(dynamic value) {
+    final entries = <({String id, String name})>[];
+    for (final item in _asList(value)) {
+      final json = item as Map<String, dynamic>;
+      final id = json['id']?.toString();
+      if (id == null) continue;
+      entries.add((
+        id: id,
+        name: json['name'] as String? ?? json['title'] as String? ?? id,
+      ));
+    }
+    return entries;
+  }
+
+  /// The non-directory children of a browse response's child list.
+  static List<Map<String, dynamic>> _songEntries(dynamic value) {
+    final songs = <Map<String, dynamic>>[];
+    for (final item in _asList(value)) {
+      final json = item as Map<String, dynamic>;
+      if (json['isDir'] != true) songs.add(json);
+    }
+    return songs;
+  }
+
+  static List<Track> _tracksIn(
+    List<Map<String, dynamic>> songs,
+    String dirPath,
+  ) => [
+    for (final song in songs)
+      Track.fromSubsonic(
+        song,
+        pathOverride: _joinPath(dirPath, _fileNameOf(song)),
+      ),
+  ];
+
+  static String _joinPath(String parent, String child) =>
+      parent.isEmpty ? child : '$parent/$child';
+
+  /// The song's own file name, for the last segment of its synthesized path.
+  /// Prefers the basename of whatever `path` the server sends, falling back to
+  /// title + suffix — which a browse response always carries.
+  static String _fileNameOf(Map<String, dynamic> song) {
+    final serverPath = song['path'] as String?;
+    if (serverPath != null && serverPath.isNotEmpty) {
+      return serverPath.split('/').last;
+    }
+    final title = song['title'] as String? ?? song['id'].toString();
+    final suffix = song['suffix'] as String?;
+    return (suffix != null && suffix.isNotEmpty) ? '$title.$suffix' : title;
   }
 
   /// Dispose the HTTP client.

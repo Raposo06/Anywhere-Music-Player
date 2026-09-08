@@ -10,7 +10,7 @@ import '../models/track.dart';
 /// How a track's audio reaches the player: straight off the network, or via an
 /// on-disk cache.
 ///
-/// Android needs the cache — ExoPlayer can't seek Navidrome's live HTTP stream
+/// Android needs the cache — ExoPlayer can't seek the server's live HTTP stream
 /// for VBR MP3 / FLAC / OGG, and `LockCachingAudioSource` hands it a seekable
 /// local file that also survives a replay without re-fetching. Desktop
 /// (media_kit) and web seek the network stream directly and use

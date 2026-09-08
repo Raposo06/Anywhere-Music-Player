@@ -37,7 +37,7 @@ class FakePlaylistServer {
   /// The service under test, wired to this server.
   PlaylistsService service({String username = 'alice'}) => PlaylistsService(
     SubsonicApiService(
-      serverUrl: 'https://navidrome.example.com',
+      serverUrl: 'https://gonic.example.com',
       username: username,
       password: 'p',
       httpClient: _client(),

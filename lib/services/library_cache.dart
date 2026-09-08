@@ -27,10 +27,15 @@ class LibraryCache {
   // 3 when cover_art_url (a full URL with a live auth token+salt baked in)
   // was replaced by the bare cover_art_id — storing the resolved URL meant a
   // password-equivalent credential sat in this plaintext file until the next
-  // scan overwrote it — and to 4 when the `filename` key was renamed to
-  // `path` (Track.path; see Track.fromNativeApi). Old caches are discarded
-  // on load (version mismatch) and rebuilt from a fresh scan.
-  static const _version   = 4;
+  // scan overwrote it — to 4 when the `filename` key was renamed to `path`
+  // (Track.path), and to 5 for the move to browsing the server's own folder
+  // tree. The shape didn't change at 5; the *ids in it* did. Song ids are
+  // server-assigned, so a cache written against a different server hydrates
+  // tracks whose ids resolve to nothing — playable-looking rows that fail on
+  // tap until the background rescan lands. Discarding is the only safe read.
+  // Old caches are discarded on load (version mismatch) and rebuilt from a
+  // fresh scan.
+  static const _version   = 5;
 
   /// Load the cached track list. Returns null when:
   ///   - the cache file doesn't exist (first launch / post-logout)

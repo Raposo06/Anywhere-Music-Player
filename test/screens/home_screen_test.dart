@@ -74,8 +74,8 @@ void main() {
       // it's the auto-flattened root and getTopLevelFolders() surfaces its
       // children instead (see LibraryScanner.isFlattenedRoot).
       final scanner = scannerWithSongs([
-        nativeApiSong(id: '1', path: 'Anime/Naruto/song.mp3'),
-        nativeApiSong(id: '2', path: 'Rock/song.mp3'),
+        browseSong(id: '1', path: 'Anime/Naruto/song.mp3'),
+        browseSong(id: '2', path: 'Rock/song.mp3'),
       ]);
 
       await pumpAndWaitForAsyncWork(
@@ -105,9 +105,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // SubsonicApiException.toString() returns just its message (no "Exception: "
-    // prefix — see SubsonicApiException).
+    // prefix — see SubsonicApiException). getMusicFolders is the walk's first
+    // request, so a server that fails everything fails there.
     expect(
-      find.text('Failed to scan library: Native API login failed: HTTP 500'),
+      find.text('Failed to scan library: HTTP error 500'),
       findsOneWidget,
     );
     expect(find.widgetWithText(FilledButton, 'Retry'), findsOneWidget);
@@ -118,7 +119,7 @@ void main() {
   ) async {
     final auth = await loggedInAuthService();
     final scanner = scannerWithSongs([
-      nativeApiSong(id: '1', path: 'Anime/Naruto/song.mp3'),
+      browseSong(id: '1', path: 'Anime/Naruto/song.mp3'),
     ]);
 
     await pumpAndWaitForAsyncWork(
@@ -150,7 +151,7 @@ void main() {
       // docs/reviews/2026-08-22-architecture-review.html Candidate 04.
       final auth = await loggedInAuthService();
       final scanner = scannerWithSongs([
-        nativeApiSong(id: '1', path: 'Some Song.mp3'),
+        browseSong(id: '1', path: 'Some Song.mp3'),
       ]);
       // A track must already be playing, or addToQueue() would fall through to
       // playTrack() — which needs a live platform audio backend this test
@@ -180,7 +181,7 @@ void main() {
   ) async {
     final auth = await loggedInAuthService();
     final scanner = scannerWithSongs([
-      nativeApiSong(id: '1', path: 'Anime/song.mp3'),
+      browseSong(id: '1', path: 'Anime/song.mp3'),
     ]);
 
     await pumpAndWaitForAsyncWork(
@@ -210,7 +211,7 @@ void main() {
 /// A [SubsonicApiService] whose every request fails — for testing the fatal
 /// scan-error path without a real server.
 SubsonicApiService failingSubsonicApiService() => SubsonicApiService(
-  serverUrl: 'https://navidrome.example.com',
+  serverUrl: 'https://gonic.example.com',
   username: 'alice',
   password: 'secret',
   httpClient: MockClient((request) async => http.Response('Server Error', 500)),

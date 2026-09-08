@@ -10,9 +10,9 @@ class FakeStreamUrlResolver implements StreamUrlResolver {
 
   @override
   String buildStreamUrl(String songId) =>
-      'https://navidrome.example.com/rest/stream?id=$songId';
+      'https://gonic.example.com/rest/stream?id=$songId';
 
   @override
   String buildCoverArtUrl(String coverArtId, {int? size}) =>
-      'https://navidrome.example.com/rest/getCoverArt?id=$coverArtId${size != null ? '&size=$size' : ''}';
+      'https://gonic.example.com/rest/getCoverArt?id=$coverArtId${size != null ? '&size=$size' : ''}';
 }

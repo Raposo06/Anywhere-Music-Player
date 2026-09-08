@@ -4,18 +4,22 @@ import '../services/library_scanner.dart';
 /// The track the library scan holds for [playing] — the copy carrying a real
 /// filesystem path — or [playing] unchanged when the scan doesn't have it.
 ///
-/// Playlist playback builds tracks from the Subsonic API, whose `path` is a
-/// tag-based virtual path ("AlbumArtist/Album"); the scan's copy has the real
-/// path. Resolving by id here is what keeps Now Playing — and its tap-through
-/// to the folder — consistent regardless of how playback started.
+/// Playlist playback builds tracks from the Subsonic API, whose `path` for a
+/// playlist entry need not be the path the folder walk arrived at; the scan's
+/// copy is the canonical one. Resolving by id here is what keeps Now Playing —
+/// and its tap-through to the folder — consistent regardless of how playback
+/// started.
 Track canonicalTrack(Track playing, LibraryScanner scanner) =>
     scanner.trackById(playing.id) ?? playing;
 
-/// The folder path to show on Now Playing: the real path with its top-level
-/// segment dropped (a broad category like "SOUNDTRACKS" that's shared across
-/// much of the library and adds nothing here). Empty when nothing is left —
-/// the folder line then hides entirely.
-String nowPlayingFolderPath(Track canonical) {
-  final segments = canonical.folderPath.split('/');
-  return segments.length <= 1 ? '' : segments.sublist(1).join('/');
-}
+/// The folder path to show on Now Playing: the track's real path in full.
+///
+/// This used to drop the first segment, back when the library sat under a
+/// single `SOUNDTRACKS` root that was the same for almost every track and so
+/// carried no information. The move to Gonic reshaped the tree — the top level
+/// is now five sibling categories — which made the dropped segment meaningful
+/// and blanked the line entirely for tracks sitting directly in one. See
+/// docs/decisions.md.
+///
+/// Empty when the track has no folder at all, which still hides the line.
+String nowPlayingFolderPath(Track canonical) => canonical.folderPath;

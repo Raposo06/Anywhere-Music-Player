@@ -40,7 +40,7 @@ void main() {
     });
     return FavouritesService(
       SubsonicApiService(
-        serverUrl: 'https://navidrome.example.com',
+        serverUrl: 'https://gonic.example.com',
         username: 'a',
         password: 'p',
         httpClient: client,

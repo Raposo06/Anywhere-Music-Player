@@ -5,11 +5,14 @@ import '../models/folder.dart';
 import 'subsonic_api_service.dart';
 import 'library_cache.dart';
 
-/// Scans the entire Navidrome library and builds a virtual folder tree
-/// from the file paths of each track (e.g., "Anime/Naruto/song.mp3").
+/// Scans the entire library and holds the folder tree the UI browses
+/// (e.g. "Anime/Naruto/song.mp3").
 ///
-/// This recreates the filesystem-based browsing experience since Navidrome
-/// only exposes tag-based (artist/album) browsing through its API.
+/// The scan walks the server's own directory tree
+/// (`SubsonicApiService.getAllTracksByFolder`) and keeps the flat list of
+/// tracks it returns; the tree here is rebuilt from their paths so that a
+/// library hydrated from the on-disk cache — which stores only that flat list
+/// — browses identically to a freshly scanned one.
 class LibraryScanner with ChangeNotifier {
   final SubsonicApiService? _api;
 
@@ -97,13 +100,19 @@ class LibraryScanner with ChangeNotifier {
         return;
       }
 
-      debugPrint('LibraryScanner: fetching all songs via Navidrome native API...');
-      final rawSongs = await _api.getAllSongsNativeApi();
-      debugPrint('LibraryScanner: got ${rawSongs.length} songs from native API');
-
-      final tracks = rawSongs
-          .map((song) => Track.fromNativeApi(song))
-          .toList(growable: false);
+      debugPrint('LibraryScanner: walking the server folder tree...');
+      // One request per directory now, so a large library is a long scan.
+      // Logged at the same 500-song cadence the old paged fetch used — enough
+      // to tell a slow scan from a stalled one without thousands of lines.
+      var lastLogged = 0;
+      final tracks = await _api.getAllTracksByFolder(
+        onProgress: (songsSoFar) {
+          if (songsSoFar - lastLogged < 500) return;
+          lastLogged = songsSoFar;
+          debugPrint('LibraryScanner: $songsSoFar songs so far...');
+        },
+      );
+      debugPrint('LibraryScanner: got ${tracks.length} songs from the walk');
 
       _allTracks = tracks;
       _buildFolderTree();

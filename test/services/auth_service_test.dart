@@ -76,7 +76,7 @@ void main() {
     });
 
     test('restores the session when stored credentials still ping ok', () async {
-      secureStore['server_url'] = 'https://navidrome.example.com';
+      secureStore['server_url'] = 'https://gonic.example.com';
       secureStore['username'] = 'alice';
       secureStore['password'] = 'secret';
 
@@ -96,7 +96,7 @@ void main() {
     });
 
     test('clears stored credentials when the server rejects them (code 40)', () async {
-      secureStore['server_url'] = 'https://navidrome.example.com';
+      secureStore['server_url'] = 'https://gonic.example.com';
       secureStore['username'] = 'alice';
       secureStore['password'] = 'wrong';
 
@@ -119,7 +119,7 @@ void main() {
       // Documented behavior: only an explicit "wrong credentials" (code 40)
       // logs the user out. Anything else (offline, timeout, server down) must
       // not — see docs/decisions.md.
-      secureStore['server_url'] = 'https://navidrome.example.com';
+      secureStore['server_url'] = 'https://gonic.example.com';
       secureStore['username'] = 'alice';
       secureStore['password'] = 'secret';
 
@@ -142,7 +142,7 @@ void main() {
       // Regression for J2: a flutter_secure_storage plugin failure on
       // startup must not be treated as "credentials rejected" — only a
       // code-40 ping response may clear storage. See docs/decisions.md.
-      secureStore['server_url'] = 'https://navidrome.example.com';
+      secureStore['server_url'] = 'https://gonic.example.com';
       secureStore['username'] = 'alice';
       secureStore['password'] = 'secret';
       FlutterSecureStoragePlatform.instance = _UnreadableSecureStoragePlatform(secureStore);
@@ -168,7 +168,7 @@ void main() {
 
     test('migrates legacy SharedPreferences credentials into secure storage', () async {
       SharedPreferences.setMockInitialValues({
-        'server_url': 'https://navidrome.example.com',
+        'server_url': 'https://gonic.example.com',
         'username': 'alice',
         'password': 'secret',
       });
@@ -203,7 +203,7 @@ void main() {
             ),
       );
 
-      await auth.login('https://navidrome.example.com', 'alice', 'secret');
+      await auth.login('https://gonic.example.com', 'alice', 'secret');
 
       expect(auth.isAuthenticated, isTrue);
       expect(auth.currentUser?.username, 'alice');
@@ -223,7 +223,7 @@ void main() {
       );
 
       await expectLater(
-        () => auth.login('https://navidrome.example.com', 'alice', 'wrong'),
+        () => auth.login('https://gonic.example.com', 'alice', 'wrong'),
         throwsA(isA<SubsonicApiException>()),
       );
 
@@ -243,7 +243,7 @@ void main() {
               httpClient: MockClient((request) async => _pingOk()),
             ),
       );
-      await auth.login('https://navidrome.example.com', 'alice', 'secret');
+      await auth.login('https://gonic.example.com', 'alice', 'secret');
 
       await auth.logout();
 

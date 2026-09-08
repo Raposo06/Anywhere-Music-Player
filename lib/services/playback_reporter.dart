@@ -1,4 +1,4 @@
-/// Reports listening back to the server, so Navidrome's own statistics —
+/// Reports listening back to the server, so the server's own statistics —
 /// play counts, "recently played", "most played", and any Last.fm /
 /// ListenBrainz bridge configured on the server side — reflect what this app
 /// actually played.

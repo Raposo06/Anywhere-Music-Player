@@ -36,7 +36,7 @@ Widget _wrap(AuthService auth) => ChangeNotifierProvider<AuthService>.value(
 
 void main() {
   setUp(() {
-    dotenv.testLoad(mergeWith: {'API_BASE_URL': 'https://navidrome.example.com'});
+    dotenv.testLoad(mergeWith: {'API_BASE_URL': 'https://gonic.example.com'});
     FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform({});
   });
 

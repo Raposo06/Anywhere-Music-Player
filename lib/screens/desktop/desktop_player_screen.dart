@@ -350,8 +350,8 @@ class _Details extends StatelessWidget {
   const _Details({required this.track, required this.onOpenFolder});
 
   /// The artist to display, or null when there's nothing meaningful — an empty
-  /// tag or Navidrome's '[Unknown Artist]' placeholder is treated as "no
-  /// artist" so the line is hidden entirely.
+  /// tag, or the literal '[Unknown Artist]' some servers substitute for one, is
+  /// treated as "no artist" so the line is hidden entirely.
   String? get _artist {
     final artist = track.artist?.trim();
     if (artist == null ||

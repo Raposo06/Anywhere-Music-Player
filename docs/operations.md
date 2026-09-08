@@ -6,7 +6,7 @@
 ## Run it
 
 ```bash
-cp .env.example .env       # then set API_BASE_URL to your Navidrome server
+cp .env.example .env       # then set API_BASE_URL to your Gonic server
 flutter pub get
 flutter run
 ```
@@ -15,11 +15,11 @@ flutter run
 
 | Variable | Purpose |
 |---|---|
-| `API_BASE_URL` | Navidrome base URL, e.g. `https://navidrome.foxcore.dev` |
+| `API_BASE_URL` | Server base URL, e.g. `https://gonic.foxcore.dev` |
 
 Credentials are **not** configured here — you log in through the app, and they're
-stored in `SharedPreferences` on the device. Accounts are created in the
-Navidrome web UI (the app has no signup — see [decisions.md](decisions.md)).
+stored in `SharedPreferences` on the device. Accounts are created in Gonic's own
+admin web UI (the app has no signup — see [decisions.md](decisions.md)).
 
 ## Build & release
 
@@ -85,7 +85,7 @@ credential-free platforms first, then set up signing.
 **One-time setup — repo variable:**
 
 - Settings → Secrets and variables → Actions → **Variables** → `API_BASE_URL`,
-  e.g. `https://navidrome.foxcore.dev`. `flutter_dotenv` bakes this into every
+  e.g. `https://gonic.foxcore.dev`. `flutter_dotenv` bakes this into every
   build's asset bundle; the job fails fast if it's unset. It is not a secret
   (it's public DNS), so a variable, not a secret.
 
@@ -459,7 +459,26 @@ themselves. Any new top-level route needs one of the two.
 
 - Check `.env` exists and `API_BASE_URL` is set and reachable **from the device**
   (a phone on mobile data can't see a LAN-only server).
-- Verify the Navidrome user has streaming permission.
+- Verify the server user exists and can stream (log in to Gonic's admin UI).
+
+### Changing `API_BASE_URL` doesn't move an installed app to the new server
+
+**Symptom.** `.env` points at the new server, the build picks it up, and the app
+still talks to the old one — old library, old ids, old cover art. Nothing errors,
+because the old server is still up and still answering.
+
+**Cause.** `API_BASE_URL` only **pre-fills the login screen's server field**
+(`login_screen.dart`). The URL actually used is the one stored in
+`flutter_secure_storage` under `server_url` at login, and `AuthService.initialize`
+reads it on every launch. An install that is already logged in never consults
+`.env` again.
+
+**Fix.** Log out and log back in, on every device. Logout clears the stored
+credentials *and* the library cache (`LibraryScanner.resetAndClearCache`), which
+is what you want here: track ids are server-assigned, so a library cache written
+against a different server is only convincing-looking rubbish. Bumping
+`LibraryCache._version` covers the same ground for installs that update without
+logging out.
 
 ### Android TV: app missing from the launcher
 
@@ -556,12 +575,15 @@ app actually does. Not a bug, nothing to fix; it stops recurring once the
 phone has seen this machine's certificate a few times, since every later
 build from here reuses the same keystore.
 
-### Navidrome shows an empty library; the app shows 0 folders and 0 tracks
+### The server shows an empty library; the app shows 0 folders and 0 tracks
 
 **Symptom.** The library and playlists go empty across every client at once —
-app and Navidrome's own web UI. Nothing was deleted; `du -sh` on the music path
-reports a few KB instead of tens of GB, and the directory looks like an empty
-folder rather than a missing one.
+this app and the server's own web UI. Nothing was deleted; `du -sh` on the music
+path reports a few KB instead of tens of GB, and the directory looks like an
+empty folder rather than a missing one.
+
+Diagnosed against Navidrome, but nothing about it is Navidrome-specific: any
+server indexing that path sees the same empty directory.
 
 **Cause.** The CIFS mount for the Hetzner Storage Box is not attached, so
 `/mnt/storagebox/music` is an empty directory on the VPS's own root disk, and
@@ -601,13 +623,14 @@ apt install -y linux-modules-extra-$(uname -r)
 modprobe nls_utf8
 mount -a
 echo nls_utf8 > /etc/modules-load.d/cifs.conf   # survives the next kernel bump
-docker restart $(docker ps -qf name=navidrome)  # its index cached the empty dir
+docker restart $(docker ps -qf name=gonic)  # its index cached the empty dir
 ```
 
-The last line matters: Navidrome will have indexed the empty directory, so the
-library stays empty until it rescans. It does **not** delete files it can't see
-— it marks them missing in its own database and waits for a human — so the
-music itself is never at risk from this.
+The last line matters: the server will have indexed the empty directory, so the
+library stays empty until it rescans. Navidrome did **not** delete files it
+couldn't see — it marked them missing and waited for a human. Confirm the same
+of whatever is running now before trusting it; either way the files on the share
+are untouched by the client.
 
 **Do not** diagnose this by writing test files to the music path. While
 unmounted, those writes land on the root disk and then vanish under the share
@@ -828,17 +851,28 @@ retry. `test/services/stream_cache_test.dart` covers the eviction rule.
 
 ## Server dependency
 
-Navidrome runs as a Docker service on the fox-core VPS (Coolify-managed) at
-`https://navidrome.foxcore.dev`, with `/mnt/music` — a Hetzner Storage Box
-mounted over CIFS — bind-mounted read-only into the container as `/music`.
+The server is **Gonic** at `https://gonic.foxcore.dev` (`type: gonic`,
+`serverVersion: 0.22.0`, Subsonic API `1.15.0`). Walked live on 2026-09-08:
+1 music folder, 239 directories, 4,384 songs, full scan ~7.5 s. See
+[overview.md](overview.md) for the full measurement.
+
+The hosting details below described the Navidrome instance this replaced — a
+Docker service on the fox-core VPS under Coolify, with `/mnt/music` (a Hetzner
+Storage Box over CIFS) bind-mounted read-only into the container as `/music`.
+**They have not been re-verified for the Gonic deployment**; check before
+relying on them.
 
 Consequences worth knowing before debugging the client:
 
 - **The app has no offline mode.** The caches accelerate a working setup; they
   don't substitute for a reachable server.
-- **New music appears only after a scan.** Navidrome's scan schedule
-  (`ND_SCANSCHEDULE`) governs that, not the app.
-- **If the CIFS mount drops**, Navidrome serves an empty or partial library and
+- **New music appears only after a server-side scan.** Gonic's scan interval
+  (`GONIC_SCAN_INTERVAL`, plus `GONIC_SCAN_AT_START`) governs that, not the app
+  — the app's own "rescan" only re-walks what the server already indexed.
+- **Gonic constrains the folder layout**: all files in a folder must belong to
+  one album, and one album must not span folders. A tree that breaks this
+  browses oddly, and no client-side change fixes it.
+- **If the CIFS mount drops**, the server offers an empty or partial library and
   the app faithfully shows nothing wrong — check the server before the client.
 
 ## Verification

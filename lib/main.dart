@@ -123,7 +123,7 @@ void main() async {
       : const NoPresence();
 
   // Android streams through an on-disk cache (seekable local files; ExoPlayer
-  // can't seek Navidrome's live HTTP stream) — everything else streams direct.
+  // can't seek the server's live HTTP stream) — everything else streams direct.
   // See StreamCache.
   final StreamCache streamCache = (!kIsWeb && Platform.isAndroid)
       ? DiskStreamCache()

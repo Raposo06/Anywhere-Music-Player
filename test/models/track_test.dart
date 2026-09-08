@@ -63,61 +63,55 @@ void main() {
     });
   });
 
-  group('Track.fromNativeApi', () {
-    // The Navidrome native API (/api/song) — used by LibraryScanner for real
-    // filesystem paths — uses different key names than Subsonic for the same
-    // concepts. This is a separate parser, not a variant of fromSubsonic's.
-    test('parses a well-formed native-API song response', () {
-      final track = Track.fromNativeApi({
-        'id': '42',
-        'title': 'A Song',
-        'path': 'Artist/Album/01 - A Song.flac',
-        'coverArtId': 'cov-42',
-        'duration': 245,
-        'size': 12345678,
-        'createdAt': '2024-01-15T10:00:00Z',
-        'artist': 'An Artist',
-        'album': 'An Album',
-        'rgTrackGain': -6.5,
-      });
+  group('Track.fromSubsonic with a pathOverride', () {
+    // The folder walk synthesizes each song's path from the directories it
+    // descended through and passes it here, because that path — not the
+    // server's own `path` field — is the tree the app actually browsed.
+    test('the override supplies path, folderPath and folderName', () {
+      final track = Track.fromSubsonic(
+        {'id': '42', 'title': 'A Song', 'coverArt': 'cov-42', 'duration': 245},
+        pathOverride: 'Artist/Album/01 - A Song.flac',
+      );
 
-      expect(track.id, '42');
-      expect(track.title, 'A Song');
       expect(track.path, 'Artist/Album/01 - A Song.flac');
       expect(track.folderPath, 'Artist/Album');
-      // Regression: LibraryScanner's inline construction never set this,
-      // leaving folderName empty on every scanned track — see
-      // docs/decisions.md "Library cache schema v3 → v4".
       expect(track.folderName, 'Album');
       expect(track.coverArtId, 'cov-42');
       expect(track.durationSeconds, 245);
-      expect(track.fileSizeBytes, 12345678);
-      expect(track.artist, 'An Artist');
-      expect(track.album, 'An Album');
-      expect(track.replayGainDb, -6.5);
     });
 
-    test('falls back to the track id for cover art when coverArtId is absent', () {
-      final track = Track.fromNativeApi({'id': '1', 'title': 'T'});
-      expect(track.coverArtId, '1');
+    test('the override wins over the path the server sent', () {
+      // Gonic's own `path` may be relative to a music folder this walk has
+      // already accounted for, so the two can legitimately disagree. The
+      // walk's answer is the one the folder tree has to agree with.
+      final track = Track.fromSubsonic(
+        {'id': '1', 'title': 'T', 'path': 'somewhere/else/song.mp3'},
+        pathOverride: 'Anime/Naruto/song.mp3',
+      );
+
+      expect(track.path, 'Anime/Naruto/song.mp3');
+      expect(track.folderPath, 'Anime/Naruto');
     });
 
-    test('leaves path and folder fields empty rather than guessing when path is absent', () {
-      final track = Track.fromNativeApi({'id': '1', 'title': 'T'});
+    test('a root-level override leaves folderPath empty, not guessed', () {
+      final track = Track.fromSubsonic(
+        {'id': '1', 'title': 'T'},
+        pathOverride: 'loose-track.mp3',
+      );
 
-      expect(track.path, '');
+      expect(track.path, 'loose-track.mp3');
       expect(track.folderPath, '');
       expect(track.folderName, '');
     });
 
-    test('defaults title to Unknown when absent', () {
-      final track = Track.fromNativeApi({'id': '1'});
-      expect(track.title, 'Unknown');
-    });
+    test('parentFolderName still wins over the override-derived name', () {
+      final track = Track.fromSubsonic(
+        {'id': '1', 'title': 'T'},
+        pathOverride: 'A/B/song.mp3',
+        parentFolderName: 'Custom Name',
+      );
 
-    test('tolerates a missing/unparseable createdAt', () {
-      final track = Track.fromNativeApi({'id': '1', 'title': 'T'});
-      expect(track.createdAt, isA<DateTime>());
+      expect(track.folderName, 'Custom Name');
     });
   });
 

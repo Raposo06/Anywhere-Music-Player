@@ -170,9 +170,9 @@ class _MprisPlayerObject extends DBusObject {
     _length = track.durationSeconds != null
         ? Duration(seconds: track.durationSeconds!)
         : null;
-    // Object paths only allow [A-Za-z0-9_] between slashes — track ids
-    // (Navidrome UUIDs) can contain hyphens, so sanitize rather than pass
-    // the id straight through.
+    // Object paths only allow [A-Za-z0-9_] between slashes — server-assigned
+    // track ids are opaque and can contain hyphens (Navidrome's were UUIDs),
+    // so sanitize rather than pass the id straight through.
     final safeId = track.id.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_');
     _trackId = '/org/mpris/MediaPlayer2/Track/$safeId';
   }

@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/track.dart';
 import 'subsonic_api_service.dart';
 
-/// The user's starred songs, held server-side by Navidrome and mirrored here.
+/// The user's starred songs, held server-side and mirrored here.
 ///
 /// Shaped like [LibraryScanner]: constructed with the current
 /// [SubsonicApiService] (null while logged out) and rebound by `MyApp`'s

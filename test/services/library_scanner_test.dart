@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -6,39 +5,20 @@ import 'package:http/testing.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:anywhere_music_player/services/library_scanner.dart';
 import 'package:anywhere_music_player/services/subsonic_api_service.dart';
+import '../support/fake_gonic.dart';
 import '../support/fake_path_provider.dart';
 
 Map<String, dynamic> _song({
   required String id,
   required String path,
   String? coverArtId,
-}) => {
-  'id': id,
-  'path': path,
-  'title': path.split('/').last,
-  'coverArtId': coverArtId,
-  'duration': 120,
-  'size': 1000,
-  'artist': 'Some Artist',
-  'album': 'Some Album',
-};
-
-/// Mocks the native-API endpoints LibraryScanner.scan() drives:
-/// POST /auth/login → {"token": ...}, then paginated GET /api/song.
-/// A single page (< pageSize=500) ends the pagination loop.
-http.Client _nativeApiClient(List<Map<String, dynamic>> songs) {
-  return MockClient((request) async {
-    if (request.method == 'POST' && request.url.path == '/auth/login') {
-      return http.Response(jsonEncode({'token': 'fake-jwt'}), 200);
-    }
-    if (request.method == 'GET' && request.url.path == '/api/song') {
-      final start = int.parse(request.url.queryParameters['_start']!);
-      final page = songs.skip(start).take(500).toList();
-      return http.Response(jsonEncode(page), 200);
-    }
-    return http.Response('not found', 404);
-  });
-}
+}) => browseSong(
+  id: id,
+  path: path,
+  coverArtId: coverArtId,
+  artist: 'Some Artist',
+  album: 'Some Album',
+);
 
 void main() {
   late Directory tempDir;
@@ -63,10 +43,10 @@ void main() {
   });
 
   SubsonicApiService apiWith(List<Map<String, dynamic>> songs) => SubsonicApiService(
-    serverUrl: 'https://navidrome.example.com',
+    serverUrl: 'https://gonic.example.com',
     username: 'alice',
     password: 'secret',
-    httpClient: _nativeApiClient(songs),
+    httpClient: gonicBrowseClient(songs),
   );
 
   group('with no api connection', () {
@@ -82,7 +62,7 @@ void main() {
   });
 
   group('scan()', () {
-    test('fetches songs and builds the virtual folder tree from their paths', () async {
+    test('walks the server tree and rebuilds it from the paths it descended', () async {
       final scanner = LibraryScanner(apiWith([
         _song(id: '1', path: 'Anime/Naruto/01 - Opening.mp3'),
         _song(id: '2', path: 'Rock/Album/02 - Song.mp3'),
@@ -181,7 +161,7 @@ void main() {
     test('a scan failure with no prior data sets a fatal error, not a soft one', () async {
       final scanner = LibraryScanner(
         SubsonicApiService(
-          serverUrl: 'https://navidrome.example.com',
+          serverUrl: 'https://gonic.example.com',
           username: 'a',
           password: 'p',
           httpClient: MockClient((request) async => http.Response('boom', 500)),

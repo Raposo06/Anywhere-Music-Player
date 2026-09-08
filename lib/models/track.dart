@@ -40,10 +40,21 @@ class Track with CoverArtRef {
   /// take a [StreamUrlResolver] — nothing here needs one; [streamUrl] and
   /// [coverArtUrl] are resolved at the moment of use instead (see
   /// StreamUrlResolver).
-  factory Track.fromSubsonic(Map<String, dynamic> json, {String? parentFolderName}) {
+  ///
+  /// [pathOverride] replaces the song's own `path` field as the source of
+  /// [path] (and so of [folderPath] and [folderName]). The folder walk in
+  /// `SubsonicApiService.getAllTracksByFolder` passes the path it descended
+  /// through, which is authoritative in a way the server's `path` is not: it
+  /// is the tree the app actually browsed. Every other caller leaves it null
+  /// and takes whatever the server sends.
+  factory Track.fromSubsonic(
+    Map<String, dynamic> json, {
+    String? parentFolderName,
+    String? pathOverride,
+  }) {
     final songId = json['id'].toString();
     final coverArtId = json['coverArt']?.toString();
-    final filePath = json['path'] as String?;
+    final filePath = pathOverride ?? json['path'] as String?;
     final extractedFolderPath = _extractFolderPath(filePath);
 
     return Track(
@@ -63,39 +74,6 @@ class Track with CoverArtRef {
       replayGainDb:
           ((json['replayGain'] as Map<String, dynamic>?)?['trackGain'] as num?)
               ?.toDouble(),
-    );
-  }
-
-  /// Create a Track from a Navidrome native-API (`/api/song`) response.
-  /// A separate factory, not a variant of [fromSubsonic]: the native API
-  /// isn't Subsonic-shaped, it uses different key names for the same
-  /// concepts (`coverArtId` vs `coverArt`, `rgTrackGain` vs
-  /// `replayGain.trackGain`, `createdAt` vs `created`) because it's a
-  /// different endpoint on the same server, not just a different transport.
-  /// Used by [LibraryScanner], which fetches the whole library through this
-  /// endpoint for its real filesystem paths (the Subsonic API only exposes
-  /// tag-based virtual paths).
-  factory Track.fromNativeApi(Map<String, dynamic> json) {
-    final songId = json['id']?.toString() ?? '';
-    final coverArtId = json['coverArtId']?.toString() ?? json['id']?.toString();
-    final filePath = json['path'] as String?;
-    final extractedFolderPath = _extractFolderPath(filePath);
-
-    return Track(
-      id: songId,
-      title: json['title'] as String? ?? 'Unknown',
-      path: filePath ?? '',
-      coverArtId: coverArtId,
-      folderPath: extractedFolderPath,
-      folderName: _lastSegment(extractedFolderPath),
-      durationSeconds: (json['duration'] is num) ? (json['duration'] as num).round() : null,
-      fileSizeBytes: (json['size'] is num) ? (json['size'] as num).round() : null,
-      createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now()
-          : DateTime.now(),
-      artist: json['artist'] as String?,
-      album: json['album'] as String?,
-      replayGainDb: (json['rgTrackGain'] as num?)?.toDouble(),
     );
   }
 

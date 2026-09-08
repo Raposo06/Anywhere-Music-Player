@@ -64,8 +64,8 @@ void main() {
 
   testWidgets('lists subfolders and tracks at the given path', (tester) async {
     final scanner = scannerWithSongs([
-      nativeApiSong(id: '1', path: 'Anime/Naruto/song.mp3'),
-      nativeApiSong(id: '2', path: 'Anime/loose.mp3'),
+      browseSong(id: '1', path: 'Anime/Naruto/song.mp3'),
+      browseSong(id: '2', path: 'Anime/loose.mp3'),
     ]);
     await tester.runAsync(() => scanner.scan());
 
@@ -90,7 +90,7 @@ void main() {
     // own tile shows its own "N track(s)" subtitle (its local count, not the
     // recursive total), which reads identically to the header and would
     // make this assertion ambiguous about which one it's actually checking.
-    final songs = [nativeApiSong(id: '1', path: 'Anime/loose.mp3')];
+    final songs = [browseSong(id: '1', path: 'Anime/loose.mp3')];
     final scanner = scannerWithSongs(songs);
     await tester.runAsync(() => scanner.scan());
 
@@ -101,7 +101,7 @@ void main() {
 
     expect(find.text('1 track(s)'), findsOneWidget);
 
-    songs.add(nativeApiSong(id: '2', path: 'Anime/loose2.mp3'));
+    songs.add(browseSong(id: '2', path: 'Anime/loose2.mp3'));
     await tester.runAsync(() => scanner.rescan());
     await settle(tester);
 
@@ -113,7 +113,7 @@ void main() {
     tester,
   ) async {
     final scanner = scannerWithSongs([
-      nativeApiSong(id: '1', path: 'Anime/song.mp3'),
+      browseSong(id: '1', path: 'Anime/song.mp3'),
     ]);
     await tester.runAsync(() => scanner.scan());
 
@@ -136,8 +136,8 @@ void main() {
     // top-level entry — otherwise it's the auto-flattened root and the
     // breadcrumb deliberately omits it (see LibraryScanner.isFlattenedRoot).
     final scanner = scannerWithSongs([
-      nativeApiSong(id: '1', path: 'Anime/Naruto/song.mp3'),
-      nativeApiSong(id: '2', path: 'Rock/song.mp3'),
+      browseSong(id: '1', path: 'Anime/Naruto/song.mp3'),
+      browseSong(id: '2', path: 'Rock/song.mp3'),
     ]);
     await tester.runAsync(() => scanner.scan());
 
@@ -152,8 +152,8 @@ void main() {
 
   testWidgets('search filters tracks within the folder', (tester) async {
     final scanner = scannerWithSongs([
-      nativeApiSong(id: '1', path: 'Anime/Naruto Opening.mp3'),
-      nativeApiSong(id: '2', path: 'Anime/Bleach Opening.mp3'),
+      browseSong(id: '1', path: 'Anime/Naruto Opening.mp3'),
+      browseSong(id: '2', path: 'Anime/Bleach Opening.mp3'),
     ]);
     await tester.runAsync(() => scanner.scan());
 
@@ -180,7 +180,7 @@ void main() {
       // tracks). Searching used to filter only the direct-children list, so it
       // silently found nothing in exactly this shape of folder.
       final scanner = scannerWithSongs([
-        nativeApiSong(
+        browseSong(
           id: '1',
           path: 'Anime/Bleach/Bleach OST 1/Naruto Opening.mp3',
         ),
@@ -205,7 +205,7 @@ void main() {
     tester,
   ) async {
     final scanner = scannerWithSongs([
-      nativeApiSong(id: '1', path: 'Anime/Naruto Opening.mp3'),
+      browseSong(id: '1', path: 'Anime/Naruto Opening.mp3'),
     ]);
     await tester.runAsync(() => scanner.scan());
 
@@ -224,7 +224,7 @@ void main() {
 
   testWidgets('swiping a track away adds it to the queue', (tester) async {
     final scanner = scannerWithSongs([
-      nativeApiSong(id: '1', path: 'Anime/Some Song.mp3'),
+      browseSong(id: '1', path: 'Anime/Some Song.mp3'),
     ]);
     await tester.runAsync(() => scanner.scan());
     final player = AudioPlayerService()

@@ -172,8 +172,10 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
 /// A playlist as a [HoverCoverCard], matching the library's folder cards —
 /// plus an overflow menu for rename/delete where the playlist is editable.
 ///
-/// Navidrome generates a mosaic cover for a playlist, so most have real art;
-/// the fallback is the same queue glyph used elsewhere for playlists.
+/// Whether a playlist has cover art at all is up to the server — Navidrome
+/// generated a mosaic for every one, Gonic sends `coverArt` only when it has
+/// something — so the fallback carries real weight here: the same queue glyph
+/// used elsewhere for playlists.
 class _PlaylistCard extends StatefulWidget {
   final Playlist playlist;
   final bool editable;

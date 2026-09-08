@@ -18,8 +18,9 @@ import '../widgets/upcoming_cover_precacher.dart';
 import 'folder_detail_screen.dart';
 
 /// The artist to display on the player, or null when there's nothing
-/// meaningful — an empty tag or Navidrome's '[Unknown Artist]' placeholder is
-/// treated as "no artist" so the line is hidden entirely.
+/// meaningful — an empty tag, or the literal '[Unknown Artist]' some servers
+/// substitute for one, is treated as "no artist" so the line is hidden
+/// entirely.
 String? _displayArtist(Track track) {
   final artist = track.artist?.trim();
   if (artist == null ||
@@ -334,7 +335,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Widget _buildAlbumArt(Track track, double size) {
-    // Server-side resize: ask Navidrome for an image at the actual pixel
+    // Server-side resize: ask the server for an image at the actual pixel
     // size we render. Without this the screen downloads the full-res master
     // (often 1500–2000px / 1–2 MB) just to display a 350-px square, which
     // both wastes bandwidth and balloons the in-memory image cache.

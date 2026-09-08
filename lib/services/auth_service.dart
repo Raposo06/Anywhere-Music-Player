@@ -110,7 +110,7 @@ class AuthService with ChangeNotifier {
     }
   }
 
-  /// Login to a Navidrome server using Subsonic API credentials.
+  /// Login to a Subsonic-compatible server (Gonic) using its credentials.
   Future<void> login(String serverUrl, String username, String password) async {
     _isLoading = true;
     notifyListeners();
