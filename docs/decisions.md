@@ -14,6 +14,56 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Desktop footprint trimmed; libmpv's demuxer cache bounded to 8 MB (2026-09-08)
+
+**Decided.** Four changes, all aimed at memory and bundle size:
+
+1. `JustAudioMediaKit.bufferSize = 8 << 20`, set in `main()` before
+   `ensureInitialized()`. The package default is **32 MB**.
+2. `cupertino_icons` and `json_annotation` dropped as dependencies, along with
+   the `json_serializable` / `build_runner` dev deps.
+3. `assets:` lists files individually instead of the `assets/icons/` directory.
+4. The four Windows-taskbar `.ico` files re-exported as multi-size icons
+   (48/32/24/16) instead of single 128×128 — and `next.ico`, which also carried
+   a 256×256 frame.
+
+**Why.** Measured against a bare Flutter counter app built from the same SDK:
+
+| | RSS | PSS | Private |
+|---|---|---|---|
+| Bare Flutter app | 330 MB | 139 MB | **84 MB** |
+| This app, library loaded | 530 MB | 272 MB | **216 MB** |
+
+84 MB is Flutter's floor and not addressable from here. The 132 MB above it is,
+and the demuxer cache was the largest single identifiable piece of it: 32 MB is
+a video-sized buffer, while this app streams audio, where 8 MB is minutes of
+lookahead.
+
+The rest is bundle hygiene worth roughly 800 KB of 28 MB — trivial in isolation,
+but all of it was pure waste: `cupertino_icons` was imported in **zero** files
+while shipping a 252 KB font; `json_annotation` likewise zero, with no `.g.dart`
+file or `part` directive anywhere (the models hand-write their JSON); the
+launcher-icon sources were being shipped to users because the asset list named a
+directory; and `next.ico` alone was 330 KB for a button Windows draws at 16–24
+px.
+
+**What would reverse it.** Rebuffering during playback that `DropRecovery` ends
+up catching — raise `bufferSize` to 16 MB and re-measure before going back to
+32. Adopting `json_serializable` for the models would bring back its three
+dependencies. Adding a runtime asset means adding it to the now-explicit list;
+a missing asset fails at load, not at build, so that list is a maintenance
+edge — accepted deliberately to stop shipping build-time sources.
+
+**Not done.** The image cache cap (50 MB / 300 entries) was left alone: it is a
+ceiling, not an allocation, and lowering it only helps if it is actually being
+hit. Log `imageCache.currentSizeBytes` after a long library scroll before
+touching it. `getTopLevelFolders()` is also still called twice per build in
+`desktop_library_screen.dart` and recomputes `totalTrackCount` each time — ~500
+node visits across 239 directories, genuinely negligible at this size, worth
+memoising only if the library grows by an order of magnitude.
+
+---
+
 ## Now Playing's folder line shows the full path again (2026-09-08)
 
 **Decided.** `nowPlayingFolderPath` returns `canonical.folderPath` unchanged. It

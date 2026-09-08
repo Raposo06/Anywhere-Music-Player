@@ -41,6 +41,13 @@ void main() async {
   // Initialize media_kit backend for just_audio on desktop (replaces
   // just_audio_windows which had WMF threading deadlocks on startup).
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+    // libmpv's demuxer cache, which just_audio_media_kit defaults to 32 MB —
+    // a size meant for video. This app streams audio, where 8 MB is minutes
+    // of buffer, and the default was measurably the largest single piece of
+    // memory this app added over a bare Flutter process. Raise it if network
+    // hiccups start causing rebuffering that DropRecovery has to catch.
+    // Must be set before ensureInitialized(); it is read at player creation.
+    JustAudioMediaKit.bufferSize = 8 << 20; // 8 MB
     JustAudioMediaKit.ensureInitialized();
   }
 

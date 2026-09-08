@@ -10,9 +10,6 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # UI
-  cupertino_icons: any
-
   # State Management
   provider: any
 
@@ -66,9 +63,6 @@ dependencies:
   # Environment variables
   flutter_dotenv: ^5.2.1
 
-  # JSON Serialization
-  json_annotation: any
-
   # @visibleForTesting — used directly (not via flutter/foundation.dart) by
   # playback_cursor.dart, which is deliberately plain Dart with no Flutter
   # import.
@@ -78,8 +72,6 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: any
-  build_runner: any
-  json_serializable: any
   flutter_launcher_icons: ^0.14.4
 
   # Testing: fakes package-boundary platform channels (path_provider,
@@ -92,8 +84,15 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  # Listed file by file rather than as a directory: assets/icons/ also holds
+  # the launcher-icon sources (psx.png/psx.ico) that flutter_launcher_icons
+  # reads at build time, and a directory entry would ship those to every user.
   assets:
-    - assets/icons/
+    - assets/icons/ps1.png
+    - assets/icons/play.ico
+    - assets/icons/pause.ico
+    - assets/icons/prev.ico
+    - assets/icons/next.ico
     - .env
 
   # Static instances (not the variable masters) so `fontWeight` selects a real
