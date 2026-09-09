@@ -14,6 +14,69 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Playback's pure policies live in `PlaybackPolicy`; drop recovery does not (2026-09-09)
+
+**Decided.** The scrobble threshold, the ReplayGain curve and the prefetch cap
+move out of `AudioPlayerService` into `lib/services/playback_policy.dart` —
+pure Dart, no Flutter, no just_audio, the shape `PlaybackCursor` already
+proves works here. `AudioPlayerService` 807 → 753 lines.
+
+**Why.** They are tuning-heavy decisions with no dependency on a live audio
+backend, and reaching one from a test meant either constructing a real
+`AudioPlayer` or drilling a hole through the class — which had happened:
+`replayGainFactorForTest` existed purely because Dart privacy is per-library.
+That wrapper is gone, and its tests now construct nothing. `PlaybackCursor.seed`
+also loses `@visibleForTesting`, and with it an
+`ignore: invalid_use_of_visible_for_testing_member` and a five-line comment
+apologising for one test seam calling another; the cursor is private to
+`AudioPlayerService`, so nothing else could reach it anyway.
+
+**Mid-stream drop recovery was deliberately left where it is.** The review that
+proposed this listed it as a fourth pure policy, "3 attempts / 30 s". It is not
+pure: it is three mutable fields (`_resumeAttempts`, `_resumeTrackId`,
+`_lastResumeAt`) and a call to `DateTime.now()`. Extracting it means inventing
+a clock seam, inside the code implementing "drop recovery never auto-resumes
+while paused" (CLAUDE.md item 7) — a rule only really verifiable on a device.
+The cost is real and the benefit is a nicer-looking file. Don't redo this
+without a device to test on.
+
+The prefetch cap moved as a **constant, not a predicate**, for the same
+don't-be-clever reason: a `shouldPrefetch(int?)` helper had to swallow "a size
+the server didn't report is prefetched", which cost the call site its null
+promotion and bought a `!`. The rationale for 50 MB was what was worth moving.
+
+**What would reverse it.** A second playback backend with different tuning, or
+policies that stop being pure (a user-facing ReplayGain preference read from
+storage, say) — either turns these from constants-with-arithmetic into a
+module with state, which belongs somewhere else.
+
+---
+
+## The warm slot is one field, and the cache key one expression (2026-09-09)
+
+**Decided.** `DiskStreamCache`'s two lockstep fields (`_warmId` + `_warm`)
+become one nullable record, and the two `LockCachingAudioSource` constructions
+— one in `sourceFor`, one in `prefetch` — become one `_open` helper.
+
+**Why.** The two fields were cleared at three separate sites and had to agree
+at all of them; desync was a bug waiting to be written, not one that existed.
+More importantly the id-keying decision — **cache file keyed by track id,
+never the URL**, CLAUDE.md item 2, where getting it wrong is a silent 100% miss
+because the auth salt rotates per request — was written out twice, as was the
+one-live-source-per-cache-file rationale.
+
+**Scope was deliberately narrow: when the slot is taken and when it is cleared
+did not change.** That lifecycle is the subtlest thing in the file, its failure
+mode is file corruption under a real player, and it is verifiable here only
+through the 13 stream-cache tests (which inject a no-op warmer and assert the
+hand-over). Those passed unmodified. A change to the lifecycle itself needs an
+Android device.
+
+**What would reverse it.** `just_audio` growing a supported way to hold more
+than one track warm — the single-slot design is what makes one field correct.
+
+---
+
 ## Subsonic wire-format quirks live in `models/subsonic_json.dart` (2026-09-09)
 
 **Decided.** The single-element collapse — Subsonic sends `"child": {...}` for
