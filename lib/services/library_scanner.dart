@@ -3,16 +3,16 @@ import 'package:flutter/foundation.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
 import 'subsonic_api_service.dart';
+import 'folder_walk.dart';
 import 'library_cache.dart';
 
 /// Scans the entire library and holds the folder tree the UI browses
 /// (e.g. "Anime/Naruto/song.mp3").
 ///
-/// The scan walks the server's own directory tree
-/// (`SubsonicApiService.getAllTracksByFolder`) and keeps the flat list of
-/// tracks it returns; the tree here is rebuilt from their paths so that a
-/// library hydrated from the on-disk cache — which stores only that flat list
-/// — browses identically to a freshly scanned one.
+/// The scan walks the server's own directory tree (`FolderWalk.run`) and
+/// keeps the flat list of tracks it returns; the tree here is rebuilt from
+/// their paths so that a library hydrated from the on-disk cache — which
+/// stores only that flat list — browses identically to a freshly scanned one.
 class LibraryScanner with ChangeNotifier {
   final SubsonicApiService? _api;
 
@@ -124,7 +124,7 @@ class LibraryScanner with ChangeNotifier {
       // Logged at the same 500-song cadence the old paged fetch used — enough
       // to tell a slow scan from a stalled one without thousands of lines.
       var lastLogged = 0;
-      final tracks = await _api.getAllTracksByFolder(
+      final tracks = await FolderWalk(_api).run(
         onProgress: (songsSoFar) {
           if (songsSoFar - lastLogged < 500) return;
           lastLogged = songsSoFar;
