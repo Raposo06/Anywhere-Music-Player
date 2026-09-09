@@ -1,23 +1,18 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/track.dart';
-import 'subsonic_api_service.dart';
+import 'session_scoped.dart';
 
 /// The user's starred songs, held server-side and mirrored here.
 ///
-/// Shaped like [LibraryScanner]: constructed with the current
-/// [SubsonicApiService] (null while logged out) and rebound by `MyApp`'s
-/// proxy provider when the session changes, so it never outlives its session.
+/// A [SessionScoped] module with [LoadStatus] — see those for what binds it
+/// to a session and what `isLoading` / `isLoaded` / `error` promise.
 ///
 /// **Songs only.** Subsonic can star albums and artists too, but folders in
 /// this app are virtual — their id is the library path, not a Subsonic album
 /// id — so there is nothing to star for one. See docs/decisions.md.
-class FavouritesService with ChangeNotifier {
-  final SubsonicApiService? _api;
-
-  FavouritesService(this._api);
-
-  SubsonicApiService? get api => _api;
+class FavouritesService extends SessionScoped with LoadStatus {
+  FavouritesService(super.api);
 
   /// Starred tracks, newest first. Empty until [load] completes — callers get
   /// "not a favourite" for everything before then, which is why the desktop
@@ -30,17 +25,7 @@ class FavouritesService with ChangeNotifier {
   /// directly.
   final Set<String> _starredIds = {};
 
-  bool _loading = false;
-  bool _loaded = false;
-  String? _error;
-
   List<Track> get starred => List.unmodifiable(_starred);
-  bool get isLoading => _loading;
-
-  /// True once a load has succeeded — lets a view tell "no favourites yet"
-  /// apart from "not fetched yet".
-  bool get isLoaded => _loaded;
-  String? get error => _error;
 
   bool isStarred(String trackId) => _starredIds.contains(trackId);
 
@@ -57,31 +42,15 @@ class FavouritesService with ChangeNotifier {
   /// Fetch the starred list from the server, replacing what's held here.
   ///
   /// Safe to call repeatedly; concurrent calls collapse into the first.
-  Future<void> load() async {
-    final api = _api;
-    if (api == null || _loading) return;
-
-    _loading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      final songs = await api.getStarredSongs();
-      _starred
-        ..clear()
-        ..addAll(songs);
-      _starredIds
-        ..clear()
-        ..addAll(songs.map((t) => t.id));
-      _loaded = true;
-    } catch (e) {
-      _error = 'Could not load favourites: $e';
-      debugPrint('FavouritesService: load failed: $e');
-    } finally {
-      _loading = false;
-      notifyListeners();
-    }
-  }
+  Future<void> load() => runLoad('favourites', (api) async {
+    final songs = await api.getStarredSongs();
+    _starred
+      ..clear()
+      ..addAll(songs);
+    _starredIds
+      ..clear()
+      ..addAll(songs.map((t) => t.id));
+  });
 
   /// Star or unstar [track], whichever it isn't already.
   ///
@@ -90,7 +59,7 @@ class FavouritesService with ChangeNotifier {
   /// failure case is rare. [error] carries the reason when a rollback happens,
   /// so a screen can surface it.
   Future<void> toggle(Track track) async {
-    final api = _api;
+    final api = this.api;
     if (api == null) return;
 
     final wasStarred = isStarred(track.id);
@@ -103,7 +72,7 @@ class FavouritesService with ChangeNotifier {
     } else {
       _add(track);
     }
-    _error = null;
+    error = null;
     notifyListeners();
 
     try {
@@ -118,7 +87,7 @@ class FavouritesService with ChangeNotifier {
       } else {
         _remove(track.id);
       }
-      _error = wasStarred
+      error = wasStarred
           ? 'Could not remove from favourites: $e'
           : 'Could not add to favourites: $e';
       debugPrint('FavouritesService: toggle failed for ${track.id}: $e');
@@ -126,10 +95,4 @@ class FavouritesService with ChangeNotifier {
     }
   }
 
-  /// Drop the last error once a screen has shown it.
-  void clearError() {
-    if (_error == null) return;
-    _error = null;
-    notifyListeners();
-  }
 }

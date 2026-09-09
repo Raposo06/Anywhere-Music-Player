@@ -2,25 +2,20 @@ import 'package:flutter/foundation.dart';
 
 import '../models/playlist.dart';
 import '../models/track.dart';
-import 'subsonic_api_service.dart';
+import 'session_scoped.dart';
 
 /// The user's server-side playlists.
 ///
-/// Shaped like [FavouritesService]: constructed with the current
-/// [SubsonicApiService] (null while logged out) and rebound by `MyApp`'s proxy
-/// provider when the session changes, so it never outlives its session.
+/// A [SessionScoped] module with [LoadStatus] — see those for what binds it
+/// to a session and what `isLoading` / `isLoaded` / `error` promise.
 ///
 /// **Not optimistic**, unlike favourites. A playlist edit is a structural
 /// change to shared, server-owned data — and Subsonic removes tracks by
 /// *position*, so acting on a stale local copy can delete the wrong track.
 /// Every mutation therefore waits for the server and then re-reads. See
 /// docs/decisions.md.
-class PlaylistsService with ChangeNotifier {
-  final SubsonicApiService? _api;
-
-  PlaylistsService(this._api);
-
-  SubsonicApiService? get api => _api;
+class PlaylistsService extends SessionScoped with LoadStatus {
+  PlaylistsService(super.api);
 
   final List<Playlist> _playlists = [];
 
@@ -29,18 +24,11 @@ class PlaylistsService with ChangeNotifier {
   /// demand rather than eagerly with the list.
   final Map<String, List<Track>> _tracks = {};
 
-  bool _loading = false;
-  bool _loaded = false;
-  String? _error;
-
   /// Playlist ids with an in-flight or completed content fetch, so a detail
   /// screen rebuilding doesn't re-request what it already asked for.
   final Set<String> _fetchingTracks = {};
 
   List<Playlist> get playlists => List.unmodifiable(_playlists);
-  bool get isLoading => _loading;
-  bool get isLoaded => _loaded;
-  String? get error => _error;
 
   /// The tracks of [playlistId], or null if they haven't been fetched yet —
   /// which a detail screen shows as loading rather than as an empty playlist.
@@ -55,35 +43,19 @@ class PlaylistsService with ChangeNotifier {
 
   /// Fetch the playlist list. Safe to call repeatedly; concurrent calls
   /// collapse into the first.
-  Future<void> load() async {
-    final api = _api;
-    if (api == null || _loading) return;
-
-    _loading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      final result = await api.getPlaylists();
-      _playlists
-        ..clear()
-        ..addAll(result);
-      _loaded = true;
-    } catch (e) {
-      _error = 'Could not load playlists: $e';
-      debugPrint('PlaylistsService: load failed: $e');
-    } finally {
-      _loading = false;
-      notifyListeners();
-    }
-  }
+  Future<void> load() => runLoad('playlists', (api) async {
+    final result = await api.getPlaylists();
+    _playlists
+      ..clear()
+      ..addAll(result);
+  });
 
   /// Fetch [playlistId]'s tracks.
   ///
   /// Pass [force] after a mutation; otherwise an already-fetched playlist is
   /// left alone so opening it repeatedly costs nothing.
   Future<void> loadTracks(String playlistId, {bool force = false}) async {
-    final api = _api;
+    final api = this.api;
     if (api == null) return;
     if (!force && _fetchingTracks.contains(playlistId)) return;
     _fetchingTracks.add(playlistId);
@@ -102,9 +74,9 @@ class PlaylistsService with ChangeNotifier {
       } else {
         _playlists.add(result.playlist);
       }
-      _error = null;
+      error = null;
     } catch (e) {
-      _error = 'Could not load playlist: $e';
+      error = 'Could not load playlist: $e';
       debugPrint('PlaylistsService: loadTracks($playlistId) failed: $e');
     } finally {
       notifyListeners();
@@ -125,7 +97,7 @@ class PlaylistsService with ChangeNotifier {
   /// rather than a guess: the playlist exists either way, and the caller's
   /// only use for the result is deciding whether to open it.
   Future<Playlist?> create(String name, {List<Track> tracks = const []}) async {
-    final api = _api;
+    final api = this.api;
     if (api == null) return null;
 
     try {
@@ -134,7 +106,7 @@ class PlaylistsService with ChangeNotifier {
         name,
         songIds: [for (final t in tracks) t.id],
       );
-      _error = null;
+      error = null;
       await load();
 
       if (created != null) {
@@ -147,7 +119,7 @@ class PlaylistsService with ChangeNotifier {
       ];
       return fresh.length == 1 ? fresh.single : null;
     } catch (e) {
-      _error = 'Could not create playlist: $e';
+      error = 'Could not create playlist: $e';
       debugPrint('PlaylistsService: create failed: $e');
       notifyListeners();
       return null;
@@ -157,17 +129,17 @@ class PlaylistsService with ChangeNotifier {
   /// Append [tracks] to [playlistId]. Adding is by song id, so this is safe
   /// even if the playlist changed elsewhere since it was last read.
   Future<bool> addTracks(String playlistId, List<Track> tracks) async {
-    final api = _api;
+    final api = this.api;
     if (api == null || tracks.isEmpty) return false;
 
     try {
       await api.addToPlaylist(playlistId, [for (final t in tracks) t.id]);
-      _error = null;
+      error = null;
       // Re-read so the song count and any open detail view are correct.
       await loadTracks(playlistId, force: true);
       return true;
     } catch (e) {
-      _error = 'Could not add to playlist: $e';
+      error = 'Could not add to playlist: $e';
       debugPrint('PlaylistsService: addTracks failed: $e');
       notifyListeners();
       return false;
@@ -186,7 +158,7 @@ class PlaylistsService with ChangeNotifier {
     int index, {
     required String trackId,
   }) async {
-    final api = _api;
+    final api = this.api;
     if (api == null) return false;
 
     try {
@@ -208,11 +180,11 @@ class PlaylistsService with ChangeNotifier {
       }
 
       await api.removeFromPlaylist(playlistId, [position]);
-      _error = null;
+      error = null;
       await loadTracks(playlistId, force: true);
       return true;
     } catch (e) {
-      _error = 'Could not remove from playlist: $e';
+      error = 'Could not remove from playlist: $e';
       debugPrint('PlaylistsService: removeTrack failed: $e');
       notifyListeners();
       return false;
@@ -220,16 +192,16 @@ class PlaylistsService with ChangeNotifier {
   }
 
   Future<bool> rename(String playlistId, String name) async {
-    final api = _api;
+    final api = this.api;
     if (api == null) return false;
 
     try {
       await api.renamePlaylist(playlistId, name);
-      _error = null;
+      error = null;
       await load();
       return true;
     } catch (e) {
-      _error = 'Could not rename playlist: $e';
+      error = 'Could not rename playlist: $e';
       debugPrint('PlaylistsService: rename failed: $e');
       notifyListeners();
       return false;
@@ -237,28 +209,22 @@ class PlaylistsService with ChangeNotifier {
   }
 
   Future<bool> delete(String playlistId) async {
-    final api = _api;
+    final api = this.api;
     if (api == null) return false;
 
     try {
       await api.deletePlaylist(playlistId);
       _tracks.remove(playlistId);
       _fetchingTracks.remove(playlistId);
-      _error = null;
+      error = null;
       await load();
       return true;
     } catch (e) {
-      _error = 'Could not delete playlist: $e';
+      error = 'Could not delete playlist: $e';
       debugPrint('PlaylistsService: delete failed: $e');
       notifyListeners();
       return false;
     }
   }
 
-  /// Drop the last error once a screen has shown it.
-  void clearError() {
-    if (_error == null) return;
-    _error = null;
-    notifyListeners();
-  }
 }

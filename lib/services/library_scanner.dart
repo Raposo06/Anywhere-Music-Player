@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
-import 'subsonic_api_service.dart';
+import 'session_scoped.dart';
 import 'folder_tree.dart';
 import 'folder_walk.dart';
 import 'library_cache.dart';
@@ -14,9 +14,7 @@ import 'library_cache.dart';
 /// keeps the flat list of tracks it returns; the tree here is rebuilt from
 /// their paths so that a library hydrated from the on-disk cache — which
 /// stores only that flat list — browses identically to a freshly scanned one.
-class LibraryScanner with ChangeNotifier {
-  final SubsonicApiService? _api;
-
+class LibraryScanner extends SessionScoped {
   List<Track> _allTracks = [];
   FolderTree _tree = FolderTree.empty;
   bool _isScanning = false;
@@ -24,15 +22,10 @@ class LibraryScanner with ChangeNotifier {
   String? _error;
   String? _refreshError;
 
-  LibraryScanner(this._api);
+  LibraryScanner(super.api);
 
   /// Whether this scanner has a valid API connection.
-  bool get hasApi => _api != null;
-
-  /// The api client this scanner was constructed with. Exposed so the
-  /// provider layer can detect identity changes after logout/login and
-  /// rebuild the scanner with the fresh client.
-  SubsonicApiService? get api => _api;
+  bool get hasApi => api != null;
 
   bool get isScanning => _isScanning;
 
@@ -87,7 +80,8 @@ class LibraryScanner with ChangeNotifier {
 
     try {
       // Nothing below works logged out, and there's nothing to play anyway.
-      if (_api == null) {
+      final api = this.api;
+      if (api == null) {
         if (!_hasInitialData) _error = 'Not connected to server';
         return;
       }
@@ -118,7 +112,7 @@ class LibraryScanner with ChangeNotifier {
       // Logged at the same 500-song cadence the old paged fetch used — enough
       // to tell a slow scan from a stalled one without thousands of lines.
       var lastLogged = 0;
-      final tracks = await FolderWalk(_api).run(
+      final tracks = await FolderWalk(api).run(
         onProgress: (songsSoFar) {
           if (songsSoFar - lastLogged < 500) return;
           lastLogged = songsSoFar;
