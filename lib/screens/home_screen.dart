@@ -195,6 +195,11 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Folders'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: scanner.isScanning ? null : scanner.rescan,
+            tooltip: 'Refresh library',
+          ),
           Selector<AudioPlayerService, bool>(
             selector: (_, ps) => ps.currentTrack != null,
             builder: (context, hasTrack, _) => hasTrack
@@ -276,7 +281,15 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: _searchQuery.isNotEmpty
                     ? _buildSearchResults()
-                    : _buildFolderBrowser(scanner),
+                    // Pull-to-refresh is the escape hatch for the fresh-cache
+                    // short-circuit in LibraryScanner.scan(): inside that
+                    // window a launch renders from disk and never touches the
+                    // network, so pulling down is how you say "I added
+                    // something on the server, go and look".
+                    : RefreshIndicator(
+                        onRefresh: scanner.rescan,
+                        child: _buildFolderBrowser(scanner),
+                      ),
               ),
             ],
           ),
@@ -318,7 +331,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final rootTracks = scanner.getRootTracks();
 
     if (folders.isEmpty && rootTracks.isEmpty) {
-      return const Center(child: Text('No content found'));
+      // CentredMessage rather than a bare Center: it stays scrollable, so the
+      // RefreshIndicator above is still pullable with nothing in the library.
+      return const CentredMessage(
+        icon: Icons.folder_off_outlined,
+        title: 'No content found',
+      );
     }
 
     return ListView(

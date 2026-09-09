@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -173,6 +174,88 @@ void main() {
       expect(scanner.hasInitialData, isFalse);
       expect(scanner.error, isNotNull);
       expect(scanner.refreshError, isNull);
+    });
+  });
+
+  group('cache freshness', () {
+    File cacheFile() =>
+        File('${tempDir.path}${Platform.pathSeparator}library_cache.json');
+
+    /// scan() saves the cache without awaiting it, so poll for the file
+    /// rather than racing it (same reason as the tearDown above).
+    Future<void> waitForCache() async {
+      for (var attempt = 0; attempt < 50; attempt++) {
+        if (await cacheFile().exists()) return;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      fail('cache file was never written');
+    }
+
+    /// Rewrite the cache's scannedAt stamp to [age] ago, so a test can put a
+    /// cache either side of LibraryScanner.cacheFreshFor without waiting.
+    Future<void> ageCacheBy(Duration age) async {
+      final file = cacheFile();
+      final decoded = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      decoded['scannedAt'] =
+          DateTime.now().toUtc().subtract(age).toIso8601String();
+      await file.writeAsString(jsonEncode(decoded));
+    }
+
+    test('a fresh cache renders from disk and skips the walk', () async {
+      final songs = [_song(id: '1', path: 'Anime/song.mp3')];
+      await LibraryScanner(apiWith(songs)).scan();
+      await waitForCache();
+
+      // The server gains a track. A launch inside the freshness window must
+      // not see it — that's the whole point: no walk, no 200-odd requests.
+      songs.add(_song(id: '2', path: 'Rock/song.mp3'));
+      final second = LibraryScanner(apiWith(songs));
+      await second.scan();
+
+      expect(second.allTracks.map((t) => t.id), ['1']);
+      expect(second.hasInitialData, isTrue);
+      expect(second.error, isNull);
+    });
+
+    test('a cache older than cacheFreshFor still walks the server', () async {
+      final songs = [_song(id: '1', path: 'Anime/song.mp3')];
+      await LibraryScanner(apiWith(songs)).scan();
+      await waitForCache();
+      await ageCacheBy(LibraryScanner.cacheFreshFor + const Duration(minutes: 1));
+
+      songs.add(_song(id: '2', path: 'Rock/song.mp3'));
+      final second = LibraryScanner(apiWith(songs));
+      await second.scan();
+
+      expect(second.allTracks.map((t) => t.id), unorderedEquals(['1', '2']));
+    });
+
+    test('a cache with no scannedAt stamp counts as stale', () async {
+      final songs = [_song(id: '1', path: 'Anime/song.mp3')];
+      await LibraryScanner(apiWith(songs)).scan();
+      await waitForCache();
+      final decoded =
+          jsonDecode(await cacheFile().readAsString()) as Map<String, dynamic>;
+      decoded.remove('scannedAt');
+      await cacheFile().writeAsString(jsonEncode(decoded));
+
+      songs.add(_song(id: '2', path: 'Rock/song.mp3'));
+      final second = LibraryScanner(apiWith(songs));
+      await second.scan();
+
+      expect(second.allTracks.map((t) => t.id), unorderedEquals(['1', '2']));
+    });
+
+    test('rescan() walks the server however fresh the cache is', () async {
+      final songs = [_song(id: '1', path: 'Anime/song.mp3')];
+      await LibraryScanner(apiWith(songs)).scan();
+      await waitForCache();
+
+      songs.add(_song(id: '2', path: 'Rock/song.mp3'));
+      final second = LibraryScanner(apiWith(songs));
+      await second.rescan();
+
+      expect(second.allTracks.map((t) => t.id), unorderedEquals(['1', '2']));
     });
   });
 

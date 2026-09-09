@@ -2012,3 +2012,52 @@ the tie-breaker.
 **What would reverse it.** A screen that genuinely needs a different register
 for its errors (blocking vs. transient, say) — then it stops being one shared
 widget and becomes a `severity` parameter on it, not three private copies again.
+
+---
+
+## 2026-09-09 — A launch inside six hours of the last scan skips the folder walk
+
+**Decided.** `LibraryScanner.scan()` used to do the same two things on every
+launch: hydrate from the on-disk cache, then *always* walk the server's folder
+tree behind it. The walk is one request per directory — 239 of them on this
+library, about 7.5 s at 8 concurrent — and it ran even when the cache was
+minutes old. It now short-circuits: if the cache carries a `scannedAt` stamp
+younger than `LibraryScanner.cacheFreshFor` (6 hours), the launch renders from
+disk and stops there.
+
+The stamp was already being written into the cache file; nothing but `load()`
+discarding it stopped this working before. `LibraryCache.loadEntry()` returns
+`(tracks, scannedAt)` and `load()` is now a wrapper over it, so no caller that
+only wants the tracks had to change.
+
+**Why six hours, and why a stamp rather than a flag.** The number is a guess at
+"a session's worth", tuned to the failure it prevents: relaunching the app
+several times in an evening, each time paying 7.5 s for a library that did not
+change. It is one named constant, deliberately, so it is one edit to retune. A
+stamp rather than "did we scan this process" because the win is across launches,
+not within one — an in-memory flag is exactly what already existed.
+
+**A missing or future-dated stamp counts as stale.** An unparseable value, a
+cache from an older build, a clock that jumped — all fall back to scanning. The
+cost of scanning when we needn't is a slow launch; the cost of the other
+direction is a library that silently disagrees with the server, which is the
+worse of the two and much harder to attribute.
+
+**The escape hatch is a real requirement, not a nicety.** Skipping the walk
+means "I just added an album" no longer resolves itself by restarting, so both
+layouts grew a way to force it: pull-to-refresh on the phone home screen and a
+refresh button in the desktop library header, both onto `rescan()`, which now
+passes `force: true` through `scan()`. The phone's empty state moved from a bare
+`Center` to `CentredMessage` for the same reason — `CentredMessage` stays
+scrollable, so the pull still works when the library has nothing in it. Android
+TV has no such affordance; it is a lean-back surface with no obvious gesture for
+it, and a TV that is 6 hours stale self-heals on the next launch.
+
+**What would reverse it.** A server that changes often enough that six hours is
+visibly wrong (retune the constant first, not the design), or moving to a real
+change signal — Subsonic has no library-changed endpoint, but the `getIndexes`
+response defines a `lastModified` attribute, and honouring it would replace the
+guess with an answer. Check what this server actually puts there before building
+on it; the walk already proved `getIndexes` answers differently than expected
+here. That is the version of this worth building if the constant becomes a
+nuisance.

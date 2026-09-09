@@ -117,8 +117,11 @@ on foxcore.dev pointing at the latest — see [operations](operations.md) and
 - Manual queue (add / remove / reorder), plus shuffle and repeat
   (off / all / one), both persisted across restarts
 - ReplayGain volume normalization — attenuate-only, clipping impossible
-- Caching: on-disk library cache for instant cold start, Android on-disk stream
-  cache (seekable replay, 2 GB cap), cover-art prefetching
+- Caching: on-disk library cache for instant cold start — and, while that cache
+  is under six hours old, a launch renders from it and skips the folder walk
+  entirely (pull-to-refresh on phone, the header refresh button on desktop, and
+  any Retry force the walk); Android on-disk stream cache (seekable replay,
+  2 GB cap), cover-art prefetching
 - Scrobbling: plays are reported back to the server (past half the track or
   four minutes), so the server's play counts and "recently played" reflect this
   app; a "now playing" announcement drives its live panel
@@ -190,7 +193,7 @@ the fastest first check.
 | Loose songs at the music root | 0 |
 | Directories total | 239 |
 | Songs total | 4,384 |
-| Full scan wall clock | ~7.5 s at 8 concurrent directory fetches |
+| Full scan wall clock | ~7.5 s at 8 concurrent directory fetches — skipped on launch while the library cache is younger than `LibraryScanner.cacheFreshFor` |
 
 Field coverage on song responses, which is what the client can actually rely on:
 `path`, `suffix`, `duration`, `size`, `created`, `artist`, `album` are present on

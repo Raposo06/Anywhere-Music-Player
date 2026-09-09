@@ -63,13 +63,27 @@ class LibraryScanner with ChangeNotifier {
     notifyListeners();
   }
 
+  /// How long a cache read counts as fresh. Inside this window a cold start
+  /// renders from disk and stops there — no phase 2 — because the walk costs
+  /// one request per directory (a few hundred, several seconds) and a music
+  /// library rarely changes between launches. Outside it, or on an explicit
+  /// [rescan], the network scan runs as before. Pull-to-refresh (phone) and
+  /// the header refresh button (desktop) are the escape hatch for "I just
+  /// added an album and want it now".
+  static const Duration cacheFreshFor = Duration(hours: 6);
+
   /// Cache-first scan. On cold start:
   ///   1. Load the on-disk cache (if any) and render it immediately.
-  ///   2. Always kick off a fresh network scan in the background.
-  ///   3. On success, overwrite both in-memory state and the cache.
-  ///   4. On background failure with cache already shown, surface a soft
+  ///   2. If that cache is younger than [cacheFreshFor] and [force] is not
+  ///      set, stop there — the rendered data is current enough.
+  ///   3. Otherwise refetch from the network in the background.
+  ///   4. On success, overwrite both in-memory state and the cache.
+  ///   5. On background failure with cache already shown, surface a soft
   ///      [refreshError] (snackbar) — keep showing the cached data.
-  Future<void> scan() async {
+  ///
+  /// [force] skips the freshness check only; the cache is still read first so
+  /// something stays on screen while the network scan runs.
+  Future<void> scan({bool force = false}) async {
     if (_isScanning) return;
 
     _isScanning = true;
@@ -77,29 +91,34 @@ class LibraryScanner with ChangeNotifier {
     _refreshError = null;
     notifyListeners();
 
-    // ── Phase 1: hydrate from cache if we have no data yet ────────────────
-    // Loading the cache no longer needs a live api client (stream/cover URLs
-    // are resolved at the point of use, not recomputed here) — but we still
-    // skip it when logged out: there's nothing to play anyway, and the
-    // api == null branch below will set the error state.
-    if (!_hasInitialData && _api != null) {
-      final cached = await LibraryCache.load();
-      if (cached != null && cached.isNotEmpty) {
-        debugPrint('LibraryScanner: hydrated ${cached.length} tracks from cache');
-        _allTracks = cached;
-        _buildFolderTree();
-        _hasInitialData = true;
-        notifyListeners();
-      }
-    }
-
-    // ── Phase 2: always refetch from the network ──────────────────────────
     try {
+      // Nothing below works logged out, and there's nothing to play anyway.
       if (_api == null) {
         if (!_hasInitialData) _error = 'Not connected to server';
         return;
       }
 
+      // ── Phase 1: hydrate from cache if we have no data yet ──────────────
+      // Loading the cache no longer needs a live api client (stream/cover URLs
+      // are resolved at the point of use, not recomputed here).
+      if (!_hasInitialData) {
+        final cached = await LibraryCache.loadEntry();
+        if (cached != null && cached.tracks.isNotEmpty) {
+          debugPrint(
+              'LibraryScanner: hydrated ${cached.tracks.length} tracks from cache');
+          _allTracks = cached.tracks;
+          _buildFolderTree();
+          _hasInitialData = true;
+          notifyListeners();
+
+          if (!force && _isFresh(cached.scannedAt)) {
+            debugPrint('LibraryScanner: cache is fresh, skipping the walk');
+            return;
+          }
+        }
+      }
+
+      // ── Phase 2: refetch from the network ───────────────────────────────
       debugPrint('LibraryScanner: walking the server folder tree...');
       // One request per directory now, so a large library is a long scan.
       // Logged at the same 500-song cadence the old paged fetch used — enough
@@ -135,14 +154,25 @@ class LibraryScanner with ChangeNotifier {
     }
   }
 
-  /// Force a rescan (network-only, ignores existing cache contents).
-  /// Still updates the on-disk cache on success.
+  /// Whether a cache written at [scannedAt] is still inside [cacheFreshFor].
+  /// A missing stamp (old cache file, unparseable value) and a stamp in the
+  /// future (clock skew) both count as stale — the failure mode of scanning
+  /// when we needn't is a slow launch; the other way round is a wrong library.
+  static bool _isFresh(DateTime? scannedAt) {
+    if (scannedAt == null) return false;
+    final age = DateTime.now().toUtc().difference(scannedAt);
+    return !age.isNegative && age < cacheFreshFor;
+  }
+
+  /// Force a rescan. Always hits the network, however fresh the cache is —
+  /// this is the user asking for the library they can see on the server right
+  /// now. Still updates the on-disk cache on success.
   Future<void> rescan() async {
     _allTracks = [];
     _rootNodes = {};
     _tracksById = {};
     _hasInitialData = false;
-    await scan();
+    await scan(force: true);
   }
 
   /// Reset all in-memory state and delete the on-disk cache. Called from

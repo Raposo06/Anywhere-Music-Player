@@ -101,6 +101,41 @@ void main() {
     expect(await file.exists(), isFalse);
   });
 
+  test('loadEntry returns when the scan that wrote the cache ran', () async {
+    final before = DateTime.now().toUtc();
+    await LibraryCache.save([track('1')]);
+
+    final entry = await LibraryCache.loadEntry();
+
+    expect(entry, isNotNull);
+    expect(entry!.tracks.map((t) => t.id), ['1']);
+    expect(entry.scannedAt, isNotNull);
+    // Within the window this test itself spans, and in UTC — LibraryScanner
+    // subtracts it from a UTC now to decide whether to skip the walk, so a
+    // local-time stamp would come out hours off.
+    expect(entry.scannedAt!.isUtc, isTrue);
+    expect(
+      entry.scannedAt!.isBefore(before.subtract(const Duration(seconds: 1))),
+      isFalse,
+    );
+  });
+
+  test('loadEntry reports a missing scannedAt as null, not a throw', () async {
+    // A cache file written by a build that predates the stamp, or one whose
+    // stamp got mangled. The caller reads null as "age unknown" and rescans.
+    final file = File('${tempDir.path}${Platform.pathSeparator}library_cache.json');
+    await LibraryCache.save([track('1')]);
+    final decoded = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+    decoded['scannedAt'] = 'not a date';
+    await file.writeAsString(jsonEncode(decoded));
+
+    final entry = await LibraryCache.loadEntry();
+
+    expect(entry, isNotNull);
+    expect(entry!.tracks, hasLength(1));
+    expect(entry.scannedAt, isNull);
+  });
+
   test('clear deletes the cache file', () async {
     await LibraryCache.save([track('1')]);
     await LibraryCache.clear();

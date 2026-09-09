@@ -167,6 +167,7 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
               subtitle: _subtitleFor(scanner),
               query: _query,
               onQueryChanged: _onQueryChanged,
+              onRefresh: scanner.isScanning ? null : scanner.rescan,
             ),
             const SizedBox(height: 20),
             Expanded(
@@ -309,10 +310,17 @@ class _Header extends StatelessWidget {
   final String query;
   final ValueChanged<String> onQueryChanged;
 
+  /// Forces a network rescan. Desktop has no pull-to-refresh, and
+  /// LibraryScanner.scan() now skips the walk entirely while the cache is
+  /// fresh — without this there'd be no way to ask for a newly added album
+  /// short of restarting hours later. Null while a scan is already running.
+  final VoidCallback? onRefresh;
+
   const _Header({
     required this.subtitle,
     required this.query,
     required this.onQueryChanged,
+    required this.onRefresh,
   });
 
   @override
@@ -336,6 +344,13 @@ class _Header extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 24),
+        IconButton(
+          icon: const Icon(Icons.refresh, size: 20),
+          color: AppColors.muted,
+          onPressed: onRefresh,
+          tooltip: 'Refresh library',
+        ),
+        const SizedBox(width: 8),
         DesktopSearchField(onChanged: onQueryChanged),
       ],
     );

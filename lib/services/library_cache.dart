@@ -5,6 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/track.dart';
 
+/// The tracks from a cache read, plus when the scan that wrote them ran.
+/// `scannedAt` is null when the stamp is missing or unparseable — read that as
+/// "age unknown", never as "just scanned".
+typedef CachedLibrary = ({List<Track> tracks, DateTime? scannedAt});
+
 /// On-disk cache of the user's library. Stores a flat list of [Track]s as
 /// JSON so the home screen can render instantly on cold start while a fresh
 /// scan runs in the background.
@@ -50,7 +55,11 @@ class LibraryCache {
   /// JSON decode runs on a background isolate via [compute] — for a large
   /// library the cache file is several MB, and a synchronous decode on the
   /// main thread visibly stalls the first frame on cold start.
-  static Future<List<Track>?> load() async {
+  static Future<List<Track>?> load() async => (await loadEntry())?.tracks;
+
+  /// [load], but also returning the cache's `scannedAt` stamp so a caller can
+  /// decide whether the cache is fresh enough to skip the network scan.
+  static Future<CachedLibrary?> loadEntry() async {
     try {
       final file = await _cacheFile();
       if (!await file.exists()) return null;
@@ -71,9 +80,14 @@ class LibraryCache {
       }
 
       final rawTracks = decoded['tracks'] as List<dynamic>;
-      return rawTracks
-          .map((e) => Track.fromJson(e as Map<String, dynamic>))
-          .toList(growable: false);
+      return (
+        tracks: rawTracks
+            .map((e) => Track.fromJson(e as Map<String, dynamic>))
+            .toList(growable: false),
+        scannedAt: DateTime.tryParse(
+          decoded['scannedAt'] as String? ?? '',
+        )?.toUtc(),
+      );
     } catch (e) {
       debugPrint('LibraryCache: failed to load, discarding cache: $e');
       try {
