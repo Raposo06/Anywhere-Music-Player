@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/track.dart';
 import '../models/folder.dart';
 import 'subsonic_api_service.dart';
+import 'folder_tree.dart';
 import 'folder_walk.dart';
 import 'library_cache.dart';
 
@@ -17,8 +18,7 @@ class LibraryScanner with ChangeNotifier {
   final SubsonicApiService? _api;
 
   List<Track> _allTracks = [];
-  Map<String, _FolderNode> _rootNodes = {};
-  Map<String, Track> _tracksById = {};
+  FolderTree _tree = FolderTree.empty;
   bool _isScanning = false;
   bool _hasInitialData = false;
   String? _error;
@@ -50,12 +50,6 @@ class LibraryScanner with ChangeNotifier {
   String? get refreshError => _refreshError;
 
   List<Track> get allTracks => _allTracks;
-
-  /// The scanned track for [id] — the copy carrying a real filesystem path —
-  /// or null when the scan doesn't contain it. Lets a track that arrived by
-  /// another route (a playlist fetch, whose paths are tag-based) be resolved
-  /// back to its canonical form.
-  Track? trackById(String id) => _tracksById[id];
 
   void clearRefreshError() {
     if (_refreshError == null) return;
@@ -107,7 +101,7 @@ class LibraryScanner with ChangeNotifier {
           debugPrint(
               'LibraryScanner: hydrated ${cached.tracks.length} tracks from cache');
           _allTracks = cached.tracks;
-          _buildFolderTree();
+          _tree = FolderTree.from(_allTracks);
           _hasInitialData = true;
           notifyListeners();
 
@@ -134,7 +128,7 @@ class LibraryScanner with ChangeNotifier {
       debugPrint('LibraryScanner: got ${tracks.length} songs from the walk');
 
       _allTracks = tracks;
-      _buildFolderTree();
+      _tree = FolderTree.from(_allTracks);
       _hasInitialData = true;
 
       // Persist for the next cold start. Fire-and-forget; failures don't
@@ -169,8 +163,7 @@ class LibraryScanner with ChangeNotifier {
   /// now. Still updates the on-disk cache on success.
   Future<void> rescan() async {
     _allTracks = [];
-    _rootNodes = {};
-    _tracksById = {};
+    _tree = FolderTree.empty;
     _hasInitialData = false;
     await scan(force: true);
   }
@@ -179,8 +172,7 @@ class LibraryScanner with ChangeNotifier {
   /// logout flows so the next login starts with a clean library.
   Future<void> resetAndClearCache() async {
     _allTracks = [];
-    _rootNodes = {};
-    _tracksById = {};
+    _tree = FolderTree.empty;
     _hasInitialData = false;
     _isScanning = false;
     _error = null;
@@ -189,222 +181,22 @@ class LibraryScanner with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Build the virtual folder tree from track file paths.
-  void _buildFolderTree() {
-    _rootNodes = {};
-    _tracksById = {for (final track in _allTracks) track.id: track};
+  /// The browsable tree built from [allTracks]. Prefer this over the
+  /// forwarders below in new code; they exist so the screens didn't all have
+  /// to change at once.
+  FolderTree get tree => _tree;
 
-    for (final track in _allTracks) {
-      // track.path is the full path, e.g. "Anime/Naruto/23.Senya.mp3"
-      final path = track.path;
-      final segments = path.split('/');
-
-      if (segments.length < 2) {
-        // Track is at root level, add to a special root node
-        _rootNodes.putIfAbsent('', () => _FolderNode(name: '', fullPath: ''));
-        _rootNodes['']!.tracks.add(track);
-        continue;
-      }
-
-      // Walk the path segments (excluding the filename)
-      var currentLevel = _rootNodes;
-      var currentPath = '';
-
-      for (var i = 0; i < segments.length - 1; i++) {
-        final segment = segments[i];
-        currentPath = currentPath.isEmpty ? segment : '$currentPath/$segment';
-
-        if (!currentLevel.containsKey(segment)) {
-          currentLevel[segment] = _FolderNode(name: segment, fullPath: currentPath);
-        }
-
-        final node = currentLevel[segment]!;
-
-        if (i == segments.length - 2) {
-          // Last folder segment — this is where the track lives
-          node.tracks.add(track);
-          // Use the first track's cover art as the folder's cover
-          if (node.coverArtId == null && track.coverArtId != null) {
-            node.coverArtId = track.coverArtId;
-          }
-        }
-
-        currentLevel = node.children;
-      }
-    }
-  }
-
-  /// Get the effective root level of the folder tree.
-  /// If there's only one top-level folder with no direct tracks,
-  /// auto-flatten it and show its children instead.
-  Map<String, _FolderNode> get _effectiveRoot {
-    final nonEmpty = _rootNodes.entries.where((e) => e.key.isNotEmpty).toList();
-    if (nonEmpty.length == 1) {
-      final singleNode = nonEmpty.first.value;
-      if (singleNode.children.isNotEmpty) {
-        return singleNode.children;
-      }
-    }
-    return _rootNodes;
-  }
-
-  /// True iff [folderPath] is the single top-level folder that got
-  /// auto-flattened away by [_effectiveRoot]. The home screen already shows
-  /// its children directly, so UI surfaces (e.g. the folder breadcrumb)
-  /// should treat a tap on it as "go to home" rather than push a redundant
-  /// folder screen that duplicates the home screen's content.
-  bool isFlattenedRoot(String folderPath) {
-    final nonEmpty = _rootNodes.entries.where((e) => e.key.isNotEmpty).toList();
-    if (nonEmpty.length != 1) return false;
-    final only = nonEmpty.first;
-    return only.value.children.isNotEmpty && only.key == folderPath;
-  }
-
-  /// Get the top-level folders from the virtual folder tree.
-  List<Folder> getTopLevelFolders() {
-    return _effectiveRoot.entries
-        .where((e) => e.key.isNotEmpty)
-        .map((e) => e.value.toFolder())
-        .toList()
-      ..sort((a, b) => a.folderPath.toLowerCase().compareTo(b.folderPath.toLowerCase()));
-  }
-
-  /// Get tracks that are at the root level (not in any folder).
-  /// If the root was flattened, includes loose tracks from the skipped folder.
-  List<Track> getRootTracks() {
-    final nonEmpty = _rootNodes.entries.where((e) => e.key.isNotEmpty).toList();
-    if (nonEmpty.length == 1 && nonEmpty.first.value.children.isNotEmpty) {
-      // Root was flattened — return the skipped folder's direct tracks
-      return nonEmpty.first.value.tracks;
-    }
-    return _rootNodes['']?.tracks ?? [];
-  }
-
-  /// Get the contents of a virtual folder by path.
-  /// Returns subfolders and tracks at that path.
-  ({List<Folder> folders, List<Track> tracks}) getFolderContents(String folderPath) {
-    final node = _findNode(folderPath);
-    if (node == null) {
-      return (folders: <Folder>[], tracks: <Track>[]);
-    }
-
-    final subfolders = node.children.entries
-        .where((e) => e.key.isNotEmpty)
-        .map((e) => e.value.toFolder())
-        .toList()
-      ..sort((a, b) => a.folderPath.toLowerCase().compareTo(b.folderPath.toLowerCase()));
-
-    return (folders: subfolders, tracks: node.tracks);
-  }
-
-  /// Get all tracks recursively under a folder path.
-  List<Track> getAllTracksInFolder(String folderPath) {
-    final node = _findNode(folderPath);
-    return node?.allTracksRecursive() ?? [];
-  }
-
-  /// Search the virtual folder tree for folders whose leaf name contains
-  /// [query] (case-insensitive). Empty query → empty list. Results are
-  /// sorted by depth (top-level first) then alphabetically.
-  List<Folder> searchFolders(String query) {
-    final trimmed = query.trim();
-    if (trimmed.isEmpty) return const [];
-    final needle = trimmed.toLowerCase();
-
-    final matches = <_FolderNode>[];
-    void walk(_FolderNode node) {
-      // Match on leaf segment only — matching the full path would surface
-      // every child of a matching parent, which clutters results.
-      if (node.fullPath.isNotEmpty && node.name.toLowerCase().contains(needle)) {
-        matches.add(node);
-      }
-      for (final child in node.children.values) {
-        walk(child);
-      }
-    }
-
-    for (final root in _rootNodes.values) {
-      walk(root);
-    }
-
-    matches.sort((a, b) {
-      final depthA = '/'.allMatches(a.fullPath).length;
-      final depthB = '/'.allMatches(b.fullPath).length;
-      if (depthA != depthB) return depthA - depthB;
-      return a.fullPath.toLowerCase().compareTo(b.fullPath.toLowerCase());
-    });
-
-    return matches.map((n) => n.toFolder()).toList();
-  }
-
-  /// Navigate to a node by its full path, walking from _rootNodes.
-  _FolderNode? _findNode(String folderPath) {
-    final segments = folderPath.split('/');
-    var currentLevel = _rootNodes;
-
-    for (var i = 0; i < segments.length; i++) {
-      final node = currentLevel[segments[i]];
-      if (node == null) return null;
-      if (i == segments.length - 1) return node;
-      currentLevel = node.children;
-    }
-
-    return null;
-  }
-}
-
-/// Internal tree node representing a folder in the virtual hierarchy.
-class _FolderNode {
-  final String name;
-  final String fullPath;
-  final Map<String, _FolderNode> children = {};
-  final List<Track> tracks = [];
-  String? coverArtId;
-
-  _FolderNode({required this.name, required this.fullPath});
-
-  /// Total track count including all nested subfolders.
-  int get totalTrackCount {
-    var count = tracks.length;
-    for (final child in children.values) {
-      count += child.totalTrackCount;
-    }
-    return count;
-  }
-
-  /// Number of direct child subfolders.
-  int get subfolderCount => children.length;
-
-  /// Get all tracks recursively (this folder + all subfolders).
-  List<Track> allTracksRecursive() {
-    final result = <Track>[...tracks];
-    for (final child in children.values) {
-      result.addAll(child.allTracksRecursive());
-    }
-    return result;
-  }
-
-  /// Convert to a Folder model for the UI. Carries only the cover art id —
-  /// the URL is resolved at the point of use (see StreamUrlResolver).
-  Folder toFolder() {
-    return Folder(
-      id: fullPath, // Use the path as ID for virtual folders
-      folderPath: fullPath,
-      trackCount: totalTrackCount,
-      coverArtId: coverArtId ?? _findFirstCoverArtId(),
-      albumCount: subfolderCount,
-    );
-  }
-
-  /// Find the first cover art id from any track in this folder or subfolders.
-  String? _findFirstCoverArtId() {
-    for (final track in tracks) {
-      if (track.coverArtId != null) return track.coverArtId;
-    }
-    for (final child in children.values) {
-      final id = child._findFirstCoverArtId();
-      if (id != null) return id;
-    }
-    return null;
-  }
+  /// The scanned copy of [id] — the one carrying a real library path — or
+  /// null. Lets a track that arrived by another route (a playlist fetch,
+  /// whose paths are tag-based) be resolved back to its canonical form.
+  Track? trackById(String id) => _tree.trackById(id);
+  bool isFlattenedRoot(String folderPath) => _tree.isFlattenedRoot(folderPath);
+  List<Folder> getTopLevelFolders() => _tree.topLevelFolders();
+  List<Track> getRootTracks() => _tree.rootTracks();
+  ({List<Folder> folders, List<Track> tracks}) getFolderContents(
+    String folderPath,
+  ) => _tree.contentsOf(folderPath);
+  List<Track> getAllTracksInFolder(String folderPath) =>
+      _tree.allTracksUnder(folderPath);
+  List<Folder> searchFolders(String query) => _tree.searchFolders(query);
 }
