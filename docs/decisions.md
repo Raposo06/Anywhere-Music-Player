@@ -14,6 +14,55 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Session-scoped modules are a type, not a copied provider block (2026-09-09)
+
+**Decided.** Introduce `SessionScoped` (`lib/services/session_scoped.dart`) —
+an abstract `ChangeNotifier` holding one field, the `SubsonicApiService?` the
+instance is bound to — and a single `sessionScoped<T>()` provider helper in
+`main.dart`. `LibraryScanner`, `PlaylistsService` and `FavouritesService`
+extend it; the three `ChangeNotifierProxyProvider` blocks become three lines.
+
+A `LoadStatus` mixin on top of it carries the `isLoading` / `isLoaded` /
+`error` triad, `clearError()`, and `runLoad()`, which owns the flags around a
+fetch: concurrent calls collapse into the first, `isLoaded` flips only on
+success, listeners fire on both edges.
+
+**Why.** One idea — *this module is scoped to a session and must be rebuilt
+when the client identity changes* — was restated six times, and two of the doc
+comments said only "shaped like the other one". The `identical(previous.api,
+auth.apiService)` guard existed in triplicate; getting it wrong doesn't crash,
+it produces "Client is already closed" on the next request after a re-login.
+Nothing tested it, because testing it meant testing three copies. It is tested
+now (`test/services/session_scoped_test.dart`), once, for all three.
+
+**`LibraryScanner` deliberately takes `SessionScoped` but not `LoadStatus`.**
+Its scan is a different shape: cache-first, two-phase, and distinguishing a
+soft refresh error (cached data still on screen) from a fatal one. Mixing in
+`LoadStatus` would have given it two `error` fields and two flags it never
+sets — the review that proposed this change proposed one combined base for all
+three, and that part of it was wrong.
+
+**`api` is a public `final` field** on the base rather than a private one with
+a getter, because the provider layer compares it by identity. The cost is that
+Dart's private-final-field promotion no longer applies, so `scan()` takes a
+local before null-checking — which `PlaylistsService` and `FavouritesService`
+already did anyway.
+
+**What would reverse it.** A session-scoped module that needs to *survive* a
+session change (holding data that outlives the client), or one whose rebind
+rule differs from identity comparison — either makes `sessionScoped()` a place
+where a special case has to be threaded through, and two rules are better as
+two functions than as one with a flag. Dropping to a single session-scoped
+module would make the type a pass-through worth deleting.
+
+**Not done, deliberately.** `PlaylistsService`'s five mutation `catch` blocks
+still each write `error = ...; debugPrint(...); notifyListeners();`. A `failed()`
+helper would collapse them, but the user-facing message and the log tag differ
+per call site, so merging them either loses the method name from the log or
+takes two arguments to save one line. Not worth it.
+
+---
+
 ## The library scan is three modules: FolderWalk, FolderTree, LibraryScanner (2026-09-09)
 
 **Decided.** Split what had become one 700-line transport class and one

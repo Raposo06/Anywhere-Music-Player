@@ -171,6 +171,13 @@ live in `flutter_secure_storage` (encrypted) on the device. Older installs that
 still had them in `SharedPreferences` get migrated automatically on the next
 launch, then the legacy copy is deleted.
 
+`AuthService` owns the `SubsonicApiService` and **disposes it on logout**, so
+anything holding the old client answers the next request with "Client is already
+closed". Modules whose lifetime is one session — `LibraryScanner`,
+`PlaylistsService`, `FavouritesService` — therefore extend `SessionScoped` and
+are provided through `sessionScoped()` in `main.dart`, which rebuilds them
+whenever the client identity changes and keeps them otherwise.
+
 **There is no in-app signup.** Users are created in Gonic's own admin web UI.
 That's a deliberate consequence of having no backend: the client has nothing to
 register against.
