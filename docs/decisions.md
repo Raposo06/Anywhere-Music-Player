@@ -2075,8 +2075,8 @@ and `release` waits only on `windows` and `linux`. A `v*` tag now produces
 `flutter build apk` works, the D-pad UI and `LEANBACK_LAUNCHER` are untouched,
 and nothing in the app was removed. The change is to distribution only.
 
-**The keystore secrets stay.** `ANDROID_KEYSTORE_BASE64` and the three
-passwords are now dormant. Deleting them would save nothing and cost real
+**The keystore secrets stay.** ~~Superseded the same day — see the entry
+below.~~ `ANDROID_KEYSTORE_BASE64` and the three passwords are now dormant. Deleting them would save nothing and cost real
 recovery: an upload keystore is unrecoverable, and any device with the app
 installed can only take updates signed by the same key. Re-adding four secrets
 is the cheap half of restoring the job.
@@ -2084,3 +2084,31 @@ is the cheap half of restoring the job.
 **What would reverse it.** Wanting an installable Android build published
 again — restore the job from git history and flip `release`'s `needs` back. The
 secrets it needs are already there, so it is one revert, not a re-setup.
+
+---
+
+## 2026-09-09 — The Android keystore secrets were deleted after all
+
+**Supersedes** the "keystore secrets stay" paragraph in the entry above, made
+hours earlier the same day.
+
+**Decided.** The four `ANDROID_*` repo secrets are deleted. The earlier
+reasoning — keep them, because "a keystore is unrecoverable and re-adding
+secrets is cheaper than regenerating a key" — was wrong on its own terms.
+**GitHub Actions secrets are write-only.** `ANDROID_KEYSTORE_BASE64` could never
+be read back out, not even to make a backup before deleting it, so it protected
+no recovery path and was never an off-machine copy of the key. What it actually
+was is an unused credential in a repo, which anything able to edit a workflow
+can echo into a log. Re-adding four values is five minutes if the CI APK build
+ever returns.
+
+**What the earlier entry got right, and matters more.** The keystore genuinely
+is unrecoverable, and deleting the secrets does not change that either way. Its
+survival rests entirely on `android/app/upload-keystore.jks` being copied
+somewhere off the machine — it is gitignored, so the repo never held it, and the
+secret was not a second copy in any usable sense. On 2026-09-09 that file
+existed in exactly one place. Verify a real backup exists rather than assuming
+one does.
+
+**What would reverse it.** Restoring the Android release job, which needs the
+four secrets re-added from the keystore and the passwords in Vaultwarden.

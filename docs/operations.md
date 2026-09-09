@@ -96,11 +96,9 @@ would, so it is the cheap way to check a build before making it permanent.
   (it's public DNS), so a variable, not a secret.
 
 **Android signing (local builds only, since 2026-09-09).** CI no longer builds
-the APK, so the four `ANDROID_*` repo secrets below are unused — left in place
-rather than deleted, because a keystore is unrecoverable and re-adding secrets
-is cheaper than regenerating a key. The `release` build type is debug-signed
-unless `android/key.properties` + a keystore are present (both gitignored). Make
-a real upload key once:
+the APK, so the four `ANDROID_*` repo secrets were deleted on 2026-09-09. The
+`release` build type is debug-signed unless `android/key.properties` + a
+keystore are present (both gitignored). Make a real upload key once:
 
 ```bash
 keytool -genkey -v -keystore android/app/upload-keystore.jks \
@@ -117,9 +115,8 @@ keyAlias=upload
 storeFile=upload-keystore.jks
 ```
 
-The four repo **secrets** below (Settings → Secrets and variables → Actions →
-Secrets) fed the CI APK build. They are dormant now that Android is out of the
-release; restoring the job is what makes them live again:
+If the CI APK build is ever restored, it reconstructs `key.properties` from four
+repo **secrets** (Settings → Secrets and variables → Actions → Secrets):
 
 | Secret | Value |
 |---|---|
@@ -128,9 +125,15 @@ release; restoring the job is what makes them live again:
 | `ANDROID_KEY_PASSWORD` | key password from `keytool` |
 | `ANDROID_KEY_ALIAS` | `upload` |
 
-⚠️ **The keystore is unrecoverable if lost** — a phone with the app installed
-can only take updates signed by the same key; losing it means every user
-uninstalls and reinstalls. Back up `upload-keystore.jks` somewhere off the repo.
+⚠️ **The keystore is unrecoverable if lost, and no GitHub secret changes that.**
+A device with the app installed can only take updates signed by the same key;
+losing it means every user uninstalls and reinstalls. `ANDROID_KEYSTORE_BASE64`
+looks like an off-machine copy and is not one — **Actions secrets are
+write-only**, so nothing can ever read it back out, not even to make a backup
+before deleting it. The only real backup is `android/app/upload-keystore.jks`
+itself, copied somewhere off this machine (it is gitignored, so it is not in the
+repo), with the two passwords in Vaultwarden. Check that both exist before
+trusting either.
 
 No iOS: `ios/` is unconfigured scaffolding, and download-page distribution isn't
 possible on iOS anyway (App Store / TestFlight only).
