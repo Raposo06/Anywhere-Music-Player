@@ -20,6 +20,8 @@ import 'services/windows_presence.dart';
 import 'services/favourites_service.dart';
 import 'services/library_scanner.dart';
 import 'services/playlists_service.dart';
+import 'services/session_scoped.dart';
+import 'services/subsonic_api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/tv_home_screen.dart';
@@ -278,47 +280,13 @@ class MyApp extends StatelessWidget {
                 AudioPlayerService(presence: presence, resolver: resolver),
           ),
 
-        // Library Scanner - depends on AuthService for the API connection.
-        // Provided at the top level so it's accessible to all routes
-        // (including Navigator.push routes like FolderDetailScreen).
-        ChangeNotifierProxyProvider<AuthService, LibraryScanner>(
-          create: (_) => LibraryScanner(null),
-          update: (_, auth, previous) {
-            // Always reflect the current api reference. After logout the
-            // auth service disposes its api client, so we must drop our
-            // hold on it; on re-login a brand-new api is created and the
-            // scanner must rebind to it (otherwise we'd hit
-            // "Client is already closed" on the next request).
-            if (previous != null && identical(previous.api, auth.apiService)) {
-              return previous;
-            }
-            return LibraryScanner(auth.apiService);
-          },
-        ),
-
-        // Server playlists — rebound to the live session for exactly the same
-        // reason the scanner above is.
-        ChangeNotifierProxyProvider<AuthService, PlaylistsService>(
-          create: (_) => PlaylistsService(null),
-          update: (_, auth, previous) {
-            if (previous != null && identical(previous.api, auth.apiService)) {
-              return previous;
-            }
-            return PlaylistsService(auth.apiService);
-          },
-        ),
-
-        // Starred songs — rebound to the live session for exactly the same
-        // reason the scanner above is.
-        ChangeNotifierProxyProvider<AuthService, FavouritesService>(
-          create: (_) => FavouritesService(null),
-          update: (_, auth, previous) {
-            if (previous != null && identical(previous.api, auth.apiService)) {
-              return previous;
-            }
-            return FavouritesService(auth.apiService);
-          },
-        ),
+        // The library, the user's playlists and their starred songs. All
+        // three are scoped to the logged-in session — see [sessionScoped] —
+        // and all three are provided at the top level so they reach
+        // Navigator.push routes like FolderDetailScreen too.
+        sessionScoped<LibraryScanner>(LibraryScanner.new),
+        sessionScoped<PlaylistsService>(PlaylistsService.new),
+        sessionScoped<FavouritesService>(FavouritesService.new),
       ],
       child: MaterialApp(
         title: 'Anywhere Music Player',
@@ -329,6 +297,25 @@ class MyApp extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Provides a [SessionScoped] module, rebuilt whenever the session changes.
+///
+/// [build] is called with the live [SubsonicApiService] — null while logged
+/// out — and again with the new one on every session change. An existing
+/// instance survives only while it is still bound to the same client by
+/// identity: after logout `AuthService` disposes its client, so an instance
+/// that kept hold of it would answer the next request with "Client is already
+/// closed", and on re-login there is a brand-new client to bind to.
+ChangeNotifierProxyProvider<AuthService, T>
+sessionScoped<T extends SessionScoped>(T Function(SubsonicApiService?) build) {
+  return ChangeNotifierProxyProvider<AuthService, T>(
+    create: (_) => build(null),
+    update: (_, auth, previous) =>
+        previous != null && identical(previous.api, auth.apiService)
+        ? previous
+        : build(auth.apiService),
+  );
 }
 
 class AuthWrapper extends StatefulWidget {
