@@ -73,11 +73,11 @@ on-disk one regardless — see "The song's own `path` decides the folder tree".
 
 | Platform | State |
 |---|---|
-| Android (phone) | Shipped — APK |
-| Android TV | Shipped — D-pad UI, `LEANBACK_LAUNCHER` |
-| Windows | Shipped — Inno Setup installer (`installer.iss`) |
+| Android (phone) | Supported, **not released** — builds locally (`flutter build apk`); CI stopped publishing an APK on 2026-09-09 |
+| Android TV | Supported, **not released** — D-pad UI, `LEANBACK_LAUNCHER`; same APK, same story |
+| Windows | Shipped — Inno Setup installer (`installer.iss`), published by CI |
 | iOS | Scaffolded (`ios/`), not distributed — needs an Apple Developer account, and iOS has no download-page path regardless |
-| Linux | Shipped — Arch package only (`pacman -U`). Needs the system's libmpv, see [operations](operations.md) |
+| Linux | Shipped — Arch package only (`pacman -U`), published by CI. Needs the system's libmpv, see [operations](operations.md) |
 | macOS | Scaffolded by Flutter, not built or distributed |
 | Web | **Not supported** — there is no `web/` directory |
 

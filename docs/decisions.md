@@ -2061,3 +2061,26 @@ guess with an answer. Check what this server actually puts there before building
 on it; the walk already proved `getIndexes` answers differently than expected
 here. That is the version of this worth building if the constant becomes a
 nuisance.
+
+---
+
+## 2026-09-09 — Releases are desktop-only; Android is no longer published
+
+**Decided.** `.github/workflows/release.yml` no longer builds or publishes an
+APK. The `android` job is gone, the `include_android` dispatch input with it,
+and `release` waits only on `windows` and `linux`. A `v*` tag now produces
+`-setup.exe`, `-x86_64.pkg.tar.zst` and `SHA256SUMS`.
+
+**What did not change.** Android phone and TV are still supported targets:
+`flutter build apk` works, the D-pad UI and `LEANBACK_LAUNCHER` are untouched,
+and nothing in the app was removed. The change is to distribution only.
+
+**The keystore secrets stay.** `ANDROID_KEYSTORE_BASE64` and the three
+passwords are now dormant. Deleting them would save nothing and cost real
+recovery: an upload keystore is unrecoverable, and any device with the app
+installed can only take updates signed by the same key. Re-adding four secrets
+is the cheap half of restoring the job.
+
+**What would reverse it.** Wanting an installable Android build published
+again — restore the job from git history and flip `release`'s `needs` back. The
+secrets it needs are already there, so it is one revert, not a re-setup.

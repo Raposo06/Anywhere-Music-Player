@@ -62,6 +62,11 @@ class DirectStreamCache extends StreamCache {
   Future<void> evict({required Track? keep}) async {}
 }
 
+/// Starts the background download for a prefetched source. See
+/// [DiskStreamCache._warmer] for why this is injectable.
+// ignore: experimental_member_use
+typedef Warmer = Future<void> Function(LockCachingAudioSource source);
+
 /// Android's on-disk stream cache. Each track streams into its own file under
 /// `<temp>/audio_cache/<id>` — keyed by **track id, never the URL**, whose auth
 /// salt rotates on every request and would otherwise guarantee a 100% miss.
@@ -70,8 +75,26 @@ class DiskStreamCache extends StreamCache {
   DiskStreamCache({
     @visibleForTesting Directory? cacheDir,
     @visibleForTesting int? capBytes,
+    @visibleForTesting Warmer? warmer,
   })  : _dir = cacheDir,
-        _capBytes = capBytes ?? _defaultCapBytes;
+        _capBytes = capBytes ?? _defaultCapBytes,
+        _warmer = warmer ?? _startDownload;
+
+  /// What [prefetch] does to start the background download. Injectable for
+  /// one reason: the real one cannot be run to completion in a test on any
+  /// platform. `_fetch` renames an open `<id>.part` when it finishes, which
+  /// Windows refuses, and interrupting it mid-flight (closing the test's
+  /// server) errors it instead — either way the throw happens inside
+  /// just_audio's own future, where no catch of ours can reach it, and lands
+  /// on the test as an unhandled async error. Tests inject a no-op and assert
+  /// the warm-slot bookkeeping, which is the part this class actually owns.
+  final Warmer _warmer;
+
+  // ignore: experimental_member_use
+  static Future<void> _startDownload(LockCachingAudioSource source) =>
+      // Asking for a single byte is what starts the download of the *whole*
+      // file — see LockCachingAudioSource.request/_fetch.
+      source.request(0, 1);
 
   static const int _defaultCapBytes = 2 * 1024 * 1024 * 1024; // 2 GB
   final int _capBytes;
@@ -141,13 +164,11 @@ class DiskStreamCache extends StreamCache {
       );
       _warmId = track.id;
       _warm = source;
-      // Asking for a single byte is what starts the download of the *whole*
-      // file — see LockCachingAudioSource.request/_fetch. Deliberately not
-      // awaited: the point is to return immediately and let it fill in the
-      // background while the current track plays.
+      // Deliberately not awaited: the point is to return immediately and let
+      // it fill in the background while the current track plays.
       unawaited(() async {
         try {
-          await source.request(0, 1);
+          await _warmer(source);
         } catch (e) {
           debugPrint('DiskStreamCache: prefetch failed for ${track.id}: $e');
           // Drop the slot so the ordinary load path builds a fresh source

@@ -34,42 +34,44 @@ void main() {
       dir.listSync().map((e) => e.uri.pathSegments.last).toSet();
 
   group('DiskStreamCache.prefetch', () {
-    // A real loopback server, so the background download succeeds. Pointing
-    // prefetch at a dead URL would make it fail and clear its own slot, and
-    // every assertion below would then be racing that failure.
-    late HttpServer server;
-    late Uri uri;
-
-    setUp(() async {
-      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      uri = Uri.parse('http://${server.address.address}:${server.port}/song');
-      server.listen((request) async {
-        request.response
-          ..statusCode = 200
-          ..headers.contentType = ContentType('audio', 'mpeg')
-          ..add(List.filled(64, 7));
-        await request.response.close();
-      });
-    });
-
-    tearDown(() async => server.close(force: true));
-
+    // No loopback server and no real download. DiskStreamCache takes a
+    // `warmer` seam precisely so these can't run one: just_audio's _fetch
+    // renames an open `<id>.part` when it completes (Windows refuses) and
+    // errors if interrupted (what happens when a test's server is torn down
+    // mid-flight), and either throw lands inside its own future as an
+    // unhandled async error blamed on an already-finished test. That was
+    // green on Windows and red on the Linux runner purely on timing.
+    //
+    // What is left is what this class actually owns: which track is held
+    // warm, and that the warm source is handed over rather than duplicated.
     const tag = MediaItem(id: '1', title: 'Sample');
+    final uri = Uri.parse('http://127.0.0.1:1/song');
 
-    test('holds the prefetched track warm', () async {
-      final cache = DiskStreamCache(cacheDir: dir);
+    /// A cache whose prefetch starts no download. [started] records the
+    /// sources it would have warmed, so a test can still tell that prefetch
+    /// got as far as kicking one off.
+    DiskStreamCache cacheWithNoDownload(List<AudioSource> started) =>
+        DiskStreamCache(
+          cacheDir: dir,
+          warmer: (source) async => started.add(source),
+        );
+
+    test('holds the prefetched track warm, and starts its download', () async {
+      final started = <AudioSource>[];
+      final cache = cacheWithNoDownload(started);
 
       await cache.prefetch(sampleTrack(id: 'warm'), uri, tag);
 
       expect(cache.warmTrackId, 'warm');
       expect(cache.warmSource, isNotNull);
+      expect(started, [same(cache.warmSource)]);
     });
 
     test('hands the warm source to sourceFor rather than building a rival', () async {
       // Two LockCachingAudioSources over one cache file race a truncating
       // write into `<id>.part`. The hand-over is what stops that, so it is the
       // property worth pinning.
-      final cache = DiskStreamCache(cacheDir: dir);
+      final cache = cacheWithNoDownload([]);
       final track = sampleTrack(id: 'warm');
       await cache.prefetch(track, uri, tag);
       final warmed = cache.warmSource;
@@ -84,7 +86,7 @@ void main() {
     });
 
     test('a track that was never warmed gets its own source', () async {
-      final cache = DiskStreamCache(cacheDir: dir);
+      final cache = cacheWithNoDownload([]);
       await cache.prefetch(sampleTrack(id: 'warm'), uri, tag);
       final warmed = cache.warmSource;
 
@@ -97,7 +99,8 @@ void main() {
     });
 
     test('re-prefetching the same track keeps the download already running', () async {
-      final cache = DiskStreamCache(cacheDir: dir);
+      final started = <AudioSource>[];
+      final cache = cacheWithNoDownload(started);
       final track = sampleTrack(id: 'warm');
       await cache.prefetch(track, uri, tag);
       final first = cache.warmSource;
@@ -105,13 +108,34 @@ void main() {
       await cache.prefetch(track, uri, tag);
 
       expect(identical(cache.warmSource, first), isTrue);
+      // ...and no second download was kicked off for the same file.
+      expect(started, hasLength(1));
+    });
+
+    test('a failed download drops the warm slot rather than keeping a dead source', () async {
+      // The ordinary load path must build a fresh source, not inherit a
+      // half-dead one — so the slot has to clear itself when the fetch throws.
+      final cache = DiskStreamCache(
+        cacheDir: dir,
+        warmer: (_) async => throw const SocketException('refused'),
+      );
+
+      await cache.prefetch(sampleTrack(id: 'warm'), uri, tag);
+      await pumpEventQueue();
+
+      expect(cache.warmTrackId, isNull);
+      expect(cache.warmSource, isNull);
     });
 
     test('eviction spares the warm track, not just the playing one', () async {
       // evict() runs after every load, and the load is what starts the
       // prefetch — so protecting only the current track would delete the file
       // that load just began filling.
-      final cache = DiskStreamCache(cacheDir: dir, capBytes: 100);
+      final cache = DiskStreamCache(
+        cacheDir: dir,
+        capBytes: 100,
+        warmer: (_) async {},
+      );
       await cache.prefetch(sampleTrack(id: 'warm'), uri, tag);
       write('warm', 40, ageMinutes: 99);
       write('warm.part', 10, ageMinutes: 99);

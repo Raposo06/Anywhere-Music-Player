@@ -13,7 +13,6 @@ Every asset below comes from the **[latest release](https://github.com/Raposo06/
 
 | Platform | Asset | Install |
 |---|---|---|
-| Android (phone + TV) | `AnywhereMusicPlayer-<version>.apk` | One APK covers both. Enable *Install unknown apps* first |
 | Windows | `AnywhereMusicPlayer-<version>-setup.exe` | [Inno Setup](https://jrsoftware.org/isinfo.php) installer — run it, nothing else needed |
 | Linux (Arch) | `AnywhereMusicPlayer-<version>-x86_64.pkg.tar.zst` | `sudo pacman -U <file>` — pulls `gtk3`, `mpv`, `libsecret` as dependencies |
 
@@ -28,19 +27,24 @@ Every asset below comes from the **[latest release](https://github.com/Raposo06/
 > would need a build from source; media_kit links the *system* libmpv rather
 > than bundling it, which is what makes a distro-agnostic binary awkward.
 >
+> **Android — no download.** Phone and TV are still supported targets and the
+> app builds for both, but CI stopped publishing an APK on 2026-09-09; releases
+> are desktop-only. Build it yourself with `flutter build apk` — see
+> [docs/decisions.md](docs/decisions.md).
+>
 > **iOS / macOS.** Scaffolded by Flutter, never distributed. iOS needs a paid
 > Apple Developer account and a Mac to build, and has no download-page path
 > regardless (App Store or TestFlight only). Out of scope until that changes.
 
 ### Releases
 
-The **git tag is the version.** Pushing a `v*` tag builds all three platforms and publishes a GitHub Release:
+The **git tag is the version.** Pushing a `v*` tag builds Windows and Linux and publishes a GitHub Release:
 
 ```bash
 git tag v1.0.1 && git push origin v1.0.1
 ```
 
-The tag — not `pubspec.yaml`, not `installer.iss` — is what the workflow feeds to `flutter build --build-name` and `ISCC /DMyAppVersion`, so the version can't drift between artifacts. Android's `versionCode` is the Actions run number, so it only ever increases.
+The tag — not `pubspec.yaml`, not `installer.iss` — is what the workflow feeds to `flutter build --build-name` and `ISCC /DMyAppVersion`, so the version can't drift between artifacts. The build number is the Actions run number, so it only ever increases.
 
 Current release: **v1.0.0** (`pubspec.yaml` reads `1.0.0+2`; the two hardcoded values only apply to a hand-run local build, the tag is what ships). Setup and troubleshooting for the pipeline live in [docs/operations.md](docs/operations.md).
 

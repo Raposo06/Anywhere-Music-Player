@@ -47,17 +47,21 @@ been wrong before.
 
 ### Automated releases (GitHub Actions)
 
-`.github/workflows/release.yml` builds all three platforms and publishes a
+`.github/workflows/release.yml` builds the **desktop** platforms and publishes a
 GitHub Release on any `v*` tag:
 
 ```bash
 git tag v1.2.0 && git push origin v1.2.0
 ```
 
-Assets: `.apk` (phone + TV, one APK), `-setup.exe`, `-x86_64.pkg.tar.zst` (Arch
-package) and `SHA256SUMS`. Linux ships **only** the Arch package — see
-[decisions.md](decisions.md), 2026-09-02. `versionCode` is the workflow run
-number, so it always increases.
+Assets: `-setup.exe`, `-x86_64.pkg.tar.zst` (Arch package) and `SHA256SUMS`.
+Linux ships **only** the Arch package — see [decisions.md](decisions.md),
+2026-09-02. The build number is the workflow run number, so it always increases.
+
+**No APK since 2026-09-09** — Android was dropped from releases (see
+[decisions.md](decisions.md)). The app still builds and runs on phone and TV;
+`flutter build apk` produces one locally, and the signing setup below is kept
+for exactly that. It is simply not published.
 
 **Installing on Arch/Omarchy** — download the `.pkg.tar.zst` from the release
 (or the foxcore.dev card) and:
@@ -81,10 +85,8 @@ a tag whose suite is red fails before anything is published. It is the only
 place either command runs in CI.
 
 `workflow_dispatch` (Actions → Release → Run workflow) is a smoke test —
-publishes nothing, tags nothing. It builds **Windows + Linux only**, which need
-just the `API_BASE_URL` variable; tick **include_android** to also build the APK
-once the keystore secrets exist. This is the intended order: dry-run the
-credential-free platforms first, then set up signing.
+publishes nothing, tags nothing. It runs the same Windows + Linux builds a tag
+would, so it is the cheap way to check a build before making it permanent.
 
 **One-time setup — repo variable:**
 
@@ -93,7 +95,10 @@ credential-free platforms first, then set up signing.
   build's asset bundle; the job fails fast if it's unset. It is not a secret
   (it's public DNS), so a variable, not a secret.
 
-**One-time setup — Android signing.** The `release` build type is debug-signed
+**Android signing (local builds only, since 2026-09-09).** CI no longer builds
+the APK, so the four `ANDROID_*` repo secrets below are unused — left in place
+rather than deleted, because a keystore is unrecoverable and re-adding secrets
+is cheaper than regenerating a key. The `release` build type is debug-signed
 unless `android/key.properties` + a keystore are present (both gitignored). Make
 a real upload key once:
 
@@ -112,8 +117,9 @@ keyAlias=upload
 storeFile=upload-keystore.jks
 ```
 
-For **CI**, add four repo **secrets** (Settings → Secrets and variables →
-Actions → Secrets) — the workflow reconstructs `key.properties` from them:
+The four repo **secrets** below (Settings → Secrets and variables → Actions →
+Secrets) fed the CI APK build. They are dormant now that Android is out of the
+release; restoring the job is what makes them live again:
 
 | Secret | Value |
 |---|---|
