@@ -41,20 +41,22 @@ class Track with CoverArtRef {
   /// [coverArtUrl] are resolved at the moment of use instead (see
   /// StreamUrlResolver).
   ///
-  /// [pathOverride] replaces the song's own `path` field as the source of
-  /// [path] (and so of [folderPath] and [folderName]). The folder walk in
-  /// `SubsonicApiService.getAllTracksByFolder` passes the path it descended
-  /// through, which is authoritative in a way the server's `path` is not: it
-  /// is the tree the app actually browsed. Every other caller leaves it null
-  /// and takes whatever the server sends.
+  /// [resolvedPath] is the library-relative path the track is filed under,
+  /// already decided by the caller — it replaces the song's own `path` field
+  /// as the source of [path] (and so of [folderPath] and [folderName]).
+  /// `FolderWalk` passes the result of its own path policy, which *prefers*
+  /// the server's `path` and falls back to the directories it descended only
+  /// when the server's is absent or absolute. See CLAUDE.md item 4 and the
+  /// 2026-09-09 decision entry — the preference used to run the other way,
+  /// and flipping it back has a known failure mode. Every other caller leaves
+  /// this null and takes whatever the server sends.
   factory Track.fromSubsonic(
     Map<String, dynamic> json, {
-    String? parentFolderName,
-    String? pathOverride,
+    String? resolvedPath,
   }) {
     final songId = json['id'].toString();
     final coverArtId = json['coverArt']?.toString();
-    final filePath = pathOverride ?? json['path'] as String?;
+    final filePath = resolvedPath ?? json['path'] as String?;
     final extractedFolderPath = _extractFolderPath(filePath);
 
     return Track(
@@ -63,7 +65,7 @@ class Track with CoverArtRef {
       path: filePath ?? '',
       coverArtId: coverArtId,
       folderPath: extractedFolderPath,
-      folderName: parentFolderName ?? _lastSegment(extractedFolderPath),
+      folderName: _lastSegment(extractedFolderPath),
       durationSeconds: json['duration'] as int?,
       fileSizeBytes: json['size'] as int?,
       createdAt: json['created'] != null

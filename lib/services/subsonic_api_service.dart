@@ -633,7 +633,7 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
     String root,
   ) => [
     for (final song in songs)
-      Track.fromSubsonic(song, pathOverride: _pathOf(song, dirPath, root)),
+      Track.fromSubsonic(song, resolvedPath: _pathOf(song, dirPath, root)),
   ];
 
   /// The library-relative path a track is filed under.

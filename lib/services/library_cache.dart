@@ -47,7 +47,9 @@ class LibraryCache {
   // fresh scan.
   static const _version   = 6;
 
-  /// Load the cached track list. Returns null when:
+  /// Load the cached track list, plus the `scannedAt` stamp it was written
+  /// with so a caller can decide whether the cache is fresh enough to skip
+  /// the network scan. Returns null when:
   ///   - the cache file doesn't exist (first launch / post-logout)
   ///   - the file is corrupt (parse error → file is deleted)
   ///   - the schema version doesn't match (file is deleted)
@@ -55,10 +57,6 @@ class LibraryCache {
   /// JSON decode runs on a background isolate via [compute] — for a large
   /// library the cache file is several MB, and a synchronous decode on the
   /// main thread visibly stalls the first frame on cold start.
-  static Future<List<Track>?> load() async => (await loadEntry())?.tracks;
-
-  /// [load], but also returning the cache's `scannedAt` stamp so a caller can
-  /// decide whether the cache is fresh enough to skip the network scan.
   static Future<CachedLibrary?> loadEntry() async {
     try {
       final file = await _cacheFile();

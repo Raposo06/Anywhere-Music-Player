@@ -53,24 +53,16 @@ void main() {
       expect(track.path, '');
     });
 
-    test('respects an explicit parentFolderName override', () {
-      final track = Track.fromSubsonic(
-        {'id': '1', 'title': 'T', 'path': 'A/B/song.mp3'},
-        parentFolderName: 'Custom Name',
-      );
-
-      expect(track.folderName, 'Custom Name');
-    });
   });
 
-  group('Track.fromSubsonic with a pathOverride', () {
+  group('Track.fromSubsonic with a resolvedPath', () {
     // The folder walk synthesizes each song's path from the directories it
     // descended through and passes it here, because that path — not the
     // server's own `path` field — is the tree the app actually browsed.
-    test('the override supplies path, folderPath and folderName', () {
+    test('resolvedPath supplies path, folderPath and folderName', () {
       final track = Track.fromSubsonic(
         {'id': '42', 'title': 'A Song', 'coverArt': 'cov-42', 'duration': 245},
-        pathOverride: 'Artist/Album/01 - A Song.flac',
+        resolvedPath: 'Artist/Album/01 - A Song.flac',
       );
 
       expect(track.path, 'Artist/Album/01 - A Song.flac');
@@ -80,38 +72,28 @@ void main() {
       expect(track.durationSeconds, 245);
     });
 
-    test('the override wins over the path the server sent', () {
+    test('resolvedPath wins over the path the server sent', () {
       // Gonic's own `path` may be relative to a music folder this walk has
       // already accounted for, so the two can legitimately disagree. The
       // walk's answer is the one the folder tree has to agree with.
       final track = Track.fromSubsonic(
         {'id': '1', 'title': 'T', 'path': 'somewhere/else/song.mp3'},
-        pathOverride: 'Anime/Naruto/song.mp3',
+        resolvedPath: 'Anime/Naruto/song.mp3',
       );
 
       expect(track.path, 'Anime/Naruto/song.mp3');
       expect(track.folderPath, 'Anime/Naruto');
     });
 
-    test('a root-level override leaves folderPath empty, not guessed', () {
+    test('a root-level resolvedPath leaves folderPath empty, not guessed', () {
       final track = Track.fromSubsonic(
         {'id': '1', 'title': 'T'},
-        pathOverride: 'loose-track.mp3',
+        resolvedPath: 'loose-track.mp3',
       );
 
       expect(track.path, 'loose-track.mp3');
       expect(track.folderPath, '');
       expect(track.folderName, '');
-    });
-
-    test('parentFolderName still wins over the override-derived name', () {
-      final track = Track.fromSubsonic(
-        {'id': '1', 'title': 'T'},
-        pathOverride: 'A/B/song.mp3',
-        parentFolderName: 'Custom Name',
-      );
-
-      expect(track.folderName, 'Custom Name');
     });
   });
 

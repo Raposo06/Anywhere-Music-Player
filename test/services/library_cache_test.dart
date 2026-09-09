@@ -27,14 +27,14 @@ void main() {
   );
 
   test('load returns null when no cache file exists (first launch)', () async {
-    expect(await LibraryCache.load(), isNull);
+    expect(await LibraryCache.loadEntry(), isNull);
   });
 
   test('save then load round-trips the track list', () async {
     final tracks = [track('1'), track('2'), track('3')];
 
     await LibraryCache.save(tracks);
-    final loaded = await LibraryCache.load();
+    final loaded = (await LibraryCache.loadEntry())?.tracks;
 
     expect(loaded, isNotNull);
     expect(loaded!.map((t) => t.id), ['1', '2', '3']);
@@ -59,7 +59,7 @@ void main() {
     await LibraryCache.save([track('1')]);
     await LibraryCache.save([track('1'), track('2')]);
 
-    final loaded = await LibraryCache.load();
+    final loaded = (await LibraryCache.loadEntry())?.tracks;
     expect(loaded!.map((t) => t.id), ['1', '2']);
   });
 
@@ -75,14 +75,14 @@ void main() {
           'tracks': [track('1').toJson()],
         }));
 
-    expect(await LibraryCache.load(), isNull);
+    expect(await LibraryCache.loadEntry(), isNull);
   });
 
   test('load self-heals a corrupt cache file: deletes it and returns null', () async {
     final file = File('${tempDir.path}${Platform.pathSeparator}library_cache.json');
     await file.writeAsString('not valid json{{{');
 
-    final loaded = await LibraryCache.load();
+    final loaded = await LibraryCache.loadEntry();
 
     expect(loaded, isNull);
     expect(await file.exists(), isFalse);
@@ -95,7 +95,7 @@ void main() {
       'tracks': [track('1').toJson()],
     }));
 
-    final loaded = await LibraryCache.load();
+    final loaded = await LibraryCache.loadEntry();
 
     expect(loaded, isNull);
     expect(await file.exists(), isFalse);
@@ -140,7 +140,7 @@ void main() {
     await LibraryCache.save([track('1')]);
     await LibraryCache.clear();
 
-    expect(await LibraryCache.load(), isNull);
+    expect(await LibraryCache.loadEntry(), isNull);
   });
 
   test('clear is a no-op (does not throw) when there is no cache file', () async {
