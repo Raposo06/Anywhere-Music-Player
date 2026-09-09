@@ -14,6 +14,72 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## The library scan is three modules: FolderWalk, FolderTree, LibraryScanner (2026-09-09)
+
+**Decided.** Split what had become one 700-line transport class and one
+410-line `ChangeNotifier` into three single-purpose modules:
+
+- **`FolderWalk`** (`lib/services/folder_walk.dart`) — the breadth-first
+  directory walk (cycle guard, concurrency batching) and the path-resolution
+  policy (`_pathOf`/`_isAbsolute`/`_joinPath`/`_fileNameOf`). Takes a
+  `LibraryBrowser`, run via `.run()`.
+- **`LibraryBrowser`** (`lib/services/library_browser.dart`) — a 3-method
+  interface (`getMusicFolders`/`getIndexes`/`getMusicDirectory`) covering the
+  whole of what `FolderWalk` needs from a server. `SubsonicApiService`
+  implements it; a `FakeBrowser` in tests is the second adapter that makes the
+  seam real rather than hypothetical.
+- **`FolderTree`** (`lib/services/folder_tree.dart`) — an immutable value
+  built by `FolderTree.from(tracks)`: tree construction, cover-art
+  inheritance, recursive counting/search, and the root-flatten rule (a
+  library entirely under one top-level folder shows that folder's children
+  as the top level instead). The rule used to be spelled out three separate
+  times across `LibraryScanner`, each testing a slightly different condition
+  on the same data; it is now one nullable field computed once at
+  construction.
+- **`LibraryScanner`** keeps only cache hydration, freshness, and
+  `notifyListeners()` orchestration — it holds a `FolderTree` and exposes it
+  via `tree`, plus one-line forwarders (`getTopLevelFolders`, `getRootTracks`,
+  `getFolderContents`, `getAllTracksInFolder`, `searchFolders`,
+  `isFlattenedRoot`, `trackById`) so the ~20 existing call sites across 7
+  screen files didn't have to change in this pass.
+
+**Why.** Neither the transport nor the tree-holding `ChangeNotifier` is the
+right place for a breadth-first traversal or a path policy — before this,
+testing "does this path land in the right tree node" required a fake HTTP
+client, a fake path provider, a temp directory, and a `tearDown` retry loop
+to dodge an un-awaited cache write. `FolderTree` needs none of that; it's
+pure Dart tested with a list of paths in, a tree out.
+
+`subsonic_api_service.dart`: 700 → 546 lines. `library_scanner.dart`:
+410 → 202 lines. No behaviour changed; `flutter test` count went from 383 to
+393 (nine tests moved to `folder_walk_test.dart`, nine pure ones added there
+and in `folder_tree_test.dart`, two dead-parameter tests deleted as
+unrelated cleanup — see the two `## 2026-09-09` entries below for that
+cleanup).
+
+**Deliberately not done in this pass:** the scanner's forwarders were not
+retired in favour of `scanner.tree` at every call site — that's ~20 edits
+across 5 screens, a util and a widget for zero behaviour change, and those
+screens carry their own widget tests. New code should prefer `tree`
+directly; existing call sites can move over per-file, at leisure.
+
+**What would reverse it.** If the server ever grows a real "give me every
+song" endpoint, `FolderWalk` is deleted whole rather than unpicked from the
+transport again. Nothing foreseeable reverses `FolderTree` — a pure value
+object built from a flat list is about as simple as this can get.
+
+Also folded in, as prep rather than a decision of its own: `Track.fromSubsonic`'s
+doc comment claimed the folder walk's path "is authoritative in a way the
+server's `path` is not" — the exact opposite of what the path policy above has
+done since the entry below. Rewritten to match, and its parameter renamed
+`pathOverride` → `resolvedPath` since it no longer overrides anything. The
+unrelated dead `parentFolderName` parameter and the test-only
+`LibraryCache.load()` wrapper were also deleted — both had zero production
+callers, kept alive only by their own tests.
+
+See `docs/reviews/2026-09-09-c01-c02-work-order.md` for the full grilling and
+step-by-step plan this was built from.
+
 ## Desktop cannot use LockCachingAudioSource; it renames an open file (2026-09-09)
 
 **Decided.** Windows and Linux go back to `DirectStreamCache`, hours after being

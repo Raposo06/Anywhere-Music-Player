@@ -155,8 +155,8 @@ Three layouts over one set of services. `MainScreen` picks between the first two
 
 Desktop and phone are **separate screens on purpose** — see
 [decisions](decisions.md). What they share is everything below the widget layer
-(`AudioPlayerService`, `PlaybackCursor`, `LibraryScanner`, `CoverArt`) plus the
-theme in `lib/theme/`.
+(`AudioPlayerService`, `PlaybackCursor`, `LibraryScanner` with its
+`FolderWalk`/`FolderTree`, `CoverArt`) plus the theme in `lib/theme/`.
 
 The desktop shell owns the window: `main()` hides the native frame on
 Windows/Linux, so `WindowChrome` is the only way to move, maximise or close the
