@@ -1,4 +1,3 @@
-import 'package:meta/meta.dart';
 import '../models/track.dart';
 
 enum RepeatMode { off, all, one }
@@ -319,11 +318,16 @@ class PlaybackCursor {
   // -------- Test-only seam --------
 
   /// Seeds state directly instead of going through [start]/[advance], which
-  /// is how widget tests render UI driven by [AudioPlayerService] without a
+  /// is how widget tests render UI driven by `AudioPlayerService` without a
   /// live audio backend, and how sequencing tests set up scenarios (a stale
   /// shuffle order, an arbitrary shufflePos) that no production entry point
   /// produces on its own. Only overwrites the fields passed.
-  @visibleForTesting
+  ///
+  /// Not marked `@visibleForTesting`: its one caller,
+  /// `AudioPlayerService.seedForTest`, is itself a test seam, and the
+  /// annotation only bought an `ignore:` the analyzer needed to see one seam
+  /// call another. Nothing else can reach it — the cursor it belongs to is
+  /// private to that service.
   void seed({
     List<Track>? playlist,
     int? currentIndex,

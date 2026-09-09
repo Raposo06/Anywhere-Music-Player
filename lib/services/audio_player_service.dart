@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/track.dart';
 import 'now_playing_presence.dart';
 import 'playback_cursor.dart';
+import 'playback_policy.dart';
 import 'playback_reporter.dart';
 import 'stream_cache.dart';
 import 'stream_url_resolver.dart';
@@ -47,21 +48,11 @@ class AudioPlayerService with ChangeNotifier {
   static const _skipDebounce = Duration(milliseconds: 280);
   Timer? _loadDebounce;
 
-  // Ceiling on what [_prefetchNext] will pull down ahead of time. Comfortably
-  // above a normal track (this library averages 6.5 MB) and well under the
-  // long mixes, which are the ones worth leaving alone.
-  static const int _prefetchMaxBytes = 50 * 1024 * 1024; // 50 MB
-
   // Mid-stream drop recovery: bounded auto-resume of the current track when the
   // network/server closes a connection mid-playback.
   int _resumeAttempts = 0;
   String? _resumeTrackId;
   DateTime? _lastResumeAt;
-
-  // Scrobbling: report a play once it passes the Last.fm-style threshold —
-  // half the track, or four minutes, whichever comes first.
-  static const double _scrobbleFraction = 0.5;
-  static const Duration _scrobbleAfter = Duration(minutes: 4);
 
   // Identifies one *listen*. Bumped by _selectAndPlay — i.e. by every fresh
   // selection, including repeat-one relooping the same track, so a replay
@@ -231,11 +222,7 @@ class AudioPlayerService with ChangeNotifier {
             : null);
     if (total == null || total <= Duration.zero) return;
 
-    final half = Duration(
-      microseconds: (total.inMicroseconds * _scrobbleFraction).round(),
-    );
-    final threshold = half < _scrobbleAfter ? half : _scrobbleAfter;
-    if (position < threshold) return;
+    if (position < PlaybackPolicy.scrobbleThreshold(total)) return;
 
     _scrobbledSession = _listenSession;
     _report(
@@ -423,7 +410,9 @@ class AudioPlayerService with ChangeNotifier {
       _logStreamParams(track);
       await _setSourceWithRetry(track, token);
       if (token != _loadToken) return;
-      await _player!.setVolume(_volume * _replayGainFactor(track));
+      await _player!.setVolume(
+        _volume * PlaybackPolicy.replayGainFactor(track.replayGainDb),
+      );
       if (resumeFrom != null && resumeFrom > Duration.zero) {
         await _player!.seek(resumeFrom);
       }
@@ -477,15 +466,10 @@ class AudioPlayerService with ChangeNotifier {
     if (token != _loadToken) return;
     final next = peekNextTrack();
     if (next == null || next.id == _currentTrack?.id) return;
-    // Prefetch pulls the *whole* file — LockCachingAudioSource has no partial
-    // mode — so an unbounded one is a hazard, not a speed-up. This library's
-    // mean track is 6.5 MB, but 45 of them are hour-plus mixes and the largest
-    // is 277 MB: starting that behind a 3-minute opening would saturate the
-    // link the current track is still streaming over, and evict most of the
-    // 2 GB cache to do it. Big tracks simply open cold, which is what every
-    // track did before prefetch existed.
+    // Why the cap is where it is: PlaybackPolicy.prefetchMaxBytes. A track
+    // whose size the server didn't report is prefetched.
     final size = next.fileSizeBytes;
-    if (size != null && size > _prefetchMaxBytes) {
+    if (size != null && size > PlaybackPolicy.prefetchMaxBytes) {
       debugPrint(
         'AudioPlayerService: skipping prefetch of ${next.id}, '
         '${(size / (1 << 20)).round()} MB is over the cap',
@@ -680,41 +664,6 @@ class AudioPlayerService with ChangeNotifier {
     _persistModes();
   }
 
-  /// ReplayGain pre-amp in dB. Middle-ground value picked to balance two
-  /// competing goals:
-  ///
-  ///   • Equal loudness across tracks (low values → loud masters fully
-  ///     attenuated to the ReplayGain reference)
-  ///   • Acceptable overall volume (high values → less attenuation, library
-  ///     plays louder, but the variance between tracks widens)
-  ///
-  /// Reference table for a track with rgTrackGain = -7 dB (typical pop
-  /// master), since clamp(0..1) caps amplification at unity:
-  ///   preamp 0 → factor 0.45  (-7 dB attenuation, full normalization)
-  ///   preamp 3 → factor 0.63  (-4 dB attenuation)
-  ///   preamp 6 → factor 0.89  (-1 dB attenuation, current setting — plays
-  ///                            louder, near the file's own level)
-  ///   preamp 9 → factor 1.00  (no attenuation; loudest, leveling effectively
-  ///                            off — bump here if you want it louder still)
-  static const double _replayGainPreAmpDb = 6.0;
-
-  /// Linear playback multiplier derived from a track's ReplayGain (dB).
-  /// Attenuate-only: after the pre-amp, tracks still louder than the target are
-  /// turned down toward it; quieter tracks are never boosted (clamped at 1.0),
-  /// so clipping is impossible. Tracks with no loudness data play unchanged.
-  double _replayGainFactor(Track? track) {
-    final db = track?.replayGainDb;
-    if (db == null) return 1.0;
-    final factor = pow(10, (db + _replayGainPreAmpDb) / 20).toDouble();
-    return factor.clamp(0.0, 1.0).toDouble();
-  }
-
-  /// Test-only seam onto [_replayGainFactor] — the math is pure, but the
-  /// method itself is private (Dart privacy is per-library, so a test file
-  /// can't reach it directly).
-  @visibleForTesting
-  double replayGainFactorForTest(Track? track) => _replayGainFactor(track);
-
   /// Test-only seam: seeds playback state directly instead of going through
   /// [playTrack]/[play], which lazily construct a real [AudioPlayer]
   /// and therefore need a live platform audio backend. Lets widget tests
@@ -732,11 +681,6 @@ class AudioPlayerService with ChangeNotifier {
     List<int>? shuffleOrder,
     int? shufflePos,
   }) {
-    // PlaybackCursor.seed is itself a test-only seam; this method (also
-    // @visibleForTesting) is its sole production-code caller, wrapping it
-    // the same way replayGainFactorForTest wraps _replayGainFactor above —
-    // the analyzer just can't see through one test seam calling another.
-    // ignore: invalid_use_of_visible_for_testing_member
     _cursor.seed(
       playlist: playlist,
       currentIndex: currentIndex,
@@ -753,7 +697,9 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> setVolume(double volume) async {
     _volume = volume.clamp(0.0, 1.0);
     if (_player != null) {
-      await _player!.setVolume(_volume * _replayGainFactor(_currentTrack));
+      await _player!.setVolume(
+        _volume * PlaybackPolicy.replayGainFactor(_currentTrack?.replayGainDb),
+      );
     }
     notifyListeners();
   }
