@@ -37,12 +37,13 @@ installer built from `installer.iss` → `AnywhereMusicPlayer_Setup.exe`.
 `installer.iss` needs Inno Setup **6.5.4+** — it uses `WizardStyle=modern dark
 polar`, which older compilers reject.
 
-⚠️ **`pubspec.yaml` (`1.1.0+2`) and `installer.iss`'s fallback (`1.3`) still
-disagree**, but for a *tagged release* neither is used — the workflow passes the
-git tag to both via `--build-name` / `/DMyAppVersion` (see
-[decisions.md](decisions.md), 2026-09-01). The two hardcoded values only apply
-to a hand-run `flutter build` / `ISCC` with no override, so keep them roughly in
-step but the tag is what ships.
+**Neither hardcoded version matters for a tagged release** — the workflow passes
+the git tag to both via `--build-name` / `/DMyAppVersion` (see
+[decisions.md](decisions.md), 2026-09-01). `pubspec.yaml` (`1.0.0+2`) and
+`installer.iss`'s fallback (`1.0.0`) agree as of 2026-09-09; they only apply to
+a hand-run `flutter build` / `ISCC` with no override. Keep them roughly in step,
+but the tag is what ships — check the files rather than this line, which has
+been wrong before.
 
 ### Automated releases (GitHub Actions)
 
@@ -501,6 +502,18 @@ ours still read `navidrome.foxcore.dev` a day after the Gonic migration landed,
 which means a *fresh* install pre-fills the old server too. Symptom and fix look
 identical from the app; the difference is whether the stale URL is in the
 keystore or on disk.
+
+**A stale URL has a third home: the `API_BASE_URL` repo variable.** CI never
+sees your local `.env` — it writes its own from that variable, so a *released*
+build carries whatever the variable says, however correct every working copy is.
+Ours was still `navidrome.foxcore.dev` on 2026-09-09, the day before the first
+post-migration release would have shipped with it. A migration is three edits,
+not one: `.env.example`, every machine's `.env`, and
+
+```bash
+gh variable set API_BASE_URL --body "https://gonic.foxcore.dev"
+gh variable list   # verify — this is the one nobody thinks to check
+```
 
 **Fix.** Log out and log back in, on every device. Logout clears the stored
 credentials *and* the library cache (`LibraryScanner.resetAndClearCache`), which
