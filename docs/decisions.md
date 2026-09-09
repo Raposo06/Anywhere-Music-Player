@@ -14,6 +14,256 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Desktop cannot use LockCachingAudioSource; it renames an open file (2026-09-09)
+
+**Decided.** Windows and Linux go back to `DirectStreamCache`, hours after being
+moved to `DiskStreamCache`. The disk cache and the next-track prefetch it enables
+are **Android-only**. `StreamCache.prefetch`, the 50 MB cap and every test stay —
+on desktop `prefetch` is simply the documented no-op.
+
+**Why — measured, not reasoned.** The move rested on one assumption:
+`LockCachingAudioSource` is plain Dart serving bytes over a loopback
+`HttpServer`, so media_kit should not care. `flutter test` cannot exercise
+media_kit, so this was shipped explicitly unverified. A standalone Flutter
+Windows probe — real libmpv, real `LockCachingAudioSource`, a local origin
+server serving a synthesized WAV — then ran both scenarios:
+
+| Scenario | Result |
+|---|---|
+| Play through the cache, no prefetch | **plays** — load 24 ms, duration 5000 ms, position advanced to 1475 ms |
+| Prefetch (`request(0, 1)`) then play | **`setAudioSource` never completes** — 15 s timeout, `stream: Failed to open http://127.0.0.1:…` |
+
+In *both* cases the cache file never materialised — `<id>.part` existed,
+`<id>` did not — with an unhandled:
+
+```
+PathAccessException: Cannot rename file to '…	rackid',
+  path = '…	rackid.part'  (OS Error: errno = 32, file in use)
+  at LockCachingAudioSource._fetch (just_audio.dart:3165)
+```
+
+`_fetch` downloads to `<id>.part` and `renameSync`s it into place. POSIX permits
+renaming a file that is still open; **Windows does not**. So on Windows the
+cache never completes: every replay re-downloads, and the exception surfaces as
+an unhandled async error. Adding a prefetch puts a second reader on the same
+in-flight download and turns that silent failure into a hard one — nothing plays.
+
+**Two things this corrects.** media_kit is *not* the problem: it played the
+loopback proxy URL fine in the no-prefetch case, which was the risk actually
+flagged. And Linux is untested — the fault is a Windows filesystem semantic, so
+Linux probably behaves like Android, but "probably" is what this entry exists to
+stop, so Linux reverts with Windows.
+
+**What would reverse it.** just_audio fixing the rename on Windows (copy-then-
+delete, or retry), which would need a version bump past the pinned 0.9.40. Or —
+better, and independent of the package — desktop prefetching with a **plain HTTP
+download we own**: fetch the next track to a temp file, close the sink, rename,
+and hand media_kit a `file://` URI. That sidesteps the proxy and the experimental
+API entirely, and we control when handles close. That is the shape to build if
+desktop prefetch is wanted.
+
+**What this cost, and the lesson.** The change was shipped with "unverified
+against the real backend" written next to it three times, and was wrong. A
+30-line probe app found it in one run. When a change rests on an assumption the
+test suite structurally cannot reach, the probe *is* the test — write it before
+shipping, not after.
+
+---
+
+## The next track is prefetched to disk; desktop joins the stream cache (2026-09-09)
+
+**Decided.** Two changes, one mechanism:
+
+1. `StreamCache` gains `prefetch(track, uri, tag)`. `DiskStreamCache` builds the
+   next track's `LockCachingAudioSource` and calls `request(0, 1)` on it, which
+   is what starts the download of the **whole** file; `DirectStreamCache` has
+   nowhere to put bytes, so it is a no-op there.
+2. Windows and Linux move from `DirectStreamCache` to `DiskStreamCache`. Only
+   web still streams direct.
+
+`AudioPlayerService._prefetchNext` fires it once the current track is loaded and
+playing, guarded by the same `_loadToken` as the load.
+
+**Why.** Every track change paid a full open — TLS handshake, first byte, demux
+fill — over a Tailscale tunnel to Hetzner, with nothing warmed in advance. Cover
+art was already precached for exactly this reason; the audio was not.
+
+**Why not a second player.** The obvious shape is two `AudioPlayer`s ping-ponging
+with the next track preloaded on the standby one. That was rejected: the exposed
+`positionStream`/`playingStream` are read straight off `_player` by ~10 UI sites,
+so a swap kills every live `StreamBuilder` unless they first become forwarded
+broadcast streams, and all four presence implementations (Android, Windows,
+Linux MPRIS, audio_service) hold the player from `bind()` and would need to
+support rebinding. `LockCachingAudioSource` is plain Dart served over a loopback
+`HttpServer`, so warming the *bytes* needs none of that and works on every
+platform at once. Sequencing stays one-track-at-a-time (load-bearing item 1).
+
+**The invariant this rests on.** Exactly one live source per cache file — two
+race a truncating `openWrite` into `<id>.part` and corrupt what is playing. So
+`prefetch` holds the instance in a one-slot field and `sourceFor` **takes** it,
+emptying the slot; it never builds a second source for a warmed track. Eviction,
+which runs after every load, now spares the warm track as well as the playing
+one — otherwise each load deleted the prefetch it had just started.
+
+**Bounded to 50 MB.** `LockCachingAudioSource` has no partial mode — asking for
+one byte pulls the whole file — so an unbounded prefetch is a hazard rather than
+a speed-up. Measured against the live library: mean track 6.5 MB, but 45 tracks
+run past ten minutes and the largest is **277 MB** (a 112-minute mix). Starting
+that behind a 3-minute opening would saturate the same tunnel the current track
+is streaming over, and evict most of a 2 GB cache that only holds ~307 average
+tracks to begin with. Over the cap, a track opens cold — exactly what every
+track did before this existed.
+
+**Cost.** Desktop playback now goes through just_audio's loopback proxy and
+writes to the 2 GB on-disk cache. One track of read-ahead bandwidth is spent
+even if the user stops before reaching it. Prefetching on load rather than near
+the end of the track is deliberate: it is the longest head start, and the skip
+debounce means a burst of Next warms only the track landed on, not every one
+passed through.
+
+**What would reverse it.** media_kit misbehaving against the loopback source on
+some desktop configuration — then desktop goes back to `DirectStreamCache` and
+loses prefetch with it, while Android keeps both. Wanting to spend less
+bandwidth would move the trigger later (position-based) rather than remove it.
+
+**Superseded the same day for desktop** — the reversal condition above fired on
+first measurement. See "Desktop cannot use LockCachingAudioSource" below. The
+prefetch seam, the 50 MB cap and the Android behaviour all stand; only the
+desktop wiring was undone.
+
+---
+
+## libmpv's demuxer cache raised 8 MB → 16 MB (2026-09-09)
+
+**Decided.** `JustAudioMediaKit.bufferSize = 16 << 20`. This partially reverses
+the 8 MB set the day before in "Desktop footprint trimmed" (2026-09-08), which
+stands otherwise — the dropped dependencies and re-exported icons are unaffected.
+
+**Why.** 8 MB made tracks visibly slower to start on Windows. The 2026-09-08
+reasoning — "this app streams audio, where 8 MB is minutes of buffer" — was
+right about duration and wrong about what the cache is doing on this link. The
+server is reached over a Tailscale tunnel to Hetzner, so what matters is not how
+many minutes fit but how often libmpv goes back to the network for the next
+chunk. A smaller cache means more, smaller reads over a high-latency path.
+
+**How it was isolated.** The user rebuilt after a week on an old binary, so the
+suspect list was every change in between. Diffing the two commits over the
+playback files left exactly one functional change — the buffer — with the other
+two diffs comment-only (`Navidrome` renamed to `the server`). The forced v6
+rescan was a candidate confounder and was already spent on an earlier launch, so
+the observation was clean.
+
+**Cost.** ~8 MB resident against a ~216 MB private baseline.
+
+**What would reverse it.** A deployment on a low-latency link (the server on the
+LAN) where 8 MB starts tracks just as fast — then the memory is worth reclaiming.
+Measure start latency before moving it; don't tune it from the duration
+arithmetic, which is what got 8 MB chosen in the first place. 32 MB is
+libmpv's default and the next step up if 16 still stutters.
+
+---
+
+## The song's own `path` decides the folder tree, not the walk (2026-09-09)
+
+**Decided.** `getAllTracksByFolder` now reads each track's library path from the
+song's own `path` field, and only synthesizes one from the descent when the
+server's is unusable. This **reverses** point 1 of the Gonic migration entry
+(2026-09-08) and item 4 of `CLAUDE.md`'s do-not-simplify list.
+
+**Why — what the old rule assumed, and how it failed.** Synthesizing was
+supposed to guarantee the tree matched the directories actually browsed. It
+does. The unexamined premise was that those directories are the *on-disk* ones,
+and that is only true if `getIndexes` answers with folders.
+
+This server's did not. The library cache written 2026-09-09 08:37 held 4,384
+tracks — the right count, from the right server — with paths like:
+
+```
+5050/One Piece/01-Jungle P.mp3
+7!!/Naruto Shippuden Opening Theme/01-Lovers.mp3
+[Unknown Artist]/[Unknown Album]/1 Hour of Relaxing Rainy Night...
+```
+
+285 distinct top-level segments, and **zero** tracks under any of the five real
+top-level directories (`ANIMES & ANIMATIONS`, `GAMES`, `MIXES & COMPILATIONS`,
+`MOVIES & SERIES`, `SPECIALS`). Those segments are artists, and `[Unknown
+Artist]`/`[Unknown Album]` are placeholders Gonic generates for untagged files —
+no directory on disk is named that. The walk faithfully reproduced a tag-shaped
+index. Folder browsing was showing a tag tree, which is the one thing the move
+off Navidrome was meant to stop.
+
+Note this contradicts the 2026-09-08 verification in this log, which measured 5
+top-level directories over the same 4,384 songs. Same server, same library,
+different shape — unexplained, and the reason the new rule is written not to
+care which shape `getIndexes` returns.
+
+**Why `path` is the better source here.** It is the on-disk tree, stated by the
+server per song, and it does not depend on how the index is built. The same
+2026-09-08 check found it present on 100% of song responses.
+
+**The two fallbacks, and why they exist.**
+
+- **Absent or empty** — the Subsonic spec does not require `path`.
+- **Absolute** (`/mnt/storagebox/music/…`) — a filesystem path whose library
+  root this client cannot know, so no prefix is safe to strip. Navidrome sent
+  these; that is the case the walk was originally built for, and it is still
+  the right answer for it.
+
+Both fall back to the walked path, so a server that behaves the way the old rule
+assumed still works exactly as before.
+
+**What would reverse it.** A server whose `path` is relative to a music folder
+that disagrees with the browse tree — the original worry, now handled for the
+absolute case but not for a mismatched relative root. If that appears, the fix
+is to make the source per-server rather than to flip the rule back.
+
+---
+
+## Stay on Flutter; the desktop-rewrite evaluation is closed (2026-09-09)
+
+**Decided.** No migration off Flutter. Qt, Slint and Tauri were all evaluated
+against the desktop build and all rejected. Recorded here rather than only in
+`HANDOFF.md`, which is transient and gets deleted at merge — the question was
+already asked a second time in a later session, which is what a decision log is
+supposed to prevent.
+
+**Why.**
+
+- **The 216 MB private RSS is real and not constraining.** 84 MB of it is
+  Flutter's floor; the rest was addressable from inside Flutter, and the
+  demuxer-cache fix took the largest piece of it without a framework change.
+- **The one live capability gap didn't matter.** libmpv's `replaygain`/`af`
+  options are sealed behind `just_audio_media_kit`, which holds the media_kit
+  `Player` as a private field. That would be a real wall if ReplayGain were
+  critical — it isn't, because Gonic tags it on 3% of the library.
+- **The ecosystem advantage doesn't cover this app.** Rust's edge is
+  concentrated at the audio/OS-integration boundary (`souvlaki`, `libmpv2`,
+  `symphonia`). It does not extend to the Subsonic layer — the best Rust client
+  crate has 830 lifetime downloads against 651 tested lines here — and cover-art
+  loading would get *worse* than `cached_network_image`.
+- **Tauri specifically ships a browser engine** (WebKitGTK / WebView2), so it
+  does not improve the memory number. Its "native Wayland" pitch is not a
+  differentiator: this app already runs as a native Wayland client under
+  Hyprland (`xwayland=False`, verified via `hyprctl clients`).
+- **Android and Android TV are not in scope for any of the alternatives**, and
+  they are two of the four targets. A desktop-only rewrite buys a second
+  codebase for the same feature set; a full rewrite gives up the TV D-pad focus
+  story, which is the hardest thing here to re-earn.
+
+**What would reverse it — and what wouldn't.** The forcing function is
+`just_audio_media_kit` breaking against a Flutter release: it was last published
+513 days ago and is the desktop-critical link in the audio chain. But that is an
+argument for replacing *that package*, not the framework. The exposed surface is
+about twenty members of `AudioPlayer` (`setAudioSource`, `play`, `pause`, `stop`,
+`seek`, `setVolume`, `setSpeed`, `setLoopMode`, and the state/position/buffered
+streams), all funnelled through `AudioPlayerService` — small because sequencing
+is hand-rolled in Dart and `ConcatenatingAudioSource` is unused. Driving
+media_kit's `Player` directly, or forking the shim, is days of work against
+months for a rewrite. Reconsider the framework only if a *second* capability wall
+appears that actually matters. Qt or Slint would be the picks; not Tauri.
+
+---
+
 ## Desktop footprint trimmed; libmpv's demuxer cache bounded to 8 MB (2026-09-08)
 
 **Decided.** Four changes, all aimed at memory and bundle size:
@@ -129,6 +379,9 @@ Four details that are load-bearing rather than incidental:
    Synthesizing guarantees the tree `LibraryScanner` rebuilds is the tree that
    was actually browsed. `path` is still consulted, but only for the file-name
    segment (falling back to `title` + `suffix`).
+   **Superseded 2026-09-09** — reversed; see "The song's own `path` decides the
+   folder tree" below. The premise that the walk is folder-shaped turned out to
+   depend on `getIndexes`, which this server does not guarantee.
 2. **The music folder's name is included in the path only when there is more
    than one.** With a single folder, paths stay relative to the music root —
    the shape the folder tree, the on-disk cache and Now Playing's folder line

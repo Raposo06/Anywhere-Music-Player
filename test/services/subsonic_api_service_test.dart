@@ -334,7 +334,9 @@ void main() {
     test('names the music folder in the path only when there is more than one', () async {
       // Two music folders can hold identically-named top-level directories, so
       // the folder name becomes the segment that tells them apart. With one,
-      // adding it would push a redundant level into every path.
+      // adding it would push a redundant level into every path. The server's
+      // `path` is relative to its own music folder, so the name goes on in
+      // front of it.
       final client = MockClient((request) async {
         switch (request.url.pathSegments.last) {
           case 'getMusicFolders':
@@ -370,7 +372,7 @@ void main() {
                     'id': 'song-$id',
                     'title': 'Song',
                     'isDir': false,
-                    'path': 'whatever/Song.flac',
+                    'path': 'Rock/Song.flac',
                   },
                 ],
               },
@@ -392,6 +394,116 @@ void main() {
         'FLAC/Rock/Song.flac',
         'MP3/Rock/Song.flac',
       ]);
+    });
+
+    test("the song's own path decides the tree, not the directories walked", () async {
+      // The bug this exists to catch: Gonic answered getIndexes with a
+      // tag-shaped artist index, so the walk descended '5050/One Piece' and
+      // synthesized that as the path — burying the on-disk folder tree the
+      // browser exists to show. The song's `path` carries the real one.
+      final client = MockClient((request) async {
+        switch (request.url.pathSegments.last) {
+          case 'getMusicFolders':
+            return _ok({
+              'musicFolders': {
+                'musicFolder': {'id': '0', 'name': 'music'},
+              },
+            });
+          case 'getIndexes':
+            return _ok({
+              'indexes': {
+                'index': {
+                  'name': '5',
+                  'artist': {'id': 'artist-5050', 'name': '5050'},
+                },
+              },
+            });
+          case 'getMusicDirectory':
+            final id = request.url.queryParameters['id'];
+            if (id == 'artist-5050') {
+              return _ok({
+                'directory': {
+                  'id': id,
+                  'child': {'id': 'album-op', 'name': 'One Piece', 'isDir': true},
+                },
+              });
+            }
+            return _ok({
+              'directory': {
+                'id': id,
+                'child': {
+                  'id': 'song-1',
+                  'title': 'Jungle P',
+                  'isDir': false,
+                  'path': 'ANIMES & ANIMATIONS/One Piece/01-Jungle P.mp3',
+                },
+              },
+            });
+        }
+        return http.Response('not found', 404);
+      });
+
+      final api = SubsonicApiService(
+        serverUrl: 'https://gonic.example.com',
+        username: 'a',
+        password: 'p',
+        httpClient: client,
+      );
+
+      final tracks = await api.getAllTracksByFolder();
+
+      expect(tracks.single.path, 'ANIMES & ANIMATIONS/One Piece/01-Jungle P.mp3');
+      expect(tracks.single.folderPath, 'ANIMES & ANIMATIONS/One Piece');
+      expect(tracks.single.folderName, 'One Piece');
+    });
+
+    test('falls back to the walked path when the server sends an absolute one', () async {
+      // Navidrome sent filesystem paths. There is no way to know which prefix
+      // is the library root, so nothing can safely be stripped — the walk is
+      // the only trustworthy source in that case.
+      final client = MockClient((request) async {
+        switch (request.url.pathSegments.last) {
+          case 'getMusicFolders':
+            return _ok({
+              'musicFolders': {
+                'musicFolder': {'id': '0', 'name': 'music'},
+              },
+            });
+          case 'getIndexes':
+            return _ok({
+              'indexes': {
+                'index': {
+                  'name': 'A',
+                  'artist': {'id': 'dir-anime', 'name': 'Anime'},
+                },
+              },
+            });
+          case 'getMusicDirectory':
+            return _ok({
+              'directory': {
+                'id': request.url.queryParameters['id'],
+                'child': {
+                  'id': 'song-1',
+                  'title': 'Song',
+                  'isDir': false,
+                  'path': '/mnt/storagebox/music/Whatever/song.mp3',
+                },
+              },
+            });
+        }
+        return http.Response('not found', 404);
+      });
+
+      final api = SubsonicApiService(
+        serverUrl: 'https://gonic.example.com',
+        username: 'a',
+        password: 'p',
+        httpClient: client,
+      );
+
+      final tracks = await api.getAllTracksByFolder();
+
+      expect(tracks.single.path, 'Anime/song.mp3');
     });
 
     test('falls back to title + suffix when the server sends no path', () async {

@@ -91,7 +91,7 @@ void main() {
   test('load discards a cache written under an older schema version', () async {
     final file = File('${tempDir.path}${Platform.pathSeparator}library_cache.json');
     await file.writeAsString(jsonEncode({
-      'version': 3, // current schema is 4 — see docs/decisions.md
+      'version': 3, // any version below the current one — see docs/decisions.md
       'tracks': [track('1').toJson()],
     }));
 

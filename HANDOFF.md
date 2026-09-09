@@ -161,25 +161,9 @@ Subsonic API `1.15.0`, `openSubsonic: true`.
 
 ---
 
-## Framework question — settled, for now
+## Framework question — settled
 
 A long evaluation of migrating the desktop app off Flutter (Qt, Slint, Tauri)
-concluded: **don't migrate.** Recorded here so it isn't re-litigated.
-
-- Flutter's 216 MB private is real but not constraining on this machine.
-- The one *live* capability gap — libmpv's `replaygain`/`af` options are sealed
-  behind `just_audio_media_kit`, which holds the media_kit `Player` as a private
-  field — turned out not to matter, since ReplayGain isn't critical.
-- The ecosystem advantage is concentrated at the audio/OS-integration boundary
-  (`souvlaki`, `libmpv2`, `symphonia`). It does **not** extend to the Subsonic
-  layer: the best Rust client crate has 830 lifetime downloads versus 651 tested
-  lines here. And cover-art loading would get *worse* than
-  `cached_network_image`.
-- Tauri specifically was rejected: it ships a browser engine (WebKitGTK /
-  WebView2) and would not improve the memory number. Its "native Wayland" claim
-  is not a differentiator — this app already runs as a native Wayland client
-  under Hyprland (`xwayland=False`, verified via `hyprctl clients`).
-
-**Reconsider if** `just_audio_media_kit` breaks against a Flutter release, or a
-second capability wall appears that actually matters. Qt or Slint would be the
-picks; not Tauri.
+concluded: **don't migrate.** Moved out of this file and into
+[docs/decisions.md](docs/decisions.md) on 2026-09-09, since this file gets
+deleted at merge and that is exactly the knowledge that shouldn't die with it.

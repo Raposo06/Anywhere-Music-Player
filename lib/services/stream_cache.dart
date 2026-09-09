@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show Directory, File;
 
 import 'package:audio_service/audio_service.dart' show MediaItem;
@@ -27,6 +28,19 @@ abstract class StreamCache {
   /// [DiskStreamCache] for why.
   Future<AudioSource> sourceFor(Track track, Uri uri, MediaItem tag);
 
+  /// Start pulling [track] down *before* anything asks to play it, so that when
+  /// something does, the bytes are already local and playback starts without a
+  /// round trip to the server.
+  ///
+  /// Best-effort and fire-and-forget: a failure here must never surface, since
+  /// nothing is waiting on it and the ordinary load path still works. A cache
+  /// that stores nothing has nothing to warm, so this is a no-op there.
+  ///
+  /// At most one track is held warm at a time. Prefetching a different one
+  /// replaces the previous, which is what makes this safe to call on every
+  /// track change.
+  Future<void> prefetch(Track track, Uri uri, MediaItem tag);
+
   /// Trim the cache back under budget, keeping [keep]'s files. Best-effort and
   /// fire-and-forget; a no-op for a cache that stores nothing.
   Future<void> evict({required Track? keep});
@@ -39,6 +53,10 @@ class DirectStreamCache extends StreamCache {
   @override
   Future<AudioSource> sourceFor(Track track, Uri uri, MediaItem tag) async =>
       AudioSource.uri(uri, tag: tag);
+
+  /// Nothing is stored, so there is nowhere to warm anything to.
+  @override
+  Future<void> prefetch(Track track, Uri uri, MediaItem tag) async {}
 
   @override
   Future<void> evict({required Track? keep}) async {}
@@ -60,6 +78,17 @@ class DiskStreamCache extends StreamCache {
 
   Directory? _dir;
 
+  // The one track held warm by [prefetch], and the source doing the warming.
+  //
+  // Kept so [sourceFor] can hand back the *same* instance rather than building
+  // a second one for the same file. That is not an optimisation: two
+  // LockCachingAudioSources over one cache file race a truncating `openWrite`
+  // into `<id>.part` and corrupt it. Handing the warm instance over — and
+  // clearing the slot as it goes — is what keeps exactly one alive per file.
+  String? _warmId;
+  // ignore: experimental_member_use
+  LockCachingAudioSource? _warm;
+
   Future<Directory?> _ensureDir() async {
     if (_dir != null) return _dir;
     try {
@@ -75,6 +104,12 @@ class DiskStreamCache extends StreamCache {
 
   @override
   Future<AudioSource> sourceFor(Track track, Uri uri, MediaItem tag) async {
+    // Already warm from a prefetch: take that instance rather than making a
+    // rival for the same file. The download it started keeps running, and
+    // whatever landed already is served from disk instead of the network.
+    final warm = _takeWarm(track.id);
+    if (warm != null) return warm;
+
     final dir = await _ensureDir();
     if (dir == null) return AudioSource.uri(uri, tag: tag);
     // `just_audio` marks this @experimental, but it is the only source type
@@ -90,6 +125,66 @@ class DiskStreamCache extends StreamCache {
       tag: tag,
       cacheFile: File('${dir.path}/${track.id}'),
     );
+  }
+
+  @override
+  Future<void> prefetch(Track track, Uri uri, MediaItem tag) async {
+    if (_warmId == track.id) return; // already warming this one
+    final dir = await _ensureDir();
+    if (dir == null) return;
+    try {
+      // ignore: experimental_member_use
+      final source = LockCachingAudioSource(
+        uri,
+        tag: tag,
+        cacheFile: File('${dir.path}/${track.id}'),
+      );
+      _warmId = track.id;
+      _warm = source;
+      // Asking for a single byte is what starts the download of the *whole*
+      // file — see LockCachingAudioSource.request/_fetch. Deliberately not
+      // awaited: the point is to return immediately and let it fill in the
+      // background while the current track plays.
+      unawaited(() async {
+        try {
+          await source.request(0, 1);
+        } catch (e) {
+          debugPrint('DiskStreamCache: prefetch failed for ${track.id}: $e');
+          // Drop the slot so the ordinary load path builds a fresh source
+          // rather than inheriting a half-dead one.
+          if (_warmId == track.id) {
+            _warmId = null;
+            _warm = null;
+          }
+        }
+      }());
+    } catch (e) {
+      debugPrint('DiskStreamCache: could not prefetch ${track.id}: $e');
+      _warmId = null;
+      _warm = null;
+    }
+  }
+
+  /// The track [prefetch] is currently holding warm, or null. Test seam: the
+  /// hand-over invariant (exactly one live source per cache file) is otherwise
+  /// only observable as file corruption under a real player.
+  @visibleForTesting
+  String? get warmTrackId => _warmId;
+
+  /// The source holding [warmTrackId] warm, or null. Test seam — see
+  /// [warmTrackId].
+  @visibleForTesting
+  AudioSource? get warmSource => _warm;
+
+  /// Hand the warm source over for [trackId] and empty the slot, so only one
+  /// instance is ever live for a given cache file.
+  // ignore: experimental_member_use
+  LockCachingAudioSource? _takeWarm(String trackId) {
+    if (_warmId != trackId) return null;
+    final source = _warm;
+    _warmId = null;
+    _warm = null;
+    return source;
   }
 
   @override
@@ -112,10 +207,17 @@ class DiskStreamCache extends StreamCache {
       // sidecars LockCachingAudioSource writes beside it while downloading —
       // matching only the exact id would evict a half-written `<id>.part` out
       // from under the stream currently playing.
+      // The warm track is protected alongside the playing one: eviction runs
+      // after every load, and keeping only the current track would delete the
+      // prefetch that load just started.
+      final warmId = _warmId;
       bool isKept(File file) {
-        if (keepId == null) return false;
         final name = file.uri.pathSegments.last;
-        return name == keepId || name.startsWith('$keepId.');
+        for (final id in [keepId, warmId]) {
+          if (id == null) continue;
+          if (name == id || name.startsWith('$id.')) return true;
+        }
+        return false;
       }
 
       for (final entry in entries) {

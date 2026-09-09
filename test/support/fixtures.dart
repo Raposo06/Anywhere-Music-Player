@@ -9,6 +9,7 @@ Track sampleTrack({
   String title = 'Sample Track',
   String? artist,
   int? durationSeconds = 180,
+  int? fileSizeBytes,
   double? replayGainDb,
   String? coverArtId,
 }) => Track(
@@ -20,5 +21,6 @@ Track sampleTrack({
   createdAt: DateTime(2024),
   artist: artist,
   durationSeconds: durationSeconds,
+  fileSizeBytes: fileSizeBytes,
   replayGainDb: replayGainDb,
 );

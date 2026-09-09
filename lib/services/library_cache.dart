@@ -33,9 +33,14 @@ class LibraryCache {
   // server-assigned, so a cache written against a different server hydrates
   // tracks whose ids resolve to nothing — playable-looking rows that fail on
   // tap until the background rescan lands. Discarding is the only safe read.
+  // v6 is the same story a second time: the shape is unchanged, but the *paths*
+  // in it are. A v5 cache was written when the folder tree came from the walk,
+  // so it holds `Artist/Album/song.mp3` where the tree is now rebuilt from the
+  // song's own `path`. Keeping it would leave the browser showing the tag-shaped
+  // tree until the next scan, which is the exact bug the change fixes.
   // Old caches are discarded on load (version mismatch) and rebuilt from a
   // fresh scan.
-  static const _version   = 5;
+  static const _version   = 6;
 
   /// Load the cached track list. Returns null when:
   ///   - the cache file doesn't exist (first launch / post-logout)

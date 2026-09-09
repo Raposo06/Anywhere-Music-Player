@@ -17,16 +17,22 @@ Each of these looks like an obvious cleanup and is not. The reasoning is in
 1. **Sequencing is manual, in Dart.** One track is loaded at a time; playlist
    order, shuffle, repeat and the queue are hand-rolled. `ConcatenatingAudioSource`
    is buggy under `just_audio_media_kit` on Windows/Linux.
-2. **The Android stream cache is keyed by track id, never the URL.** Stream URLs
+2. **The stream cache is keyed by track id, never the URL.** Stream URLs
    embed an auth token + salt that rotate on every request build — keying on the
-   URL silently produces a 100% miss rate.
+   URL silently produces a 100% miss rate. (`LockCachingAudioSource` defaults to
+   hashing the URL, which is exactly this trap; the cache passes an explicit
+   `cacheFile`.) Only ever **one** live source per cache file — two race a
+   truncating write into `<id>.part` — which is why a prefetched source is
+   *handed over* to `sourceFor` rather than rebuilt.
 3. **ReplayGain is attenuate-only** (`clamp(0, 1)`). The clamp is what makes
    clipping impossible; the `+6 dB` pre-amp is the tuning knob, not the clamp.
-4. **The scan synthesizes each track's path from the directories it walked**,
-   rather than reading the song's own `path` field. The walk knows what it
-   descended through; the server's `path` is relative to a music folder it need
-   not agree with, and the synthesized path is what the entire folder tree gets
-   rebuilt from. `path` is still read — but only for the file-name segment.
+4. **The scan reads each track's path from the song's own `path` field**, and
+   only synthesizes one from the directories it walked when the server's is
+   absent or absolute. This was the other way round until 2026-09-09: the walk
+   is only as folder-shaped as `getIndexes`, and this server answered it with a
+   tag-shaped artist index, so the synthesized path buried the real folder tree
+   under `Artist/Album`. Don't flip it back without re-reading the entry — both
+   directions have a failure mode, and the fallbacks cover the walk's.
 5. **The library cache stores `cover_art_id`, never a resolved cover-art URL.**
    A resolved URL carries a live, password-equivalent credential into a plaintext
    file on disk. Schema v3 exists to enforce this.
@@ -43,8 +49,11 @@ Each of these looks like an obvious cleanup and is not. The reasoning is in
 ## Platform reality
 
 The audio path **differs by platform**: media_kit/MPV on Windows/Linux,
-ExoPlayer + loopback stream cache on Android. A playback change verified on one
-platform says little about the other — test both.
+ExoPlayer + loopback stream cache on Android. Desktop streams direct —
+`LockCachingAudioSource` is **broken on Windows** (it renames an open
+`<id>.part` into place, which Windows refuses), so the disk cache and the
+next-track prefetch it enables are Android-only. A playback change verified on
+one platform says little about the other — test both.
 
 There is **no web target** (no `web/` directory), despite older docs claiming one.
 

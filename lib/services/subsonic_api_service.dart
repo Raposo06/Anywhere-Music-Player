@@ -509,13 +509,18 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
   /// Walk the server's real directory tree and return every song under it.
   /// This is the library scan.
   ///
-  /// Each [Track] carries the library-relative path the walk *arrived at it
-  /// by* (`Anime/Naruto/01 - Opening.flac`), synthesized from the descent
-  /// rather than read out of the song's own `path` field. That is deliberate:
-  /// the path is what [LibraryScanner] rebuilds the browsable tree from, and
-  /// synthesizing it guarantees the tree matches the directories actually
-  /// browsed, on a server whose `path` field this app never has to trust.
-  /// See docs/decisions.md.
+  /// Each [Track] carries a library-relative path (`Anime/Naruto/01 -
+  /// Opening.flac`), which is what [LibraryScanner] rebuilds the browsable
+  /// tree from. It is read from the song's own `path` field, and only
+  /// synthesized from the descent when the server omits it or sends an
+  /// absolute one.
+  ///
+  /// This used to be the other way round. The walk is only as folder-shaped
+  /// as `getIndexes` is: Gonic answered it with a tag-shaped artist index
+  /// (`5050/One Piece/…`, `[Unknown Artist]/[Unknown Album]/…`), and the
+  /// synthesized path faithfully reproduced that instead of the on-disk tree
+  /// the folder browser exists to show. The song's `path` is the on-disk
+  /// tree. See docs/decisions.md.
   ///
   /// Walked breadth-first, [_walkConcurrency] directories per round trip. A
   /// folder-native server answers one directory per request, so a library of
@@ -540,20 +545,20 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
     // data from the network, which is reason enough not to trust it to
     // terminate on its own.
     final visited = <String>{};
-    var level = <({String id, String path})>[];
+    var level = <({String id, String path, String root})>[];
 
     for (final folder in musicFolders) {
       final root = prefixWithFolderName ? folder.name : '';
       final top = await getIndexes(musicFolderId: folder.id);
-      tracks.addAll(_tracksIn(top.songs, root));
+      tracks.addAll(_tracksIn(top.songs, root, root));
       for (final dir in top.directories) {
         if (!visited.add(dir.id)) continue;
-        level.add((id: dir.id, path: _joinPath(root, dir.name)));
+        level.add((id: dir.id, path: _joinPath(root, dir.name), root: root));
       }
     }
 
     while (level.isNotEmpty) {
-      final next = <({String id, String path})>[];
+      final next = <({String id, String path, String root})>[];
       for (var i = 0; i < level.length; i += _walkConcurrency) {
         final batch = level.skip(i).take(_walkConcurrency);
         final listings = await Future.wait([
@@ -563,12 +568,17 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
             ).then((contents) => (entry: entry, contents: contents)),
         ]);
         for (final listing in listings) {
-          tracks.addAll(_tracksIn(listing.contents.songs, listing.entry.path));
+          tracks.addAll(_tracksIn(
+            listing.contents.songs,
+            listing.entry.path,
+            listing.entry.root,
+          ));
           for (final dir in listing.contents.directories) {
             if (!visited.add(dir.id)) continue;
             next.add((
               id: dir.id,
               path: _joinPath(listing.entry.path, dir.name),
+              root: listing.entry.root,
             ));
           }
         }
@@ -620,13 +630,52 @@ class SubsonicApiService implements StreamUrlResolver, PlaybackReporter {
   static List<Track> _tracksIn(
     List<Map<String, dynamic>> songs,
     String dirPath,
+    String root,
   ) => [
     for (final song in songs)
-      Track.fromSubsonic(
-        song,
-        pathOverride: _joinPath(dirPath, _fileNameOf(song)),
-      ),
+      Track.fromSubsonic(song, pathOverride: _pathOf(song, dirPath, root)),
   ];
+
+  /// The library-relative path a track is filed under.
+  ///
+  /// Prefers the server's own `path`, because on a folder-native server that
+  /// *is* the on-disk tree — the thing the folder browser exists to show — and
+  /// it stays correct however `getIndexes` chooses to shape its index. [root]
+  /// is the music folder's name, non-empty only when there's more than one
+  /// folder to tell apart; the server's path is relative to its own music
+  /// folder, so it needs that prefix to stay unambiguous.
+  ///
+  /// Falls back to the walked path in the two cases where the server's is
+  /// unusable:
+  ///
+  /// - **absent or empty** — the Subsonic spec doesn't require `path`;
+  /// - **absolute** (`/mnt/music/…`, `C:\Music\…`) — a filesystem path whose
+  ///   library root this client can't know, so there is nothing safe to strip.
+  ///   Navidrome sent these, which is why the walk existed in the first place.
+  static String _pathOf(
+    Map<String, dynamic> song,
+    String dirPath,
+    String root,
+  ) {
+    final serverPath = (song['path'] as String?)?.replaceAll('\\', '/').trim();
+    if (serverPath != null && serverPath.isNotEmpty && !_isAbsolute(serverPath)) {
+      final cleaned = serverPath
+          .split('/')
+          .where((seg) => seg.isNotEmpty && seg != '.')
+          .join('/');
+      if (cleaned.isNotEmpty) return _joinPath(root, cleaned);
+    }
+    return _joinPath(dirPath, _fileNameOf(song));
+  }
+
+  /// True for a path rooted at a filesystem, POSIX (`/music/x`) or Windows
+  /// (`C:/music/x`, `//server/share/x`) — separators already normalised to `/`.
+  static bool _isAbsolute(String path) {
+    if (path.startsWith('/')) return true;
+    return path.length >= 2 &&
+        path[1] == ':' &&
+        RegExp(r'^[A-Za-z]$').hasMatch(path[0]);
+  }
 
   static String _joinPath(String parent, String child) =>
       parent.isEmpty ? child : '$parent/$child';

@@ -18,7 +18,10 @@ flutter run
 | `API_BASE_URL` | Server base URL, e.g. `https://gonic.foxcore.dev` |
 
 Credentials are **not** configured here — you log in through the app, and they're
-stored in `SharedPreferences` on the device. Accounts are created in Gonic's own
+stored in `flutter_secure_storage` on the device (encrypted; `AndroidOptions(
+encryptedSharedPreferences: true)`). `SharedPreferences` holds only the
+non-sensitive server URL, plus legacy credentials that `AuthService` migrates
+out of on first run. Accounts are created in Gonic's own
 admin web UI (the app has no signup — see [decisions.md](decisions.md)).
 
 ## Build & release
@@ -145,6 +148,25 @@ ships in that build). Installs to `/usr/lib/anywhere-music-player/` with a
 `sudo pacman -R anywhere-music-player`.
 
 ## Traps
+
+### `flutter build windows` fails with "No CMAKE_CXX_COMPILER could be found"
+
+**Symptom:** a Windows build of a *new* scratch project dies in CMake's compiler
+check, while the main project on the same machine builds fine — so the toolchain
+is plainly installed.
+
+**Cause:** the project path is too long. This is the MAX_PATH trap below wearing
+a different hat: CMake's compiler probe builds a test binary several directories
+deeper than the project root, so a path that is merely long becomes over-long
+there, and the failure names the compiler rather than the path.
+
+**Fix:** build from a short path (`C:\Users\<you>\proj`), not from a deep temp or
+scratch directory.
+
+**And if you copy a Flutter project between directories,** delete `build/`,
+`.dart_tool/`, `windows/flutter/ephemeral/` and `.flutter-plugins-dependencies`
+first, or the next build dies on `Cannot create link ... errno = 183` — the
+copied plugin symlinks still point at the old location.
 
 ### Windows build fails with a MAX_PATH error
 
@@ -472,6 +494,13 @@ because the old server is still up and still answering.
 `flutter_secure_storage` under `server_url` at login, and `AuthService.initialize`
 reads it on every launch. An install that is already logged in never consults
 `.env` again.
+
+**And check `.env` itself first.** It is gitignored, so a server-migration
+commit can update `.env.example` but *not* the `.env` on any working machine —
+ours still read `navidrome.foxcore.dev` a day after the Gonic migration landed,
+which means a *fresh* install pre-fills the old server too. Symptom and fix look
+identical from the app; the difference is whether the stale URL is in the
+keystore or on disk.
 
 **Fix.** Log out and log back in, on every device. Logout clears the stored
 credentials *and* the library cache (`LibraryScanner.resetAndClearCache`), which

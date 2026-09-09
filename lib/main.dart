@@ -42,12 +42,16 @@ void main() async {
   // just_audio_windows which had WMF threading deadlocks on startup).
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
     // libmpv's demuxer cache, which just_audio_media_kit defaults to 32 MB —
-    // a size meant for video. This app streams audio, where 8 MB is minutes
-    // of buffer, and the default was measurably the largest single piece of
-    // memory this app added over a bare Flutter process. Raise it if network
-    // hiccups start causing rebuffering that DropRecovery has to catch.
+    // a size meant for video. This app streams audio, and the default was
+    // measurably the largest single piece of memory this app added over a
+    // bare Flutter process.
+    //
+    // 8 MB was the first try and made tracks visibly slower to start over the
+    // tunnelled link to the server; 16 MB is the documented middle step. Going
+    // lower trades start latency for ~8 MB of resident memory — measure before
+    // moving it in either direction.
     // Must be set before ensureInitialized(); it is read at player creation.
-    JustAudioMediaKit.bufferSize = 8 << 20; // 8 MB
+    JustAudioMediaKit.bufferSize = 16 << 20; // 16 MB
     JustAudioMediaKit.ensureInitialized();
   }
 
@@ -131,7 +135,14 @@ void main() async {
 
   // Android streams through an on-disk cache (seekable local files; ExoPlayer
   // can't seek the server's live HTTP stream) — everything else streams direct.
-  // See StreamCache.
+  // See StreamCache. Android only — desktop was moved onto this cache on
+  // 2026-09-09 and moved straight back the same day, because
+  // LockCachingAudioSource cannot complete on Windows: it downloads to
+  // `<id>.part` and renames it into place, and Windows refuses to rename a
+  // file that is still open (errno 32), unlike POSIX. Measured, not guessed —
+  // see docs/decisions.md. The cache file therefore never appears, and adding
+  // a prefetch on top turns that silent failure into a hard one: setAudioSource
+  // never completes and nothing plays at all.
   final StreamCache streamCache = (!kIsWeb && Platform.isAndroid)
       ? DiskStreamCache()
       : const DirectStreamCache();

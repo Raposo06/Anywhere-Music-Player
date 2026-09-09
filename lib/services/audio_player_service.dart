@@ -47,6 +47,11 @@ class AudioPlayerService with ChangeNotifier {
   static const _skipDebounce = Duration(milliseconds: 280);
   Timer? _loadDebounce;
 
+  // Ceiling on what [_prefetchNext] will pull down ahead of time. Comfortably
+  // above a normal track (this library averages 6.5 MB) and well under the
+  // long mixes, which are the ones worth leaving alone.
+  static const int _prefetchMaxBytes = 50 * 1024 * 1024; // 50 MB
+
   // Mid-stream drop recovery: bounded auto-resume of the current track when the
   // network/server closes a connection mid-playback.
   int _resumeAttempts = 0;
@@ -440,6 +445,7 @@ class AudioPlayerService with ChangeNotifier {
       // heartbeat, not a play count.
       _report('now-playing', () => _reporter.nowPlaying(track.id));
       unawaited(_streamCache.evict(keep: _currentTrack));
+      _prefetchNext(token);
     } catch (e) {
       if (token != _loadToken) return;
       _handlePlaybackError(e);
@@ -453,6 +459,45 @@ class AudioPlayerService with ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  /// Start pulling down whatever plays next, so the change of track doesn't
+  /// pay for opening a stream from cold.
+  ///
+  /// Fired once the current track is loaded and playing rather than near its
+  /// end: that is the longest possible head start, and it costs nothing extra
+  /// on a skip, because [_selectAndPlay]'s debounce means a burst of Next
+  /// presses reaches this for the landed track only.
+  ///
+  /// [token] guards it the same way the load does — a selection that has
+  /// already been superseded must not warm the wrong track and evict the right
+  /// one. Fire-and-forget by design: nothing waits on it, and the ordinary
+  /// load path works whether or not it succeeded.
+  void _prefetchNext(int token) {
+    if (token != _loadToken) return;
+    final next = peekNextTrack();
+    if (next == null || next.id == _currentTrack?.id) return;
+    // Prefetch pulls the *whole* file — LockCachingAudioSource has no partial
+    // mode — so an unbounded one is a hazard, not a speed-up. This library's
+    // mean track is 6.5 MB, but 45 of them are hour-plus mixes and the largest
+    // is 277 MB: starting that behind a 3-minute opening would saturate the
+    // link the current track is still streaming over, and evict most of the
+    // 2 GB cache to do it. Big tracks simply open cold, which is what every
+    // track did before prefetch existed.
+    final size = next.fileSizeBytes;
+    if (size != null && size > _prefetchMaxBytes) {
+      debugPrint(
+        'AudioPlayerService: skipping prefetch of ${next.id}, '
+        '${(size / (1 << 20)).round()} MB is over the cap',
+      );
+      return;
+    }
+    final uri = Uri.parse(_resolver.buildStreamUrl(next.id));
+    unawaited(
+      _streamCache
+          .prefetch(next, uri, _buildMediaItem(next))
+          .catchError((Object _) {}),
+    );
   }
 
   /// What [playNext] would play right now — without mutating shuffle state.

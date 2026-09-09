@@ -46,17 +46,22 @@ The app talks **exclusively** through the Subsonic API. The server owns
 scanning, metadata, user management, streaming and cover art — the client
 deliberately has no backend of its own.
 
-The server is **Gonic**, which is folder-native: it browses the real directory
+The server is **Gonic**, which is folder-native: it stores the real directory
 tree rather than deriving one from tags. That is why the library scan is a
 `getIndexes`/`getMusicDirectory` walk and not a whole-library fetch — see
 [decisions](decisions.md), "Migrated from Navidrome to Gonic".
+
+The walk finds the songs; the **folder tree comes from each song's `path`**, not
+from the directories the walk descended. `getIndexes` has been observed
+returning a tag-shaped artist index on this server, and the tree has to be the
+on-disk one regardless — see "The song's own `path` decides the folder tree".
 
 ### Subsonic endpoints used
 
 | Function | Endpoint |
 |---|---|
 | Auth check | `GET /rest/ping` |
-| Browse library | `GET /rest/getMusicFolders`, `/rest/getIndexes`, `/rest/getMusicDirectory` — walked recursively; the folder tree is the server's own, not one derived from tags. See [decisions](decisions.md) |
+| Browse library | `GET /rest/getMusicFolders`, `/rest/getIndexes`, `/rest/getMusicDirectory` — walked recursively to find every song. Each song's **own `path` field** is what the browsable folder tree is rebuilt from, because the walk is only as folder-shaped as `getIndexes`. See [decisions](decisions.md) |
 | Search | `GET /rest/search3` |
 | Stream audio | `GET /rest/stream?id=X` |
 | Cover art | `GET /rest/getCoverArt?id=X` |
@@ -90,7 +95,7 @@ on foxcore.dev pointing at the latest — see [operations](operations.md) and
 | Layer | Tech | Notes |
 |---|---|---|
 | App | **Flutter** | SDK `>=3.8.0 <4.0.0`; version `1.0.0+2` |
-| Audio | **just_audio** | `just_audio_media_kit` (MPV) on Windows/Linux — see [decisions](decisions.md) |
+| Audio | **just_audio** | `just_audio_media_kit` (MPV) on Windows/Linux. Android streams through an on-disk cache that also prefetches the next track; desktop streams direct (`LockCachingAudioSource` is broken on Windows) — see [decisions](decisions.md) |
 | Background playback | **audio_service** | Android notification + lock screen controls |
 | Windows media keys | **smtc_windows** | System Media Transport Controls |
 | Linux media keys | **dbus** | Hand-rolled MPRIS server — see [decisions](decisions.md) |
@@ -180,7 +185,8 @@ the fastest first check.
 | Measured | Value |
 |---|---|
 | Music folders | 1, named `music` — so the walk leaves it out of every path |
-| Top-level directories | 5: `ANIMES & ANIMATIONS`, `GAMES`, `MIXES & COMPILATIONS`, `MOVIES & SERIES`, `SPECIALS` |
+| Top-level directories on disk | 5: `ANIMES & ANIMATIONS`, `GAMES`, `MIXES & COMPILATIONS`, `MOVIES & SERIES`, `SPECIALS` |
+| What `getIndexes` returned on 2026-09-09 | 285 artist-shaped entries, **not** those 5 — the reason the tree is built from `path`. Re-check before trusting either shape |
 | Loose songs at the music root | 0 |
 | Directories total | 239 |
 | Songs total | 4,384 |
@@ -242,8 +248,9 @@ streaming direct, see [decisions](decisions.md)) are similarly pulled out into
 their own seams, each with a no-op/throwing/pass-through test default so nothing
 in the suite needs a real Windows or Android platform channel. Run with
 `flutter test`. **This does not replace on-device testing** — the audio path
-differs by platform (media_kit/MPV on Windows, ExoPlayer + loopback stream
-cache on Android), so a green suite says nothing about either backend.
+differs by platform (media_kit/MPV on Windows/Linux, ExoPlayer + the loopback
+disk stream cache on Android), so a green suite says nothing about either
+backend — as the Windows rename bug in [decisions](decisions.md) demonstrated.
 
 **Remaining / known gaps:**
 - iOS is scaffolded but never distributed (needs an Apple Developer account).
