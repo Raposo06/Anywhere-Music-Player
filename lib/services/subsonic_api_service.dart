@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/track.dart';
 import '../models/folder.dart';
+import '../models/subsonic_json.dart';
 import '../models/playlist.dart';
 import 'library_browser.dart';
 import 'playback_reporter.dart';
@@ -192,13 +193,7 @@ class SubsonicApiService
       'Could not load playlists',
     );
     final playlists = data['playlists'] as Map<String, dynamic>?;
-    final list = playlists?['playlist'];
-    if (list == null) return <Playlist>[];
-    final items = list is List ? list : [list];
-    return [
-      for (final item in items)
-        Playlist.fromSubsonic(item as Map<String, dynamic>),
-    ];
+    return _parseAll(playlists?['playlist'], Playlist.fromSubsonic);
   }
 
   /// One playlist with its tracks, in playlist order.
@@ -216,16 +211,9 @@ class SubsonicApiService
     if (json == null) {
       throw SubsonicApiException('Playlist $playlistId not found');
     }
-    final entries = json['entry'];
-    final items = entries == null
-        ? const []
-        : (entries is List ? entries : [entries]);
     return (
       playlist: Playlist.fromSubsonic(json),
-      tracks: [
-        for (final item in items)
-          Track.fromSubsonic(item as Map<String, dynamic>),
-      ],
+      tracks: _parseAll(json['entry'], Track.fromSubsonic),
     );
   }
 
@@ -319,18 +307,7 @@ class SubsonicApiService
     );
 
     final starred = data['starred2'] as Map<String, dynamic>?;
-    if (starred == null) return <Track>[];
-
-    final songList = starred['song'];
-    if (songList == null) return <Track>[];
-
-    // Subsonic collapses a single-element list into a bare object — same
-    // normalization search3 does.
-    final items = songList is List ? songList : [songList];
-    return [
-      for (final item in items)
-        Track.fromSubsonic(item as Map<String, dynamic>),
-    ];
+    return _parseAll(starred?['song'], Track.fromSubsonic);
   }
 
   /// Announce that [songId] is playing now (`submission=false`).
@@ -386,31 +363,10 @@ class SubsonicApiService
     }, 'Search failed');
 
     final searchResult = data['searchResult3'] as Map<String, dynamic>?;
-    if (searchResult == null) {
-      return (songs: <Track>[], albums: <Folder>[]);
-    }
-
-    // Parse songs
-    final songList = searchResult['song'];
-    final songs = <Track>[];
-    if (songList != null) {
-      final items = songList is List ? songList : [songList];
-      for (final item in items) {
-        songs.add(Track.fromSubsonic(item as Map<String, dynamic>));
-      }
-    }
-
-    // Parse albums as folders
-    final albumList = searchResult['album'];
-    final albums = <Folder>[];
-    if (albumList != null) {
-      final items = albumList is List ? albumList : [albumList];
-      for (final item in items) {
-        albums.add(Folder.fromSubsonic(item as Map<String, dynamic>));
-      }
-    }
-
-    return (songs: songs, albums: albums);
+    return (
+      songs: _parseAll(searchResult?['song'], Track.fromSubsonic),
+      albums: _parseAll(searchResult?['album'], Folder.fromSubsonic),
+    );
   }
 
   // -------- Browsing by folder --------
@@ -462,7 +418,7 @@ class SubsonicApiService
     }
 
     final directories = <({String id, String name})>[];
-    for (final bucket in _asList(indexes['index'])) {
+    for (final bucket in subsonicList(indexes['index'])) {
       directories.addAll(
         _dirEntries((bucket as Map<String, dynamic>)['artist']),
       );
@@ -488,7 +444,7 @@ class SubsonicApiService
 
     final directories = <({String id, String name})>[];
     final songs = <Map<String, dynamic>>[];
-    for (final child in _asList(directory?['child'])) {
+    for (final child in subsonicList(directory?['child'])) {
       final json = child as Map<String, dynamic>;
       if (json['isDir'] == true) {
         final childId = json['id']?.toString();
@@ -506,18 +462,21 @@ class SubsonicApiService
     return (directories: directories, songs: songs);
   }
 
-  /// Subsonic collapses a single-element list into a bare object, so every
-  /// list in a browse response has to be read through this.
-  static List<dynamic> _asList(dynamic value) {
-    if (value == null) return const [];
-    return value is List ? value : [value];
-  }
+  /// Every model list in a response: normalize Subsonic's single-element
+  /// collapse, then parse each entry. [value] is the raw field — a list, a
+  /// bare object, or absent.
+  static List<T> _parseAll<T>(
+    dynamic value,
+    T Function(Map<String, dynamic> json) parse,
+  ) => [
+    for (final item in subsonicList(value)) parse(item as Map<String, dynamic>),
+  ];
 
   /// The `(id, name)` pairs in a browse response's directory list. Entries
   /// without an id are skipped — there is nothing to fetch for them.
   static List<({String id, String name})> _dirEntries(dynamic value) {
     final entries = <({String id, String name})>[];
-    for (final item in _asList(value)) {
+    for (final item in subsonicList(value)) {
       final json = item as Map<String, dynamic>;
       final id = json['id']?.toString();
       if (id == null) continue;
@@ -532,7 +491,7 @@ class SubsonicApiService
   /// The non-directory children of a browse response's child list.
   static List<Map<String, dynamic>> _songEntries(dynamic value) {
     final songs = <Map<String, dynamic>>[];
-    for (final item in _asList(value)) {
+    for (final item in subsonicList(value)) {
       final json = item as Map<String, dynamic>;
       if (json['isDir'] != true) songs.add(json);
     }

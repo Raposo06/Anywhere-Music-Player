@@ -1,4 +1,5 @@
 import 'cover_art_ref.dart';
+import 'subsonic_json.dart';
 
 class Folder with CoverArtRef {
   final String? id;
@@ -18,13 +19,10 @@ class Folder with CoverArtRef {
 
   /// Create a Folder from a Subsonic API directory/artist response.
   factory Folder.fromSubsonic(Map<String, dynamic> json) {
-    // Count direct child songs (non-directory items) if available
-    int childCount = 0;
-    final childList = json['child'];
-    if (childList != null) {
-      final children = childList is List ? childList : [childList];
-      childCount = children.where((c) => c['isDir'] != true).length;
-    }
+    // Direct child songs (non-directory items), if the response carried any.
+    final childCount = subsonicList(
+      json['child'],
+    ).where((c) => c['isDir'] != true).length;
 
     final albumCnt = json['albumCount'] as int? ?? 0;
     // Use child song count if available, otherwise fall back to albumCount

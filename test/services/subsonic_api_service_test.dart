@@ -21,6 +21,13 @@ http.Response _subsonicError(String message, {int code = 40}) => http.Response(
   200,
 );
 
+SubsonicApiService _apiWith(http.Client client) => SubsonicApiService(
+  serverUrl: 'https://gonic.example.com',
+  username: 'a',
+  password: 'p',
+  httpClient: client,
+);
+
 void main() {
   group('URL building (pure, no network)', () {
     final api = SubsonicApiService(
@@ -174,6 +181,68 @@ void main() {
       expect(
         () => api.search3('x'),
         throwsA(isA<SubsonicApiException>().having((e) => e.message, 'message', 'Bad query')),
+      );
+    });
+  });
+
+  // These three endpoints each used to normalize Subsonic's single-element
+  // collapse by hand, with their own null guards; they share one helper now.
+  // Both edges — one element, and no envelope at all — are pinned per
+  // endpoint, because it is the guards that were collapsed.
+  group('list endpoints normalize the single-element collapse', () {
+    test('getPlaylists: a bare playlist object, and an absent envelope', () async {
+      final one = await _apiWith(
+        MockClient((_) async => _ok({
+          'playlists': {
+            'playlist': {'id': '1', 'name': 'Solo'},
+          },
+        })),
+      ).getPlaylists();
+      expect(one.single.name, 'Solo');
+
+      expect(await _apiWith(MockClient((_) async => _ok({}))).getPlaylists(), isEmpty);
+    });
+
+    test('getPlaylist: a bare entry, and a playlist with none', () async {
+      final one = await _apiWith(
+        MockClient((_) async => _ok({
+          'playlist': {
+            'id': '1',
+            'name': 'Solo',
+            'entry': {'id': '9', 'title': 'Only Song'},
+          },
+        })),
+      ).getPlaylist('1');
+      expect(one.tracks.single.title, 'Only Song');
+
+      final none = await _apiWith(
+        MockClient((_) async => _ok({
+          'playlist': {'id': '1', 'name': 'Empty'},
+        })),
+      ).getPlaylist('1');
+      expect(none.tracks, isEmpty);
+      expect(none.playlist.name, 'Empty');
+    });
+
+    test('getStarredSongs: a bare song, and nothing starred at all', () async {
+      final one = await _apiWith(
+        MockClient((_) async => _ok({
+          'starred2': {
+            'song': {'id': '1', 'title': 'Only Favourite'},
+          },
+        })),
+      ).getStarredSongs();
+      expect(one.single.title, 'Only Favourite');
+
+      expect(
+        await _apiWith(MockClient((_) async => _ok({}))).getStarredSongs(),
+        isEmpty,
+      );
+      expect(
+        await _apiWith(
+          MockClient((_) async => _ok({'starred2': <String, dynamic>{}})),
+        ).getStarredSongs(),
+        isEmpty,
       );
     });
   });
