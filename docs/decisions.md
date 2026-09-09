@@ -881,6 +881,10 @@ keyring and portal story properly, which is where AppImage failed). The
 
 ## Releases are built in CI, and the git tag is the version (2026-09-01)
 
+> **Partly superseded (2026-09-09)** — Android was dropped from releases; see
+> "Releases are desktop-only; Android is no longer published". The tag-is-the-
+> version decision below stands; only the platform list changed.
+
 **Decided.** `.github/workflows/release.yml` builds Android / Windows / Linux on
 a `v*` tag and publishes a GitHub Release. The tag — not `pubspec.yaml`, not
 `installer.iss` — is the version of a released build: the workflow feeds it to

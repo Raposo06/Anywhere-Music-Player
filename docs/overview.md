@@ -81,10 +81,11 @@ on-disk one regardless — see "The song's own `path` decides the folder tree".
 | macOS | Scaffolded by Flutter, not built or distributed |
 | Web | **Not supported** — there is no `web/` directory |
 
-Tagged releases (`v*`) are built for Android / Windows / Linux and published to
-GitHub Releases by `.github/workflows/release.yml`, with a hosted download page
-on foxcore.dev pointing at the latest — see [operations](operations.md) and
-[decisions](decisions.md) (2026-09-01).
+Tagged releases (`v*`) are built for Windows and Linux and published to GitHub
+Releases by `.github/workflows/release.yml`, with a hosted download page on
+foxcore.dev pointing at the latest — see [operations](operations.md) and
+[decisions](decisions.md) (2026-09-01, and 2026-09-09 for the Android drop).
+Android still builds by hand; it is simply not published.
 
 > ⚠️ The README and the old WikiJS page both listed **Web** as a target. That was
 > never true in this tree; corrected 2026-08-17. The Windows audio backend
