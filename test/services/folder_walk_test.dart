@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:anywhere_music_player/services/folder_walk.dart';
 import 'package:anywhere_music_player/services/subsonic_api_service.dart';
+import '../support/fake_browser.dart';
 import '../support/fake_gonic.dart';
 
 http.Response _ok(Map<String, dynamic> subsonicResponse) => http.Response(
@@ -323,6 +324,41 @@ void main() {
 
       expect(tracks.single.path, 'Anime/Opening.flac');
       expect(tracks.single.folderPath, 'Anime');
+    });
+  });
+
+  group('FolderWalk.run (no transport)', () {
+    test('returns tracks in path order, not walk-completion order', () async {
+      final walk = FolderWalk(FakeBrowser([
+        browseSong(id: '1', path: 'Zebra/song.mp3'),
+        browseSong(id: '2', path: 'Anime/Naruto/song.mp3'),
+      ]));
+
+      final tracks = await walk.run();
+
+      expect(tracks.map((t) => t.path), [
+        'Anime/Naruto/song.mp3',
+        'Zebra/song.mp3',
+      ]);
+    });
+
+    test('a level wider than the concurrency window loses nothing', () async {
+      final walk = FolderWalk(FakeBrowser([
+        for (var i = 0; i < 20; i++)
+          browseSong(id: '$i', path: 'Dir$i/song.mp3'),
+      ]));
+
+      expect((await walk.run()).length, 20);
+    });
+
+    test('names the music folder in the path only when there is more than one',
+        () async {
+      final walk = FolderWalk(FakeBrowser(
+        [browseSong(id: '1', path: 'Anime/song.mp3')],
+        musicFolders: const [(id: '0', name: 'music')],
+      ));
+
+      expect((await walk.run()).single.path, 'Anime/song.mp3');
     });
   });
 }
