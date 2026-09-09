@@ -14,6 +14,36 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Subsonic wire-format quirks live in `models/subsonic_json.dart` (2026-09-09)
+
+**Decided.** The single-element collapse — Subsonic sends `"child": {...}` for
+a one-element list and `"child": [{...}]` for a two-element one — is normalized
+by one top-level `subsonicList()` in `lib/models/subsonic_json.dart`, imported
+by both the transport and the `fromSubsonic` factories.
+
+**Why.** It had been re-derived **six** times: five in
+`subsonic_api_service.dart` and one in `Folder.fromSubsonic`. A private
+`_asList` arrived with the folder-browsing work and was used at the five new
+browse sites, but the older ones were never back-ported, so the canonical
+helper and its ancestors sat in the same file — each ancestor carrying its own
+comment re-explaining the quirk, one of which pointed at another copy rather
+than at the helper. Getting it wrong is silent: the many-element case works and
+the one-element case parses as nothing, so it survives casual testing against a
+real library.
+
+Making it a *top-level* function in `models/` rather than a private static on
+the service is the actual decision. The quirk belongs to the wire format, and
+the `fromSubsonic` factories parse that format too — a private helper on the
+transport is why the sixth copy existed. Anything new that reads a Subsonic
+list goes through this; it is tested directly
+(`test/models/subsonic_json_test.dart`).
+
+**What would reverse it.** Moving off Subsonic, or a server abstraction layer
+that hands parsed models to the app — either makes this a fact about one
+adapter rather than about the app's only wire format.
+
+---
+
 ## Session-scoped modules are a type, not a copied provider block (2026-09-09)
 
 **Decided.** Introduce `SessionScoped` (`lib/services/session_scoped.dart`) —
