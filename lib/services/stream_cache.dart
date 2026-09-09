@@ -108,9 +108,8 @@ class DiskStreamCache extends StreamCache {
   // LockCachingAudioSources over one cache file race a truncating `openWrite`
   // into `<id>.part` and corrupt it. Handing the warm instance over — and
   // clearing the slot as it goes — is what keeps exactly one alive per file.
-  String? _warmId;
   // ignore: experimental_member_use
-  LockCachingAudioSource? _warm;
+  ({String id, LockCachingAudioSource source})? _warm;
 
   Future<Directory?> _ensureDir() async {
     if (_dir != null) return _dir;
@@ -125,6 +124,34 @@ class DiskStreamCache extends StreamCache {
     return _dir;
   }
 
+  /// A source for [track] backed by its own file in [dir].
+  ///
+  /// The cache file is keyed by **track id, never the URL** — the URL's auth
+  /// salt rotates on every request, so keying on it would guarantee a 100%
+  /// miss (CLAUDE.md item 2). That decision is this one expression.
+  ///
+  /// `just_audio` marks this @experimental, but it is the only source type
+  /// that gives ExoPlayer a seekable local file — see docs/decisions.md. One
+  /// instance memoizes its own download, so re-passing it to setAudioSource on
+  /// a retry just re-attaches the load already in flight. A *second* instance
+  /// for the same file would race a truncating `openWrite` into `<id>.part`
+  /// and corrupt the file being played — which is why callers reuse the
+  /// instance instead of asking for another, and why [prefetch] hands its own
+  /// over rather than letting [sourceFor] build a rival.
+  // ignore: experimental_member_use
+  static LockCachingAudioSource _open(
+    Directory dir,
+    Track track,
+    Uri uri,
+    MediaItem tag,
+  ) =>
+      // ignore: experimental_member_use
+      LockCachingAudioSource(
+        uri,
+        tag: tag,
+        cacheFile: File('${dir.path}/${track.id}'),
+      );
+
   @override
   Future<AudioSource> sourceFor(Track track, Uri uri, MediaItem tag) async {
     // Already warm from a prefetch: take that instance rather than making a
@@ -135,35 +162,17 @@ class DiskStreamCache extends StreamCache {
 
     final dir = await _ensureDir();
     if (dir == null) return AudioSource.uri(uri, tag: tag);
-    // `just_audio` marks this @experimental, but it is the only source type
-    // that gives ExoPlayer a seekable local file — see docs/decisions.md. One
-    // instance memoizes its own download, so re-passing it to setAudioSource on
-    // a retry just re-attaches the load already in flight. A *second* instance
-    // for the same file would race a truncating `openWrite` into `<id>.part`
-    // and corrupt the file being played — which is why callers reuse the
-    // instance instead of asking for another.
-    // ignore: experimental_member_use
-    return LockCachingAudioSource(
-      uri,
-      tag: tag,
-      cacheFile: File('${dir.path}/${track.id}'),
-    );
+    return _open(dir, track, uri, tag);
   }
 
   @override
   Future<void> prefetch(Track track, Uri uri, MediaItem tag) async {
-    if (_warmId == track.id) return; // already warming this one
+    if (_warm?.id == track.id) return; // already warming this one
     final dir = await _ensureDir();
     if (dir == null) return;
     try {
-      // ignore: experimental_member_use
-      final source = LockCachingAudioSource(
-        uri,
-        tag: tag,
-        cacheFile: File('${dir.path}/${track.id}'),
-      );
-      _warmId = track.id;
-      _warm = source;
+      final source = _open(dir, track, uri, tag);
+      _warm = (id: track.id, source: source);
       // Deliberately not awaited: the point is to return immediately and let
       // it fill in the background while the current track plays.
       unawaited(() async {
@@ -173,15 +182,11 @@ class DiskStreamCache extends StreamCache {
           debugPrint('DiskStreamCache: prefetch failed for ${track.id}: $e');
           // Drop the slot so the ordinary load path builds a fresh source
           // rather than inheriting a half-dead one.
-          if (_warmId == track.id) {
-            _warmId = null;
-            _warm = null;
-          }
+          if (_warm?.id == track.id) _warm = null;
         }
       }());
     } catch (e) {
       debugPrint('DiskStreamCache: could not prefetch ${track.id}: $e');
-      _warmId = null;
       _warm = null;
     }
   }
@@ -190,22 +195,21 @@ class DiskStreamCache extends StreamCache {
   /// hand-over invariant (exactly one live source per cache file) is otherwise
   /// only observable as file corruption under a real player.
   @visibleForTesting
-  String? get warmTrackId => _warmId;
+  String? get warmTrackId => _warm?.id;
 
   /// The source holding [warmTrackId] warm, or null. Test seam — see
   /// [warmTrackId].
   @visibleForTesting
-  AudioSource? get warmSource => _warm;
+  AudioSource? get warmSource => _warm?.source;
 
   /// Hand the warm source over for [trackId] and empty the slot, so only one
   /// instance is ever live for a given cache file.
   // ignore: experimental_member_use
   LockCachingAudioSource? _takeWarm(String trackId) {
-    if (_warmId != trackId) return null;
-    final source = _warm;
-    _warmId = null;
+    final warm = _warm;
+    if (warm == null || warm.id != trackId) return null;
     _warm = null;
-    return source;
+    return warm.source;
   }
 
   @override
@@ -231,7 +235,7 @@ class DiskStreamCache extends StreamCache {
       // The warm track is protected alongside the playing one: eviction runs
       // after every load, and keeping only the current track would delete the
       // prefetch that load just started.
-      final warmId = _warmId;
+      final warmId = _warm?.id;
       bool isKept(File file) {
         final name = file.uri.pathSegments.last;
         for (final id in [keepId, warmId]) {
