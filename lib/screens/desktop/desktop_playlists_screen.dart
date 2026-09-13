@@ -396,6 +396,17 @@ class _DesktopPlaylistScreenState extends State<DesktopPlaylistScreen> {
   Widget _buildBody(Playlist? playlist, List<Track>? tracks) {
     // Null means not fetched yet; empty means a genuinely empty playlist.
     if (tracks == null) {
+      // ...or fetched and failed. Without this branch a failed fetch is
+      // indistinguishable from a slow one — the spinner just never stops.
+      final error = context.read<PlaylistsService>().error;
+      if (error != null) {
+        return DesktopErrorState(
+          message: error,
+          onRetry: () => context
+              .read<PlaylistsService>()
+              .loadTracks(widget.playlistId, force: true),
+        );
+      }
       return const Center(child: CircularProgressIndicator());
     }
     if (tracks.isEmpty) {

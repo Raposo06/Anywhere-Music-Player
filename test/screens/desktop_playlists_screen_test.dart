@@ -184,6 +184,25 @@ void main() {
       expect(find.text('Song b'), findsOneWidget);
     });
 
+    testWidgets('a fetch that fails says so, and Retry refetches', (
+      tester,
+    ) async {
+      // A playlist the list knows about but the detail endpoint rejects —
+      // the 4,000-track All Tracks m3u timing out looked exactly like this,
+      // and used to spin forever.
+      server.failReads = 'timed out';
+      await pump(tester, const DesktopPlaylistScreen(playlistId: '1'));
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.textContaining('Could not load playlist'), findsOneWidget);
+
+      server.failReads = null;
+      await tester.tap(find.text('Retry'));
+      await settle(tester);
+
+      expect(find.text('Song a'), findsOneWidget);
+    });
+
     testWidgets('an empty one says so rather than looking stuck', (
       tester,
     ) async {

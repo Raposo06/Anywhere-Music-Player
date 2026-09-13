@@ -236,6 +236,32 @@ void main() {
       await playlists.loadTracks('1', force: true);
       expect(requests.length, 2);
     });
+
+    test('a failed fetch is reported, and reopening tries again', () async {
+      var fail = true;
+      final (:playlists, :requests) = build(
+        (_) => fail
+            ? _failed('timed out')
+            : _ok({
+                'playlist': {
+                  ..._playlistJson('1', 'Roadtrip'),
+                  'entry': [_songJson('a', 'First')],
+                },
+              }),
+      );
+
+      await playlists.loadTracks('1');
+      expect(playlists.tracksOf('1'), isNull);
+      expect(playlists.error, contains('Could not load playlist'));
+
+      // The failed attempt must not count as "already fetched" — a plain
+      // reopen, no force, has to hit the server again.
+      fail = false;
+      await playlists.loadTracks('1');
+      expect(requests.length, 2);
+      expect(playlists.tracksOf('1')!.map((t) => t.id), ['a']);
+      expect(playlists.error, isNull);
+    });
   });
 
   group('create', () {

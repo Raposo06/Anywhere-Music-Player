@@ -27,6 +27,10 @@ class FakePlaylistServer {
   /// When set, every write fails with this Subsonic error message.
   String? failWrites;
 
+  /// When set, `getPlaylist` (the detail read) fails with this message while
+  /// the list still answers — a playlist the app can see but cannot open.
+  String? failReads;
+
   var _nextId = 100;
 
   FakePlaylistServer({
@@ -96,6 +100,7 @@ class FakePlaylistServer {
 
       case 'getPlaylist':
         final id = q['id']!;
+        if (failReads case final message?) return _failed(message);
         if (!playlists.containsKey(id)) return _failed('not found');
         return _ok({'playlist': _json(id, withEntries: true)});
 

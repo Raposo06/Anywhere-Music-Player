@@ -76,6 +76,9 @@ class PlaylistsService extends SessionScoped with LoadStatus {
       }
       error = null;
     } catch (e) {
+      // Forget the attempt, or the next open of this playlist is a silent
+      // no-op and the screen spins forever on a fetch that already failed.
+      _fetchingTracks.remove(playlistId);
       error = 'Could not load playlist: $e';
       debugPrint('PlaylistsService: loadTracks($playlistId) failed: $e');
     } finally {
