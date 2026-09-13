@@ -8,7 +8,7 @@ import '../../services/library_scanner.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/desktop/desktop_mini_player.dart';
 import '../../widgets/desktop/desktop_shortcuts.dart';
-import '../../widgets/favourites_error_listener.dart';
+import '../../widgets/notices_listener.dart';
 import '../../widgets/desktop/sidebar.dart';
 import '../../widgets/desktop/window_chrome.dart';
 import '../../widgets/play_actions.dart';
@@ -260,7 +260,7 @@ class _DesktopShellState extends State<DesktopShell> {
                 ),
               ),
               DesktopMiniPlayer(onOpenPlayer: _openPlayer),
-              const FavouritesErrorListener(),
+              const NoticesListener(),
             ],
           ),
         ),

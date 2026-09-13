@@ -14,6 +14,57 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Failed mutations are one-shot notices in one sink; failed fetches stay state (2026-09-14)
+
+**Decided.** `Notices` (`services/notices.dart`) is an app-lifetime queue of
+strings. Every session module gets it through `SessionScoped(api, {notices})`
+— `sessionScoped()` reads the tree's one and passes it — and the player takes
+it in its constructor. A module pushes with `notice(message)`; the shell's
+`NoticesListener` drains `take()` after the frame and shows each message on
+the root `ScaffoldMessenger`, four seconds, newest wins. The rule that says
+what goes there: **a fetch that failed is state** (`LoadStatus.error`,
+`LibraryScanner.error`, the playlist detail's `error` — rendered in place,
+with a Retry, until the next attempt); **a mutation that failed is a notice**
+(favourite rollback, the five playlist mutations, the scanner's soft refresh
+failure, a playback error including a drop that could not be recovered).
+
+Gone with it: `AudioPlayerService.lastError` and Now Playing's `_shownError`
+dedupe, `LibraryScanner.refreshError` + `clearRefreshError` and the Library
+screen's thirty lines of `addListener` plumbing, `LoadStatus.clearError`, and
+`FavouritesErrorListener`. `LoadStatus.error` no longer doubles as the
+mutation channel; its protected setter stays for a module's secondary fetches.
+
+**Why.** Four modules, four shapes, three hand-written listeners — and the
+fourth module had none. `add_to_playlist.dart` said "the shell's listener
+shows it" about a listener that did not exist, so a playlist rename, delete,
+add or remove the server refused closed the dialog and showed nothing; the
+list screen only rendered `error` while `!isLoaded`. The test for it asserted
+the sticky field rather than what the user sees, which is why the suite could
+not see the gap. Playback errors were only visible while Now Playing was up:
+the mini player on the Library screen showed nothing. Each listener also
+re-implemented the same postFrame-show-then-clear idiom with its own
+duration (3 s, 4 s, 6 s).
+
+The deletion test settled the shape: delete the three listeners and exactly
+one is needed; delete the sticky fields and nothing is lost, because a
+transient failure is never read back except to show it once. `Notices` is a
+concrete class, not a seam — production and tests use the same one (tests
+inject their own and assert on `pending`, or read `module.notices`). The
+shell test now proves the gap is closed: a refused rename shows a SnackBar,
+and removing `NoticesListener` fails it.
+
+**What was considered and not done.** Per-notice durations or severities —
+one caller (the player's 6 s) would have wanted it; not worth the interface.
+Routing fetch failures here too — no: a screen with nothing loaded needs the
+message *in place* with a Retry, which a SnackBar cannot be. Keeping
+`lastError` alongside a notice for the player — nobody read it.
+
+**What would reverse it.** A screen that needs to *react* to a failure rather
+than show it (roll something back in the UI, say) would need state again —
+and that state should be the thing that changed, not an error string.
+
+---
+
 ## The player answers "is Next live?" itself; the interface loses its second transport (2026-09-13)
 
 **Decided.** `AudioPlayerService` gained `canGoNext`, `canGoPrevious` and a

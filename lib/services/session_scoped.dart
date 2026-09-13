@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'notices.dart';
 import 'subsonic_api_service.dart';
 
 /// A module whose lifetime is one logged-in session.
@@ -13,13 +14,20 @@ import 'subsonic_api_service.dart';
 ///
 /// [api] is null while logged out. The provider tree is built once, before
 /// login, so every session-scoped module has to cope with that.
+///
+/// [notices] is where a failed *mutation* goes — see [Notices] for the rule.
+/// App-lifetime, shared by every module; the provider passes the one it
+/// holds. A module built without one gets a private sink nobody drains,
+/// which is what a unit test wants unless it hands its own in to assert on.
 abstract class SessionScoped with ChangeNotifier {
-  SessionScoped(this.api);
+  SessionScoped(this.api, {Notices? notices}) : notices = notices ?? Notices();
 
   /// The client this instance is bound to, or null while logged out. Public
   /// because the identity comparison against the live session is the rebind
   /// trigger, and it happens in the provider layer.
   final SubsonicApiService? api;
+
+  final Notices notices;
 }
 
 /// Load-a-collection-from-the-server state, shared by [PlaylistsService] and
@@ -27,8 +35,8 @@ abstract class SessionScoped with ChangeNotifier {
 /// "not fetched yet" apart from "fetched and empty".
 ///
 /// Deliberately *not* mixed into [LibraryScanner]. Its scan is a different
-/// shape — cache-first, two-phase, and with a soft refresh error distinct
-/// from a fatal one — and forcing it in here would give it two error fields.
+/// shape — cache-first and two-phase — and forcing it in here would give it
+/// a second "loading" the screens would have to reconcile.
 mixin LoadStatus on SessionScoped {
   bool _loading = false;
   bool _loaded = false;
@@ -40,19 +48,15 @@ mixin LoadStatus on SessionScoped {
   /// from "not fetched yet".
   bool get isLoaded => _loaded;
 
+  /// Why the last *fetch* failed, or null. State, not a one-shot: a screen
+  /// renders it in place with a Retry until the next attempt clears it.
+  /// A failed mutation is not this — it goes to [SessionScoped.notices].
   String? get error => _error;
 
-  /// The message a *mutation* failed with. [runLoad] owns this during a load;
-  /// everything else sets it here and notifies for itself.
+  /// For a module's own secondary fetches (a detail read, say) that live
+  /// outside [runLoad]. Set it, then notify.
   @protected
   set error(String? message) => _error = message;
-
-  /// Drop the last error once a screen has shown it.
-  void clearError() {
-    if (_error == null) return;
-    _error = null;
-    notifyListeners();
-  }
 
   /// Run [body] as *the* load for this module, owning the flags around it.
   ///

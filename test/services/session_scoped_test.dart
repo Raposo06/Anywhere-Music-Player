@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import 'package:anywhere_music_player/main.dart';
 import 'package:anywhere_music_player/services/auth_service.dart';
+import 'package:anywhere_music_player/services/notices.dart';
 import 'package:anywhere_music_player/services/session_scoped.dart';
 import 'package:anywhere_music_player/services/subsonic_api_service.dart';
 
@@ -33,7 +34,7 @@ class _FakeAuth extends AuthService {
 }
 
 class _Probe extends SessionScoped {
-  _Probe(super.api);
+  _Probe(super.api, {super.notices});
 }
 
 class _Loader extends SessionScoped with LoadStatus {
@@ -63,8 +64,9 @@ void main() {
     Future<void> pumpTree(WidgetTester tester) => tester.pumpWidget(
       MultiProvider(
         providers: [
+          ChangeNotifierProvider<Notices>(create: (_) => Notices()),
           ChangeNotifierProvider<AuthService>.value(value: auth),
-          sessionScoped<_Probe>(_Probe.new),
+          sessionScoped<_Probe>((api, notices) => _Probe(api, notices: notices)),
         ],
         child: Builder(
           builder: (context) {
@@ -85,6 +87,21 @@ void main() {
       await pumpTree(tester);
 
       expect(seen.single.api, isNull);
+    });
+
+    testWidgets('hands every instance the tree’s one Notices', (tester) async {
+      await pumpTree(tester);
+      final treeNotices = tester
+          .element(find.byType(SizedBox))
+          .read<Notices>();
+      expect(seen.single.notices, same(treeNotices));
+
+      // A rebuilt instance after login shares it too — the shell drains one
+      // sink, so a module writing to a private one would fail silently.
+      auth.bind(_client('alice'));
+      await tester.pump();
+      expect(seen, hasLength(2));
+      expect(seen.last.notices, same(treeNotices));
     });
 
     testWidgets('keeps the instance while the client is the same', (
@@ -197,23 +214,6 @@ void main() {
       await loader.load();
       expect(loader.error, isNull);
       expect(loader.isLoaded, isTrue);
-    });
-
-    test('clearError drops the message and notifies once', () async {
-      final loader = _Loader(_client('alice'), () async {
-        throw StateError('nope');
-      });
-      await loader.load();
-      final before = loader.notifications;
-
-      loader.clearError();
-      expect(loader.error, isNull);
-      expect(loader.notifications, before + 1);
-
-      // Idempotent — a second screen showing the same error must not cause a
-      // pointless rebuild of everything listening.
-      loader.clearError();
-      expect(loader.notifications, before + 1);
     });
   });
 }

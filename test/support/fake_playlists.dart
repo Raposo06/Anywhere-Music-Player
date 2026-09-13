@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:anywhere_music_player/services/notices.dart';
 import 'package:anywhere_music_player/services/playlists_service.dart';
 import 'package:anywhere_music_player/services/subsonic_api_service.dart';
 
@@ -39,14 +40,16 @@ class FakePlaylistServer {
   }) : playlists = playlists ?? {};
 
   /// The service under test, wired to this server.
-  PlaylistsService service({String username = 'alice'}) => PlaylistsService(
-    SubsonicApiService(
-      serverUrl: 'https://gonic.example.com',
-      username: username,
-      password: 'p',
-      httpClient: _client(),
-    ),
-  );
+  PlaylistsService service({String username = 'alice', Notices? notices}) =>
+      PlaylistsService(
+        SubsonicApiService(
+          serverUrl: 'https://gonic.example.com',
+          username: username,
+          password: 'p',
+          httpClient: _client(),
+        ),
+        notices: notices,
+      );
 
   http.Response _ok(Map<String, dynamic> body) => http.Response(
     jsonEncode({

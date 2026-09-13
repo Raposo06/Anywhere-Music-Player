@@ -188,7 +188,10 @@ void main() {
 
       expect(favourites.isStarred('1'), isFalse, reason: 'rolled back');
       expect(favourites.starred, isEmpty);
-      expect(favourites.error, contains('Could not add to favourites'));
+      expect(
+        favourites.notices.pending.single,
+        contains('Could not add to favourites'),
+      );
     });
 
     test('a rejected unstar restores it at its original position', () async {
@@ -213,17 +216,10 @@ void main() {
       expect(favourites.isStarred('2'), isTrue, reason: 'rolled back');
       // Restored in place, not promoted to the front.
       expect(favourites.starred.map((t) => t.id), ['1', '2', '3']);
-      expect(favourites.error, contains('Could not remove from favourites'));
-    });
-
-    test('clearError drops the message once a screen has shown it', () async {
-      final (:favourites, endpoints: _) = build((_) => _failed('nope'));
-      await favourites.toggle(sampleTrack(id: '1'));
-      expect(favourites.error, isNotNull);
-
-      favourites.clearError();
-
-      expect(favourites.error, isNull);
+      expect(
+        favourites.notices.pending.single,
+        contains('Could not remove from favourites'),
+      );
     });
 
     test('logged out, toggle is a no-op', () async {
@@ -232,7 +228,7 @@ void main() {
       await favourites.toggle(sampleTrack(id: '1'));
 
       expect(favourites.isStarred('1'), isFalse);
-      expect(favourites.error, isNull);
+      expect(favourites.notices.pending, isEmpty);
     });
   });
 }

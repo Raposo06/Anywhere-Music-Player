@@ -15,7 +15,7 @@ import 'session_scoped.dart';
 /// Every mutation therefore waits for the server and then re-reads. See
 /// docs/decisions.md.
 class PlaylistsService extends SessionScoped with LoadStatus {
-  PlaylistsService(super.api);
+  PlaylistsService(super.api, {super.notices});
 
   final List<Playlist> _playlists = [];
 
@@ -109,7 +109,6 @@ class PlaylistsService extends SessionScoped with LoadStatus {
         name,
         songIds: [for (final t in tracks) t.id],
       );
-      error = null;
       await load();
 
       if (created != null) {
@@ -122,9 +121,8 @@ class PlaylistsService extends SessionScoped with LoadStatus {
       ];
       return fresh.length == 1 ? fresh.single : null;
     } catch (e) {
-      error = 'Could not create playlist: $e';
+      notices.notice('Could not create playlist: $e');
       debugPrint('PlaylistsService: create failed: $e');
-      notifyListeners();
       return null;
     }
   }
@@ -137,14 +135,12 @@ class PlaylistsService extends SessionScoped with LoadStatus {
 
     try {
       await api.addToPlaylist(playlistId, [for (final t in tracks) t.id]);
-      error = null;
       // Re-read so the song count and any open detail view are correct.
       await loadTracks(playlistId, force: true);
       return true;
     } catch (e) {
-      error = 'Could not add to playlist: $e';
+      notices.notice('Could not add to playlist: $e');
       debugPrint('PlaylistsService: addTracks failed: $e');
-      notifyListeners();
       return false;
     }
   }
@@ -183,13 +179,11 @@ class PlaylistsService extends SessionScoped with LoadStatus {
       }
 
       await api.removeFromPlaylist(playlistId, [position]);
-      error = null;
       await loadTracks(playlistId, force: true);
       return true;
     } catch (e) {
-      error = 'Could not remove from playlist: $e';
+      notices.notice('Could not remove from playlist: $e');
       debugPrint('PlaylistsService: removeTrack failed: $e');
-      notifyListeners();
       return false;
     }
   }
@@ -200,13 +194,11 @@ class PlaylistsService extends SessionScoped with LoadStatus {
 
     try {
       await api.renamePlaylist(playlistId, name);
-      error = null;
       await load();
       return true;
     } catch (e) {
-      error = 'Could not rename playlist: $e';
+      notices.notice('Could not rename playlist: $e');
       debugPrint('PlaylistsService: rename failed: $e');
-      notifyListeners();
       return false;
     }
   }
@@ -219,15 +211,12 @@ class PlaylistsService extends SessionScoped with LoadStatus {
       await api.deletePlaylist(playlistId);
       _tracks.remove(playlistId);
       _fetchingTracks.remove(playlistId);
-      error = null;
       await load();
       return true;
     } catch (e) {
-      error = 'Could not delete playlist: $e';
+      notices.notice('Could not delete playlist: $e');
       debugPrint('PlaylistsService: delete failed: $e');
-      notifyListeners();
       return false;
     }
   }
-
 }

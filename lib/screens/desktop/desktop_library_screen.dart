@@ -38,41 +38,10 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
   bool _isSearching = false;
   String? _searchError;
 
-  LibraryScanner? _scannerForListener;
-
-  @override
-  void initState() {
-    super.initState();
-    // The shell kicks off the scan; this screen only watches for the soft
-    // refresh errors that would otherwise be swallowed.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final scanner = context.read<LibraryScanner>();
-      _scannerForListener = scanner;
-      scanner.addListener(_onScannerChanged);
-    });
-  }
-
   @override
   void dispose() {
-    _scannerForListener?.removeListener(_onScannerChanged);
     _debounce?.cancel();
     super.dispose();
-  }
-
-  /// Surface [LibraryScanner.refreshError] as a snackbar when a background
-  /// refresh fails while cached data is on screen. Clears the error on the
-  /// scanner so it fires once per failure.
-  void _onScannerChanged() {
-    if (!mounted) return;
-    final message = _scannerForListener?.refreshError;
-    if (message == null) return;
-    _scannerForListener!.clearRefreshError();
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
-      );
   }
 
   void _onQueryChanged(String query) {
@@ -260,10 +229,7 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_searchError case final error?) {
-      return DesktopErrorState(
-        message: error,
-        onRetry: () => _search(_query),
-      );
+      return DesktopErrorState(message: error, onRetry: () => _search(_query));
     }
     if (_searchFolders.isEmpty && _searchTracks.isEmpty) {
       return const Center(

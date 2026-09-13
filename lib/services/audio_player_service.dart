@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/track.dart';
+import 'notices.dart';
 import 'now_playing_presence.dart';
 import 'playback_cursor.dart';
 import 'playback_policy.dart';
@@ -33,6 +34,7 @@ class AudioPlayerService with ChangeNotifier {
   final NowPlayingPresence _presence;
   final StreamUrlResolver _resolver;
   final PlaybackReporter _reporter;
+  final Notices _notices;
 
   final PlaybackCursor _cursor = PlaybackCursor();
   // The track currently coming out of the speakers — may be a playlist item
@@ -40,7 +42,6 @@ class AudioPlayerService with ChangeNotifier {
   Track? _currentTrack;
 
   double _volume = 1.0;
-  String? _lastError;
   bool _isLoading = false;
   int _loadToken = 0;
 
@@ -105,7 +106,6 @@ class AudioPlayerService with ChangeNotifier {
   bool get isShuffleEnabled => _cursor.isShuffleEnabled;
   RepeatMode get repeatMode => _cursor.repeatMode;
   double get volume => _volume;
-  String? get lastError => _lastError;
 
   bool get isPlaying => _player?.playing ?? false;
 
@@ -123,13 +123,18 @@ class AudioPlayerService with ChangeNotifier {
 
   Duration? get position => _player?.position;
 
+  /// [notices] is where a playback failure goes — see [Notices]. Absent, a
+  /// private sink nobody drains, which is what a unit test wants unless it
+  /// hands its own in to assert on.
   AudioPlayerService({
     NowPlayingPresence? presence,
     StreamUrlResolver? resolver,
     PlaybackReporter? reporter,
+    Notices? notices,
   }) : _presence = presence ?? const NoPresence(),
        _resolver = resolver ?? const NoResolver(),
-       _reporter = reporter ?? const NoPlaybackReporter() {
+       _reporter = reporter ?? const NoPlaybackReporter(),
+       _notices = notices ?? Notices() {
     // Fire-and-forget: the modes are cosmetic until something is actually
     // playing, and this service is constructed before login, so there is
     // nothing to block on.
@@ -261,11 +266,11 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   void _handlePlaybackError(Object error) {
-    _lastError = 'Playback error: $error';
     debugPrint('Playback error: $error');
     // Reached from async paths that can outlive dispose — see _loadAndPlay.
+    // Nobody is left to read a notice after that, so don't push one.
     if (_disposed) return;
-    notifyListeners();
+    _notices.notice('Playback error: $error');
   }
 
   /// Recover from a mid-playback stream drop (e.g. the server/proxy closed a
@@ -379,7 +384,6 @@ class AudioPlayerService with ChangeNotifier {
     _listenStartedAt = DateTime.now();
     _currentTrack = track;
     _isLoading = true;
-    _lastError = null;
     _loadDebounce?.cancel();
     notifyListeners();
 

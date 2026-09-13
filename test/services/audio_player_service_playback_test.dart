@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
+import 'package:anywhere_music_player/services/notices.dart';
 import '../support/fake_just_audio.dart';
 import '../support/fake_presence.dart';
 import '../support/fake_resolver.dart';
@@ -229,8 +230,12 @@ void main() {
     await waitUntil(() => service.isPlaying);
   });
 
-  test('a load failure surfaces as lastError without crashing playback', () async {
-    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
+  test('a load failure is a notice, and does not crash playback', () async {
+    final notices = Notices();
+    final service = AudioPlayerService(
+      resolver: const FakeStreamUrlResolver(),
+      notices: notices,
+    );
     final tracks = [sampleTrack(id: '1'), sampleTrack(id: '2')];
     await service.play(tracks, from: 0);
     await waitUntil(() => !service.isLoading);
@@ -240,12 +245,16 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 300));
     await waitUntil(() => !service.isLoading);
 
-    expect(service.lastError, contains('Playback error'));
+    expect(notices.pending.single, contains('Playback error'));
     expect(service.currentTrack?.id, '2'); // still shown, even though the load failed
   });
 
   test('recovers from a mid-stream drop by reloading the same track', () async {
-    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
+    final notices = Notices();
+    final service = AudioPlayerService(
+      resolver: const FakeStreamUrlResolver(),
+      notices: notices,
+    );
     await service.playTrack(sampleTrack(id: '1'));
     await waitUntil(() => !service.isLoading);
     expect(service.isPlaying, isTrue);
@@ -254,11 +263,15 @@ void main() {
     await waitUntil(() => !service.isLoading && fakePlatform.player.loadCount == 2);
 
     expect(service.currentTrack?.id, '1'); // recovered, still the same track
-    expect(service.lastError, isNull);
+    expect(notices.pending, isEmpty); // a recovered drop is not worth a word
   });
 
   test('gives up after 3 rapid drop-recovery attempts and surfaces the error', () async {
-    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
+    final notices = Notices();
+    final service = AudioPlayerService(
+      resolver: const FakeStreamUrlResolver(),
+      notices: notices,
+    );
     await service.playTrack(sampleTrack(id: '1'));
     await waitUntil(() => !service.isLoading);
 
@@ -267,13 +280,13 @@ void main() {
       fakePlatform.player.injectStreamError('drop $i');
       await waitUntil(() => !service.isLoading);
     }
-    expect(service.lastError, isNull);
+    expect(notices.pending, isEmpty);
 
     // A 4th rapid drop exceeds the bound and is treated as unrecoverable.
     fakePlatform.player.injectStreamError('drop 4');
-    await waitUntil(() => service.lastError != null);
+    await waitUntil(() => notices.pending.isNotEmpty);
 
-    expect(service.lastError, contains('Playback error'));
+    expect(notices.pending.single, contains('Playback error'));
   });
 
   test('drop recovery runs the same load path as a fresh selection, not a partial copy', () async {

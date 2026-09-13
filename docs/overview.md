@@ -169,6 +169,16 @@ closed". Modules whose lifetime is one session — `LibraryScanner`,
 are provided through `sessionScoped()` in `main.dart`, which rebuilds them
 whenever the client identity changes and keeps them otherwise.
 
+**Failures reach the user one of two ways, by kind.** A *fetch* that failed is
+state on its module (`LoadStatus.error`, `LibraryScanner.error`): the screen
+renders it in place with a Retry until the next attempt. A *mutation* that
+failed — a star the server refused, a playlist edit that bounced, a background
+refresh that could not connect, a stream that dropped for good — is a one-shot
+message pushed into `Notices` (`services/notices.dart`), one app-lifetime sink
+every module is handed, drained by the shell's `NoticesListener` into the
+root `ScaffoldMessenger` so it shows on whatever screen is up. Nothing keeps
+a sticky "last error" field for a screen to clear.
+
 **There is no in-app signup.** Users are created in Gonic's own admin web UI.
 That's a deliberate consequence of having no backend: the client has nothing to
 register against.
@@ -236,7 +246,7 @@ installer, Linux MPRIS media keys, Arch packaging (PKGBUILD), the desktop
 redesign (theme + sidebar shell + custom window chrome), scrobbling, desktop
 keyboard shortcuts, favourites, and playlists.
 
-**Test suite:** 32 test files under `test/` (~7,900 lines including support
+**Test suite:** 33 test files under `test/` (~8,100 lines including support
 fakes) covering the models, services, the screens and the shared widgets.
 Playback is exercised against a fake `just_audio` platform
 (`test/support/fake_just_audio.dart`) rather than a live backend. Sequencing

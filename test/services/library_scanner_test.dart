@@ -173,7 +173,7 @@ void main() {
 
       expect(scanner.hasInitialData, isFalse);
       expect(scanner.error, isNotNull);
-      expect(scanner.refreshError, isNull);
+      expect(scanner.notices.pending, isEmpty);
     });
   });
 

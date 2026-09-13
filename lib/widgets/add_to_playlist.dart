@@ -58,7 +58,7 @@ class _AddToPlaylistBodyState extends State<_AddToPlaylistBody> {
     final ok = await service.addTracks(playlistId, widget.tracks);
     if (!mounted) return;
     setState(() => _busy = false);
-    // On failure the service holds the reason; the shell's listener shows it.
+    // On failure the service pushed a notice; the shell's listener shows it.
     navigator.pop(ok ? name : null);
   }
 

@@ -12,7 +12,7 @@ import 'session_scoped.dart';
 /// this app are virtual — their id is the library path, not a Subsonic album
 /// id — so there is nothing to star for one. See docs/decisions.md.
 class FavouritesService extends SessionScoped with LoadStatus {
-  FavouritesService(super.api);
+  FavouritesService(super.api, {super.notices});
 
   /// Starred tracks, newest first. Empty until [load] completes — callers get
   /// "not a favourite" for everything before then, which is why the desktop
@@ -56,8 +56,8 @@ class FavouritesService extends SessionScoped with LoadStatus {
   ///
   /// Applied locally first and rolled back if the server rejects it: a heart
   /// that waits for a round trip before filling in feels broken, and the
-  /// failure case is rare. [error] carries the reason when a rollback happens,
-  /// so a screen can surface it.
+  /// failure case is rare. A rollback is reported through [notices] — a heart
+  /// quietly reverting is otherwise indistinguishable from a mis-click.
   Future<void> toggle(Track track) async {
     final api = this.api;
     if (api == null) return;
@@ -72,7 +72,6 @@ class FavouritesService extends SessionScoped with LoadStatus {
     } else {
       _add(track);
     }
-    error = null;
     notifyListeners();
 
     try {
@@ -87,12 +86,13 @@ class FavouritesService extends SessionScoped with LoadStatus {
       } else {
         _remove(track.id);
       }
-      error = wasStarred
-          ? 'Could not remove from favourites: $e'
-          : 'Could not add to favourites: $e';
+      notices.notice(
+        wasStarred
+            ? 'Could not remove from favourites: $e'
+            : 'Could not add to favourites: $e',
+      );
       debugPrint('FavouritesService: toggle failed for ${track.id}: $e');
       notifyListeners();
     }
   }
-
 }

@@ -148,7 +148,9 @@ void main() {
     }
 
     expect(server.playlists['1']!.trackIds, ['x'], reason: 'unchanged');
-    expect(service.error, contains('Could not add to playlist'));
+    // Pushed for the shell's NoticesListener to show; the picker itself
+    // just closes.
+    expect(service.notices.pending.single, contains('Could not add to playlist'));
   });
 
   testWidgets('a smart playlist is shown but not pickable', (tester) async {

@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
+import 'package:anywhere_music_player/services/notices.dart';
 import '../support/fake_just_audio.dart';
 import '../support/fake_reporter.dart';
 import '../support/fake_resolver.dart';
@@ -24,12 +25,14 @@ void main() {
   const audioSessionChannel = MethodChannel('com.ryanheise.audio_session');
 
   late FakeJustAudioPlatform fakePlatform;
+  late Notices notices;
   late RecordingReporter reporter;
 
   setUp(() {
     fakePlatform = FakeJustAudioPlatform();
     JustAudioPlatform.instance = fakePlatform;
     reporter = RecordingReporter();
+    notices = Notices();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(audioSessionChannel, (call) async => null);
   });
@@ -42,6 +45,7 @@ void main() {
   AudioPlayerService buildService() => AudioPlayerService(
     resolver: const FakeStreamUrlResolver(),
     reporter: reporter,
+    notices: notices,
   );
 
   /// Polls until [test] passes. Same shape (and same reason) as the helper in
@@ -171,7 +175,7 @@ void main() {
     fakePlatform.player.reportPosition(const Duration(seconds: 95));
     await Future<void>.delayed(const Duration(milliseconds: 300));
 
-    expect(service.lastError, isNull);
+    expect(notices.pending, isEmpty);
     expect(service.currentTrack?.id, 'song-1');
 
     service.dispose();
@@ -180,14 +184,17 @@ void main() {
   test('no reporter configured is a safe default', () async {
     // AudioPlayerService()'s default is NoPlaybackReporter — unlike the URL
     // resolver, a missing reporter must not throw.
-    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
+    final service = AudioPlayerService(
+      resolver: const FakeStreamUrlResolver(),
+      notices: notices,
+    );
 
     await service.playTrack(sampleTrack(id: 'song-1'));
     await waitUntil(() => fakePlatform.player.loadCount == 1);
     fakePlatform.player.reportPosition(const Duration(seconds: 95));
     await Future<void>.delayed(const Duration(milliseconds: 300));
 
-    expect(service.lastError, isNull);
+    expect(notices.pending, isEmpty);
 
     service.dispose();
   });

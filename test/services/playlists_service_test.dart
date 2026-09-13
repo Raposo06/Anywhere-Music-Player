@@ -318,7 +318,10 @@ void main() {
       final created = await playlists.create('Nope');
 
       expect(created, isNull);
-      expect(playlists.error, contains('Could not create playlist'));
+      expect(
+        playlists.notices.pending.single,
+        contains('Could not create playlist'),
+      );
     });
   });
 
@@ -363,7 +366,10 @@ void main() {
       final ok = await playlists.addTracks('1', [sampleTrack(id: 'b')]);
 
       expect(ok, isFalse);
-      expect(playlists.error, contains('Could not add to playlist'));
+      expect(
+        playlists.notices.pending.single,
+        contains('Could not add to playlist'),
+      );
     });
   });
 
@@ -484,7 +490,10 @@ void main() {
       final ok = await playlists.removeTrack('1', 0, trackId: 'a');
 
       expect(ok, isFalse);
-      expect(playlists.error, contains('Could not remove from playlist'));
+      expect(
+        playlists.notices.pending.single,
+        contains('Could not remove from playlist'),
+      );
     });
   });
 
@@ -545,7 +554,10 @@ void main() {
       final ok = await playlists.delete('1');
 
       expect(ok, isFalse);
-      expect(playlists.error, contains('Could not delete playlist'));
+      expect(
+        playlists.notices.pending.single,
+        contains('Could not delete playlist'),
+      );
     });
   });
 }

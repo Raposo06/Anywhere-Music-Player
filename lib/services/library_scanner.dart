@@ -20,9 +20,8 @@ class LibraryScanner extends SessionScoped {
   bool _isScanning = false;
   bool _hasInitialData = false;
   String? _error;
-  String? _refreshError;
 
-  LibraryScanner(super.api);
+  LibraryScanner(super.api, {super.notices});
 
   /// Whether this scanner has a valid API connection.
   bool get hasApi => api != null;
@@ -35,20 +34,11 @@ class LibraryScanner extends SessionScoped {
   bool get hasInitialData => _hasInitialData;
 
   /// Fatal error from the initial load (no cache + scan failed). Blocks UI.
+  /// A refresh that fails with cached data already on screen is not this:
+  /// browsing carries on and the failure goes to [notices].
   String? get error => _error;
 
-  /// Soft error from a background refresh when cached data is already shown.
-  /// UI should surface this as a snackbar then clear it via
-  /// [clearRefreshError]. Doesn't block browsing.
-  String? get refreshError => _refreshError;
-
   List<Track> get allTracks => _allTracks;
-
-  void clearRefreshError() {
-    if (_refreshError == null) return;
-    _refreshError = null;
-    notifyListeners();
-  }
 
   /// How long a cache read counts as fresh. Inside this window a cold start
   /// renders from disk and stops there — no phase 2 — because the walk costs
@@ -65,8 +55,8 @@ class LibraryScanner extends SessionScoped {
   ///      set, stop there — the rendered data is current enough.
   ///   3. Otherwise refetch from the network in the background.
   ///   4. On success, overwrite both in-memory state and the cache.
-  ///   5. On background failure with cache already shown, surface a soft
-  ///      [refreshError] (snackbar) — keep showing the cached data.
+  ///   5. On background failure with cache already shown, say so through
+  ///      [notices] — and keep showing the cached data.
   ///
   /// [force] skips the freshness check only; the cache is still read first so
   /// something stays on screen while the network scan runs.
@@ -75,7 +65,6 @@ class LibraryScanner extends SessionScoped {
 
     _isScanning = true;
     _error = null;
-    _refreshError = null;
     notifyListeners();
 
     try {
@@ -93,7 +82,8 @@ class LibraryScanner extends SessionScoped {
         final cached = await LibraryCache.loadEntry();
         if (cached != null && cached.tracks.isNotEmpty) {
           debugPrint(
-              'LibraryScanner: hydrated ${cached.tracks.length} tracks from cache');
+            'LibraryScanner: hydrated ${cached.tracks.length} tracks from cache',
+          );
           _allTracks = cached.tracks;
           _tree = FolderTree.from(_allTracks);
           _hasInitialData = true;
@@ -132,7 +122,7 @@ class LibraryScanner extends SessionScoped {
       debugPrint('LibraryScanner: error scanning library: $e');
       if (_hasInitialData) {
         // We already rendered cached data; degrade gracefully.
-        _refreshError = "Couldn't refresh library — showing offline data";
+        notices.notice("Couldn't refresh library — showing offline data");
       } else {
         _error = 'Failed to scan library: $e';
       }
@@ -170,7 +160,6 @@ class LibraryScanner extends SessionScoped {
     _hasInitialData = false;
     _isScanning = false;
     _error = null;
-    _refreshError = null;
     await LibraryCache.clear();
     notifyListeners();
   }

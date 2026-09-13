@@ -12,6 +12,7 @@ import 'package:anywhere_music_player/services/audio_player_service.dart';
 import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/favourites_service.dart';
 import 'package:anywhere_music_player/services/library_scanner.dart';
+import 'package:anywhere_music_player/services/notices.dart';
 import 'package:anywhere_music_player/services/playlists_service.dart';
 import '../support/fake_auth.dart';
 import '../support/fake_just_audio.dart';
@@ -21,7 +22,10 @@ import '../support/fake_resolver.dart';
 // Covers the window chrome's back chevron, which lives in the shell rather
 // than on the individual screens — see the "Alt + ← and Escape go back on
 // desktop" entry in docs/decisions.md, which added the keyboard shortcut but
-// left the chrome with no visible click target for the same action.
+// left the chrome with no visible click target for the same action. Also
+// the shell's NoticesListener: a mutation the server refuses reaches the
+// user as a SnackBar from here, whatever screen they are on — until
+// 2026-09-13 playlist mutations had no listener at all and failed silently.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -31,6 +35,7 @@ void main() {
   late PlaylistsService playlists;
   late AudioPlayerService player;
   late AuthService auth;
+  late Notices notices;
 
   setUp(() async {
     FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(
@@ -48,8 +53,12 @@ void main() {
         '1': (name: 'Roadtrip', owner: 'alice', trackIds: ['a', 'b']),
       },
     );
-    playlists = server.service();
-    player = AudioPlayerService(resolver: const FakeStreamUrlResolver());
+    notices = Notices();
+    playlists = server.service(notices: notices);
+    player = AudioPlayerService(
+      resolver: const FakeStreamUrlResolver(),
+      notices: notices,
+    );
   });
 
   tearDown(() {
@@ -72,6 +81,7 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
+          ChangeNotifierProvider<Notices>.value(value: notices),
           ChangeNotifierProvider<PlaylistsService>.value(value: playlists),
           ChangeNotifierProvider<AudioPlayerService>.value(value: player),
           ChangeNotifierProvider<AuthService>.value(value: auth),
@@ -122,6 +132,41 @@ void main() {
 
     expect(find.byType(DesktopPlaylistScreen), findsNothing);
     expect(find.byTooltip('Back (Esc)'), findsNothing);
+  });
+
+  testWidgets('a rename the server refuses is shown, from wherever it happened', (
+    tester,
+  ) async {
+    server.failWrites = 'read-only';
+    await pump(tester);
+
+    await tester.tap(find.text('Playlists'));
+    await settle(tester);
+    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename…'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Long drive');
+    await tester.tap(find.text('Rename'));
+    await settle(tester, frames: 8);
+
+    expect(server.playlists['1']!.name, 'Roadtrip', reason: 'unchanged');
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(find.textContaining('Could not rename playlist'), findsOneWidget);
+    // Drained: nothing left to re-show on the next rebuild.
+    expect(notices.pending, isEmpty);
+  });
+
+  testWidgets('a playback failure is shown over whatever screen is up', (
+    tester,
+  ) async {
+    await pump(tester);
+
+    notices.notice('Playback error: simulated');
+    await settle(tester);
+
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(find.text('Playback error: simulated'), findsOneWidget);
   });
 
   testWidgets('switching to Favourites never shows a chevron', (tester) async {

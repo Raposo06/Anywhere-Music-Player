@@ -89,10 +89,6 @@ class DesktopPlayerScreen extends StatefulWidget {
 class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
   final _coverPrecacher = UpcomingCoverPrecacher();
 
-  /// Last playback error shown in a SnackBar, so the same error isn't
-  /// re-shown on every rebuild while it's still the current error.
-  String? _shownError;
-
   void _openFolder(Track track) {
     if (track.folderPath.isEmpty) return;
     final displayName = track.folderName.isNotEmpty
@@ -114,11 +110,6 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
             _coverPrecacher.precache(context, logicalSize: _artRequestSize);
           }
         });
-        // Must be the *builder's* context, not the State's: this runs while
-        // the Selector element is building, and by then this State's own
-        // build() has already returned — `context.select` on it would assert.
-        _watchForErrors(context);
-
         // Resolve to the scan's copy so the folder line (and its tap-through)
         // uses the real filesystem path even when playback started from a
         // playlist, whose tracks carry tag-based paths.
@@ -159,26 +150,6 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
         );
       },
     );
-  }
-
-  /// Surface a playback error once, as a SnackBar.
-  ///
-  /// [context] must be the context currently building — see the call site.
-  void _watchForErrors(BuildContext context) {
-    final error = context.select<AudioPlayerService, String?>(
-      (ps) => ps.lastError,
-    );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (error != null && error != _shownError) {
-        _shownError = error;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error), duration: const Duration(seconds: 6)),
-        );
-      } else if (error == null) {
-        _shownError = null;
-      }
-    });
   }
 }
 

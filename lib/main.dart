@@ -7,6 +7,7 @@ import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/linux_presence.dart';
+import 'services/notices.dart';
 import 'services/now_playing_presence.dart';
 import 'services/playback_reporter.dart';
 import 'services/stream_url_resolver.dart';
@@ -94,6 +95,10 @@ void main() async {
       ? LinuxPresence(resolver: resolver)
       : const NoPresence();
 
+  // Where every module's one-shot failures go, drained by the shell's
+  // NoticesListener — see Notices. Once per process, like the player.
+  final notices = Notices();
+
   // Built here rather than inside the provider below so window close can get
   // at it — see [_DesktopCloseGuard]. It already belongs with the other
   // once-per-process services above.
@@ -101,6 +106,7 @@ void main() async {
     presence: presence,
     resolver: resolver,
     reporter: reporter,
+    notices: notices,
   );
 
   if (Platform.isWindows || Platform.isLinux) {
@@ -113,6 +119,7 @@ void main() async {
       resolver: resolver,
       reporter: reporter,
       player: playerService,
+      notices: notices,
     ),
   );
 }
@@ -175,8 +182,12 @@ class MyApp extends StatelessWidget {
 
   /// The player, when the caller owns it — desktop does, so that window close
   /// can shut it down (see [_DesktopCloseGuard]). Null means "make your own",
-  /// which is what mobile and the widget tests do.
+  /// which is what the widget tests do.
   final AudioPlayerService? player;
+
+  /// The sink the caller's [player] already pushes to, so the tree shares
+  /// it. Null means "make your own", alongside the player.
+  final Notices? notices;
 
   const MyApp({
     super.key,
@@ -184,12 +195,20 @@ class MyApp extends StatelessWidget {
     this.resolver = const NoResolver(),
     this.reporter,
     this.player,
+    this.notices,
   });
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        // One-shot failures from every module below, shown by the shell.
+        // First, so the session-scoped modules can be handed it.
+        if (notices case final notices?)
+          ChangeNotifierProvider<Notices>.value(value: notices)
+        else
+          ChangeNotifierProvider<Notices>(create: (_) => Notices()),
+
         // Auth Service (owns the SubsonicApiService after login). If
         // [resolver] is the rotating kind (always true in production — see
         // main()), keep it pointed at whatever session is current, so
@@ -220,17 +239,26 @@ class MyApp extends StatelessWidget {
           ChangeNotifierProvider<AudioPlayerService>.value(value: player)
         else
           ChangeNotifierProvider<AudioPlayerService>(
-            create: (_) =>
-                AudioPlayerService(presence: presence, resolver: resolver),
+            create: (context) => AudioPlayerService(
+              presence: presence,
+              resolver: resolver,
+              notices: context.read<Notices>(),
+            ),
           ),
 
         // The library, the user's playlists and their starred songs. All
         // three are scoped to the logged-in session — see [sessionScoped] —
         // and all three are provided at the top level so they reach
         // Navigator.push routes like FolderDetailScreen too.
-        sessionScoped<LibraryScanner>(LibraryScanner.new),
-        sessionScoped<PlaylistsService>(PlaylistsService.new),
-        sessionScoped<FavouritesService>(FavouritesService.new),
+        sessionScoped<LibraryScanner>(
+          (api, notices) => LibraryScanner(api, notices: notices),
+        ),
+        sessionScoped<PlaylistsService>(
+          (api, notices) => PlaylistsService(api, notices: notices),
+        ),
+        sessionScoped<FavouritesService>(
+          (api, notices) => FavouritesService(api, notices: notices),
+        ),
       ],
       child: MaterialApp(
         title: 'Anywhere Music Player',
@@ -246,19 +274,21 @@ class MyApp extends StatelessWidget {
 /// Provides a [SessionScoped] module, rebuilt whenever the session changes.
 ///
 /// [build] is called with the live [SubsonicApiService] — null while logged
-/// out — and again with the new one on every session change. An existing
-/// instance survives only while it is still bound to the same client by
-/// identity: after logout `AuthService` disposes its client, so an instance
-/// that kept hold of it would answer the next request with "Client is already
-/// closed", and on re-login there is a brand-new client to bind to.
-ChangeNotifierProxyProvider<AuthService, T>
-sessionScoped<T extends SessionScoped>(T Function(SubsonicApiService?) build) {
+/// out — and again with the new one on every session change, plus the tree's
+/// [Notices] for the module to report into. An existing instance survives
+/// only while it is still bound to the same client by identity: after logout
+/// `AuthService` disposes its client, so an instance that kept hold of it
+/// would answer the next request with "Client is already closed", and on
+/// re-login there is a brand-new client to bind to.
+ChangeNotifierProxyProvider<AuthService, T> sessionScoped<
+  T extends SessionScoped
+>(T Function(SubsonicApiService? api, Notices notices) build) {
   return ChangeNotifierProxyProvider<AuthService, T>(
-    create: (_) => build(null),
-    update: (_, auth, previous) =>
+    create: (context) => build(null, context.read<Notices>()),
+    update: (context, auth, previous) =>
         previous != null && identical(previous.api, auth.apiService)
         ? previous
-        : build(auth.apiService),
+        : build(auth.apiService, context.read<Notices>()),
   );
 }
 
