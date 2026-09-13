@@ -5,7 +5,6 @@ import 'package:anywhere_music_player/services/audio_player_service.dart';
 import '../support/fake_just_audio.dart';
 import '../support/fake_presence.dart';
 import '../support/fake_resolver.dart';
-import '../support/recording_stream_cache.dart';
 import '../support/fixtures.dart';
 
 // Covers AudioPlayerService's playback entry points — playTrack/play/
@@ -111,126 +110,6 @@ void main() {
     // Only the track the user landed on was opened — not track 2 as well.
     expect(fakePlatform.player.loadCount, 2);
     expect(fakePlatform.player.loadedUris.last, contains('id=3'));
-  });
-
-  group('next-track prefetch', () {
-    test('warms the next track once the current one is playing', () async {
-      final cache = RecordingStreamCache();
-      final service = AudioPlayerService(
-        resolver: const FakeStreamUrlResolver(),
-        streamCache: cache,
-      );
-      final tracks = [sampleTrack(id: '1'), sampleTrack(id: '2')];
-
-      await service.play(tracks, from: 0);
-      await waitUntil(() => !service.isLoading);
-
-      expect(cache.prefetched, ['2']);
-    });
-
-    test('warms the track the user lands on, not every one skipped through', () async {
-      // The debounce means only the landed track is loaded; prefetch hangs off
-      // that same load, so a burst must not warm the tracks passed over.
-      final cache = RecordingStreamCache();
-      final service = AudioPlayerService(
-        resolver: const FakeStreamUrlResolver(),
-        streamCache: cache,
-      );
-      final tracks = [
-        sampleTrack(id: '1'),
-        sampleTrack(id: '2'),
-        sampleTrack(id: '3'),
-        sampleTrack(id: '4'),
-      ];
-      await service.play(tracks, from: 0);
-      await waitUntil(() => !service.isLoading);
-      expect(cache.prefetched, ['2']);
-
-      await service.playNext();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      await service.playNext();
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-      await waitUntil(() => !service.isLoading);
-
-      // Landed on 3, so 4 is warmed. 2 was never loaded, so it never warmed
-      // anything of its own.
-      expect(service.currentTrack?.id, '3');
-      expect(cache.prefetched, ['2', '4']);
-    });
-
-    test('does not warm a track too big to be worth pulling down', () async {
-      // Prefetch has no partial mode, so a 277 MB mix would download in full
-      // behind a 3-minute track, over the same link that track is streaming
-      // on. Oversized tracks open cold instead.
-      final cache = RecordingStreamCache();
-      final service = AudioPlayerService(
-        resolver: const FakeStreamUrlResolver(),
-        streamCache: cache,
-      );
-      final tracks = [
-        sampleTrack(id: '1'),
-        sampleTrack(id: 'huge', fileSizeBytes: 277 * 1024 * 1024),
-      ];
-
-      await service.play(tracks, from: 0);
-      await waitUntil(() => !service.isLoading);
-
-      expect(cache.prefetched, isEmpty);
-    });
-
-    test('still warms a track of ordinary size', () async {
-      final cache = RecordingStreamCache();
-      final service = AudioPlayerService(
-        resolver: const FakeStreamUrlResolver(),
-        streamCache: cache,
-      );
-      final tracks = [
-        sampleTrack(id: '1'),
-        sampleTrack(id: '2', fileSizeBytes: 6 * 1024 * 1024),
-      ];
-
-      await service.play(tracks, from: 0);
-      await waitUntil(() => !service.isLoading);
-
-      expect(cache.prefetched, ['2']);
-    });
-
-    test('warms nothing at the end of the playlist', () async {
-      final cache = RecordingStreamCache();
-      final service = AudioPlayerService(
-        resolver: const FakeStreamUrlResolver(),
-        streamCache: cache,
-      );
-
-      await service.play([sampleTrack(id: '1')], from: 0);
-      await waitUntil(() => !service.isLoading);
-
-      // Nothing plays next with repeat off, so there is nothing to pull down.
-      expect(cache.prefetched, isEmpty);
-    });
-
-    test('a queued track is warmed ahead of the playlist track', () async {
-      final cache = RecordingStreamCache();
-      final service = AudioPlayerService(
-        resolver: const FakeStreamUrlResolver(),
-        streamCache: cache,
-      );
-      final tracks = [sampleTrack(id: '1'), sampleTrack(id: '2')];
-
-      await service.play(tracks, from: 0);
-      await waitUntil(() => !service.isLoading);
-      expect(cache.prefetched, ['2']);
-
-      // The queue is what actually plays next, so it is what gets warmed —
-      // prefetch has to ask the cursor, not the playlist.
-      service.addToQueue(sampleTrack(id: '9'));
-      await service.playNext();
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-      await waitUntil(() => !service.isLoading);
-
-      expect(service.currentTrack?.id, '9');
-      expect(cache.prefetched.last, '2');
-    });
   });
 
   test('natural end-of-track advances immediately, without the skip debounce', () async {

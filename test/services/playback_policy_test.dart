@@ -68,10 +68,4 @@ void main() {
       expect(PlaybackPolicy.scrobbleThreshold(Duration.zero), Duration.zero);
     });
   });
-
-  test('the prefetch cap sits above a normal track and under a long mix', () {
-    const mb = 1024 * 1024;
-    expect(PlaybackPolicy.prefetchMaxBytes, greaterThan(7 * mb));
-    expect(PlaybackPolicy.prefetchMaxBytes, lessThan(277 * mb));
-  });
 }

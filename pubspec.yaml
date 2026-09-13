@@ -1,5 +1,5 @@
 name: anywhere_music_player
-description: A self-hosted music streaming app for Android TV, Android, and Windows
+description: A self-hosted music streaming app for Windows and Linux
 publish_to: 'none'
 version: 1.0.0+2
 
@@ -24,18 +24,13 @@ dependencies:
   # how media_kit does Linux) — see docs/operations.md for the libmpv
   # install step this needs on the build/run machine.
   media_kit_libs_linux: ^1.2.1
-  audio_service: ^0.18.12
   smtc_windows: ^0.1.3
   windows_taskbar: ^1.1.2
-  # Linux media-key/session integration: audio_service has no Linux platform
-  # implementation and media_kit's embedded libmpv doesn't auto-load
-  # mpv-mpris (that needs mpv's user config loading, which embedded libmpv
-  # disables by default) — so LinuxPresence implements the MPRIS D-Bus
+  # Linux media-key/session integration: media_kit's embedded libmpv doesn't
+  # auto-load mpv-mpris (that needs mpv's user config loading, which embedded
+  # libmpv disables by default) — so LinuxPresence implements the MPRIS D-Bus
   # interface directly on top of this.
   dbus: ^0.7.15
-
-  # Permissions
-  permission_handler: any
 
   # Crypto (MD5 for Subsonic API auth)
   crypto: any
@@ -120,12 +115,11 @@ flutter:
           weight: 700
 
 flutter_launcher_icons:
-  android: "launcher_icon"
+  android: false
   ios: false
   windows:
     generate: true
     image_path: "assets/icons/psx.png"
   image_path: "assets/icons/psx.png"
-  min_sdk_android: 21
 
 

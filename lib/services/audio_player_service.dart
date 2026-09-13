@@ -3,14 +3,12 @@ import 'dart:math';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:audio_service/audio_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/track.dart';
 import 'now_playing_presence.dart';
 import 'playback_cursor.dart';
 import 'playback_policy.dart';
 import 'playback_reporter.dart';
-import 'stream_cache.dart';
 import 'stream_url_resolver.dart';
 
 export 'playback_cursor.dart' show RepeatMode;
@@ -28,7 +26,6 @@ class AudioPlayerService with ChangeNotifier {
   final NowPlayingPresence _presence;
   final StreamUrlResolver _resolver;
   final PlaybackReporter _reporter;
-  final StreamCache _streamCache;
 
   final PlaybackCursor _cursor = PlaybackCursor();
   // The track currently coming out of the speakers — may be a playlist item
@@ -108,11 +105,9 @@ class AudioPlayerService with ChangeNotifier {
     NowPlayingPresence? presence,
     StreamUrlResolver? resolver,
     PlaybackReporter? reporter,
-    StreamCache? streamCache,
   }) : _presence = presence ?? const NoPresence(),
        _resolver = resolver ?? const NoResolver(),
-       _reporter = reporter ?? const NoPlaybackReporter(),
-       _streamCache = streamCache ?? const DirectStreamCache() {
+       _reporter = reporter ?? const NoPlaybackReporter() {
     // Fire-and-forget: the modes are cosmetic until something is actually
     // playing, and this service is constructed before login, so there is
     // nothing to block on.
@@ -290,6 +285,15 @@ class AudioPlayerService with ChangeNotifier {
     final token = ++_loadToken;
     _isLoading = true;
     notifyListeners();
+    // Leave the player's error callback before touching the player again.
+    // This runs *inside* just_audio's own error dispatch — its event subject
+    // is synchronous — and calling setAudioSource from in there re-enters a
+    // controller that is still firing; the reload then fails and the drop is
+    // never recovered. One microtask is enough. It reads like a pointless
+    // await; it is not. Until 2026-09-13 an incidental `await` in the source
+    // builder (the Android disk cache's directory lookup) did this by
+    // accident, and removing it took drop recovery with it.
+    await Future<void>.value();
     await _loadAndPlay(track, token, resumeFrom: resumeFrom);
   }
 
@@ -300,39 +304,19 @@ class AudioPlayerService with ChangeNotifier {
 
   // -------- Source helpers --------
 
-  MediaItem _buildMediaItem(Track track) {
-    final coverUrl = _resolver.resolveCoverUrl(track);
-    return MediaItem(
-      id: track.id,
-      title: track.title,
-      artist: track.artist ?? '',
-      album: track.album ?? '',
-      duration: track.durationSeconds != null
-          ? Duration(seconds: track.durationSeconds!)
-          : null,
-      artUri: coverUrl != null ? Uri.parse(coverUrl) : null,
-    );
-  }
-
-  Future<AudioSource> _buildSource(Track track) {
-    final uri = Uri.parse(_resolver.buildStreamUrl(track.id));
-    return _streamCache.sourceFor(track, uri, _buildMediaItem(track));
-  }
-
   /// Load the source, retrying once if it stalls. A single setAudioSource on
-  /// the streaming backend (media_kit on Windows / the Android backend) can
-  /// occasionally hang and never complete, which wedges playback ("freezes and
-  /// never plays" on Next). Re-issuing the load recovers it — the same thing a
-  /// manual Next press does, but automatic and on the same track.
+  /// media_kit can occasionally hang and never complete, which wedges playback
+  /// ("freezes and never plays" on Next). Re-issuing the load recovers it —
+  /// the same thing a manual Next press does, but automatic and on the same
+  /// track.
   Future<void> _setSourceWithRetry(Track track, int token) async {
     const loadTimeout = Duration(seconds: 12);
     // Built ONCE and reused for the retry. `Future.timeout` doesn't cancel the
-    // load it gave up on, so a second source for the same track would leave two
-    // live — and on Android two `LockCachingAudioSource`s race a truncating
-    // write into `<id>.part` (see [StreamCache]). Re-issuing the same instance
-    // is safe: just_audio keys a source on an id fixed at construction, so the
-    // second setAudioSource rebinds the same entry.
-    final source = await _buildSource(track);
+    // load it gave up on, so a second source for the same track would leave
+    // two live. Re-issuing the same instance is safe: just_audio keys a source
+    // on an id fixed at construction, so the second setAudioSource rebinds the
+    // same entry.
+    final source = AudioSource.uri(Uri.parse(_resolver.buildStreamUrl(track.id)));
     try {
       await _player!.setAudioSource(source).timeout(loadTimeout);
     } on TimeoutException {
@@ -350,11 +334,7 @@ class AudioPlayerService with ChangeNotifier {
   void _logStreamParams(Track track) {
     final uri = Uri.tryParse(_resolver.buildStreamUrl(track.id));
     final params = uri?.queryParameters ?? const <String, String>{};
-    final platform = kIsWeb
-        ? 'web'
-        : Platform.isAndroid
-        ? 'android'
-        : Platform.operatingSystem;
+    final platform = Platform.operatingSystem;
 
     debugPrint(
       'AudioPlayerService: loading stream '
@@ -433,8 +413,6 @@ class AudioPlayerService with ChangeNotifier {
       // "now playing" panel. Re-sent on drop recovery, which is fine: it is a
       // heartbeat, not a play count.
       _report('now-playing', () => _reporter.nowPlaying(track.id));
-      unawaited(_streamCache.evict(keep: _currentTrack));
-      _prefetchNext(token);
     } catch (e) {
       if (token != _loadToken) return;
       _handlePlaybackError(e);
@@ -448,40 +426,6 @@ class AudioPlayerService with ChangeNotifier {
         notifyListeners();
       }
     }
-  }
-
-  /// Start pulling down whatever plays next, so the change of track doesn't
-  /// pay for opening a stream from cold.
-  ///
-  /// Fired once the current track is loaded and playing rather than near its
-  /// end: that is the longest possible head start, and it costs nothing extra
-  /// on a skip, because [_selectAndPlay]'s debounce means a burst of Next
-  /// presses reaches this for the landed track only.
-  ///
-  /// [token] guards it the same way the load does — a selection that has
-  /// already been superseded must not warm the wrong track and evict the right
-  /// one. Fire-and-forget by design: nothing waits on it, and the ordinary
-  /// load path works whether or not it succeeded.
-  void _prefetchNext(int token) {
-    if (token != _loadToken) return;
-    final next = peekNextTrack();
-    if (next == null || next.id == _currentTrack?.id) return;
-    // Why the cap is where it is: PlaybackPolicy.prefetchMaxBytes. A track
-    // whose size the server didn't report is prefetched.
-    final size = next.fileSizeBytes;
-    if (size != null && size > PlaybackPolicy.prefetchMaxBytes) {
-      debugPrint(
-        'AudioPlayerService: skipping prefetch of ${next.id}, '
-        '${(size / (1 << 20)).round()} MB is over the cap',
-      );
-      return;
-    }
-    final uri = Uri.parse(_resolver.buildStreamUrl(next.id));
-    unawaited(
-      _streamCache
-          .prefetch(next, uri, _buildMediaItem(next))
-          .catchError((Object _) {}),
-    );
   }
 
   /// What [playNext] would play right now — without mutating shuffle state.

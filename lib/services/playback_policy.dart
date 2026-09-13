@@ -3,8 +3,7 @@ import 'dart:math' show pow;
 /// The tuning knobs of playback, as pure functions.
 ///
 /// These are the decisions with no dependency on a live audio backend: what
-/// counts as a listen, how loud a track plays, what is too big to pull down
-/// ahead of time. They lived inside [AudioPlayerService], where reaching one
+/// counts as a listen, how loud a track plays. They lived inside [AudioPlayerService], where reaching one
 /// from a test meant either constructing a real `AudioPlayer` or drilling a
 /// `@visibleForTesting` hole through the class. Same shape as
 /// `PlaybackCursor`: pure Dart, no Flutter, no just_audio, tested directly.
@@ -62,22 +61,4 @@ abstract final class PlaybackPolicy {
     final factor = pow(10, (db + _replayGainPreAmpDb) / 20).toDouble();
     return factor.clamp(0.0, 1.0).toDouble();
   }
-
-  // -------- Prefetch --------
-
-  /// Ceiling on what the next-track prefetch will pull down ahead of time.
-  ///
-  /// Prefetch pulls the *whole* file — `LockCachingAudioSource` has no partial
-  /// mode — so an unbounded one is a hazard, not a speed-up. This library's
-  /// mean track is 6.5 MB, but 45 of them are hour-plus mixes and the largest
-  /// is 277 MB: starting that behind a 3-minute opening would saturate the
-  /// link the current track is still streaming over, and evict most of the
-  /// 2 GB cache to do it. Big tracks simply open cold, which is what every
-  /// track did before prefetch existed.
-  ///
-  /// A constant rather than a predicate: a track whose size the server didn't
-  /// report is prefetched, and that reads better as `size != null && size >`
-  /// at the one call site than as a null case buried in a helper.
-  static const int prefetchMaxBytes = 50 * 1024 * 1024; // 50 MB
-
 }

@@ -1,19 +1,14 @@
 import 'dart:io' show Platform, exit;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
-import 'package:audio_service/audio_service.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'services/auth_service.dart';
 import 'services/audio_player_service.dart';
-import 'services/audio_handler.dart';
-import 'services/android_presence.dart';
 import 'services/linux_presence.dart';
 import 'services/now_playing_presence.dart';
 import 'services/playback_reporter.dart';
-import 'services/stream_cache.dart';
 import 'services/stream_url_resolver.dart';
 import 'services/windows_presence.dart';
 import 'services/favourites_service.dart';
@@ -39,7 +34,7 @@ void main() async {
 
   // Initialize media_kit backend for just_audio on desktop (replaces
   // just_audio_windows which had WMF threading deadlocks on startup).
-  if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+  if (Platform.isWindows || Platform.isLinux) {
     // libmpv's demuxer cache, which just_audio_media_kit defaults to 32 MB —
     // a size meant for video. This app streams audio, and the default was
     // measurably the largest single piece of memory this app added over a
@@ -58,7 +53,7 @@ void main() async {
   // init, before runApp(), per window_manager docs. Linux is included now
   // that the desktop shell draws its own title bar and needs the same
   // window controls Windows does.
-  if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+  if (Platform.isWindows || Platform.isLinux) {
     await windowManager.ensureInitialized();
     // The redesign replaces the OS frame with WindowChrome. Hiding it here —
     // before the first frame — avoids the native bar flashing on launch.
@@ -80,9 +75,9 @@ void main() async {
 
   // Mints stream/cover-art URLs on demand from the *current* authenticated
   // session (see StreamUrlResolver) — a stable reference that outlives any
-  // one AuthService instance, so AudioPlayerService and the audio handler
-  // (both constructed once, here, before login even happens) keep working
-  // across logout/re-login. MyApp wires it to AuthService's changes.
+  // one AuthService instance, so AudioPlayerService (constructed once, here,
+  // before login even happens) keeps working across logout/re-login. MyApp
+  // wires it to AuthService's changes.
   final resolver = RotatingStreamUrlResolver();
 
   // Same rotating-reference trick as [resolver], for the same reason: the
@@ -90,58 +85,14 @@ void main() async {
   // session is current. See RotatingPlaybackReporter.
   final reporter = RotatingPlaybackReporter();
 
-  // Initialize audio service for Android/iOS background playback and
-  // lock screen controls. Skip on Windows — SMTC handles media controls there.
-  MusicAudioHandler? audioHandler;
-  final bool isDesktop =
-      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
-  if (!isDesktop) {
-    try {
-      audioHandler = await AudioService.init(
-        builder: () => MusicAudioHandler(resolver: resolver),
-        config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.anywhere_music_player.audio',
-          androidNotificationChannelName: 'Music Playback',
-          androidNotificationChannelDescription: 'Controls for music playback',
-          androidNotificationOngoing: false,
-          androidStopForegroundOnPause: true,
-          androidNotificationClickStartsActivity: true,
-          androidNotificationIcon: 'mipmap/ic_launcher',
-          androidShowNotificationBadge: true,
-        ),
-      );
-      debugPrint('Audio service initialized successfully');
-    } catch (e, stackTrace) {
-      debugPrint('Audio service initialization failed: $e');
-      debugPrint('Stack trace: $stackTrace');
-    }
-  }
-
   // Which adapter tells the OS what's playing — see NowPlayingPresence.
-  // Windows gets SMTC/taskbar/wakelock; mobile gets the audio_service
-  // notification (only if it initialized above); Linux gets MPRIS (hardware
-  // media keys go through it — see LinuxPresence); nothing else gets one.
-  final NowPlayingPresence presence = (!kIsWeb && Platform.isWindows)
+  // Windows gets SMTC/taskbar/wakelock; Linux gets MPRIS (hardware media keys
+  // go through it — see LinuxPresence).
+  final NowPlayingPresence presence = Platform.isWindows
       ? WindowsPresence(resolver: resolver)
-      : audioHandler != null
-      ? AndroidPresence(audioHandler)
-      : (!kIsWeb && Platform.isLinux)
+      : Platform.isLinux
       ? LinuxPresence(resolver: resolver)
       : const NoPresence();
-
-  // Android streams through an on-disk cache (seekable local files; ExoPlayer
-  // can't seek the server's live HTTP stream) — everything else streams direct.
-  // See StreamCache. Android only — desktop was moved onto this cache on
-  // 2026-09-09 and moved straight back the same day, because
-  // LockCachingAudioSource cannot complete on Windows: it downloads to
-  // `<id>.part` and renames it into place, and Windows refuses to rename a
-  // file that is still open (errno 32), unlike POSIX. Measured, not guessed —
-  // see docs/decisions.md. The cache file therefore never appears, and adding
-  // a prefetch on top turns that silent failure into a hard one: setAudioSource
-  // never completes and nothing plays at all.
-  final StreamCache streamCache = (!kIsWeb && Platform.isAndroid)
-      ? DiskStreamCache()
-      : const DirectStreamCache();
 
   // Built here rather than inside the provider below so window close can get
   // at it — see [_DesktopCloseGuard]. It already belongs with the other
@@ -150,10 +101,9 @@ void main() async {
     presence: presence,
     resolver: resolver,
     reporter: reporter,
-    streamCache: streamCache,
   );
 
-  if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+  if (Platform.isWindows || Platform.isLinux) {
     await _DesktopCloseGuard(playerService).install();
   }
 
