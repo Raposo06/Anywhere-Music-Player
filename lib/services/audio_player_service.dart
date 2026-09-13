@@ -191,13 +191,19 @@ class AudioPlayerService with ChangeNotifier {
     // We sequence manually, so always let the player report completion.
     _player!.setLoopMode(LoopMode.off);
 
-    _presence.bind(_player!, (
-      play: _resumePlayback,
-      pause: () => _player?.pause(),
-      next: playNext,
-      previous: playPrevious,
-      stop: stop,
-    ));
+    _presence.bind(
+      (
+        play: _resumePlayback,
+        pause: () => _player?.pause(),
+        next: playNext,
+        previous: playPrevious,
+        stop: stop,
+      ),
+      (
+        playing: _player!.playingStream,
+        position: () => _player?.position ?? Duration.zero,
+      ),
+    );
 
     _playingSubscription = _player!.playingStream.listen((playing) {
       if (_currentTrack != null) _presence.setPlaying(playing);

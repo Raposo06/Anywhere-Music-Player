@@ -14,6 +14,65 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## One presence adapter per platform; the seam hands over signals, not the player (2026-09-14)
+
+**Decided.** `WindowsPresence` and `LinuxPresence` implement
+`NowPlayingPresence` directly, OS calls inside: SMTC, the taskbar toolbar,
+the window title and the wakelock in one class; the D-Bus client, the bus
+name and the `/org/mpris/MediaPlayer2` object in the other.
+`WindowsMediaControlsService` and `MprisMediaService` — the `.instance`
+singletons each adapter forwarded to — are deleted. `bind` no longer takes
+an `AudioPlayer`; it takes `PlaybackCommands` and `PlaybackSignals`, a
+record of the two live facts an adapter reads: the raw `playing` stream and
+a `position` getter.
+
+**Why.** The chain was `AudioPlayerService → NowPlayingPresence →
+{Windows,Linux}Presence → {WindowsMediaControls,MprisMedia}Service →
+plugin`, and the middle hop was shallow: each `*Presence` was ~90 lines of
+"is the service initialised yet?" plus five callbacks copied into the
+service's five nullable `VoidCallback` fields, and each `*Service`
+re-implemented the seam's own interface minus `bind` — `initialize(onPlay:,
+onPause:, …)`, `updateMetadata`, `updatePlaybackStatus`, `clear`,
+`dispose` — behind a singleton whose only caller was the adapter's own
+constructor default. The deletion test: fold the two and the lazy-init
+flag, the callback plumbing and the "ready?" branch exist once per
+platform instead of twice. ~185 lines went.
+
+The seam leaked just_audio. `bind(AudioPlayer, …)` handed the whole player
+across so Windows could read `playingStream` (wakelock) and `.playing`, and
+Linux could read `.position` and `.playing`. That is what made
+`fake_presence.dart` import just_audio, and it is why the 2026-08-27
+wakelock entry below said "if `NowPlayingPresence` ever needs the same raw,
+ungated hook for another adapter, promote it to a proper interface method
+instead of each adapter reaching into the player stream itself". This is
+that promotion: `PlaybackSignals.playing` *is* the raw, ungated stream, on
+the interface, and both adapters remember its last value for the moment
+their lazy init resolves. `setPlaying` stays gated as before.
+
+**Two things found while merging.** The old `updatePlaybackStatus` only
+redrew the taskbar toolbar when its own `_isPlaying` changed; with one
+`_playing` field written by the raw stream too, the gated report would
+always see "unchanged" — so the toolbar is redrawn on every report (reports
+only arrive on transitions). And the SMTC init used to flip its "ready"
+flag before awaiting, so a second `show()` during init took the "ready"
+branch against a null SMTC; both adapters now keep the init `Future` and
+chain every `show()` behind it.
+
+**What was considered and not done.** Feeding `canGoNext` / `canGoPrevious`
+(D01) to MPRIS and SMTC — needs a capabilities method on the seam and a
+call from the player on every queue change; the fixed `true` is harmless
+(Next with nothing next stops), so it waits for a reason. Testing the
+adapters off their OS — `windowManager.setTitle`, SMTC and the session bus
+are real OS handles; what became testable is the seam, and the player now
+has a test that drives the bound commands the way a media key does.
+
+**What would reverse it.** A third consumer of the same OS integration
+(another window, a tray icon) that needs the SMTC or D-Bus object without
+the presence contract — then the inner object earns a name again. Not
+before.
+
+---
+
 ## Failed mutations are one-shot notices in one sink; failed fetches stay state (2026-09-14)
 
 **Decided.** `Notices` (`services/notices.dart`) is an app-lifetime queue of
@@ -1341,6 +1400,8 @@ currently disagree — worth unifying once there's a preference either way.
 ---
 
 ## Windows wakelock tracks the raw player stream, not `NowPlayingPresence.setPlaying` (2026-08-27)
+
+> **Refined (2026-09-14)** — the "promote it to a proper interface method" reversal below happened: the raw stream is now `PlaybackSignals.playing` on the seam, and `bind` no longer sees the player. The reasoning stands.
 
 **Decided.** `WindowsPresence` subscribes to `AudioPlayer.playingStream`
 directly inside `bind()` to drive `WindowsWakelock.enable()`/`.disable()`,

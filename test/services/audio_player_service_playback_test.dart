@@ -306,16 +306,42 @@ void main() {
     expect(presence.shown, hasLength(2));
   });
 
-  test('bind wires the live player and transport commands once, at first playback', () async {
+  test('bind wires the transport commands and live signals once, at first playback', () async {
     final presence = RecordingPresence();
     final service = AudioPlayerService(presence: presence, resolver: const FakeStreamUrlResolver());
-    expect(presence.boundPlayer, isNull);
+    expect(presence.boundSignals, isNull);
 
     await service.playTrack(sampleTrack(id: '1'));
     await waitUntil(() => !service.isLoading);
 
-    expect(presence.boundPlayer, isNotNull);
+    final signals = presence.boundSignals!;
     expect(presence.boundCommands, isNotNull);
+    // The raw play/pause stream and a live position, not the player itself —
+    // an adapter can't reach just_audio through the seam.
+    expect(await signals.playing.first, isTrue);
+    expect(signals.position(), isA<Duration>());
+  });
+
+  test('the bound commands drive the player — what a media key press does', () async {
+    final presence = RecordingPresence();
+    final service = AudioPlayerService(presence: presence, resolver: const FakeStreamUrlResolver());
+    await service.play([sampleTrack(id: '1'), sampleTrack(id: '2')]);
+    await waitUntil(() => !service.isLoading);
+    final commands = presence.boundCommands!;
+
+    commands.pause();
+    await waitUntil(() => !service.isPlaying);
+    commands.play();
+    await waitUntil(() => service.isPlaying);
+
+    commands.next();
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await waitUntil(() => !service.isLoading);
+    expect(service.currentTrack?.id, '2');
+
+    commands.stop();
+    await waitUntil(() => service.currentTrack == null);
+    expect(presence.clearCount, 1);
   });
 
   test('setPlaying reports state changes only while a track is current', () async {

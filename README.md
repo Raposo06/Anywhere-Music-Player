@@ -200,10 +200,10 @@ lib/
     playback_policy.dart           # Scrobble threshold, ReplayGain curve. Pure Dart
     stream_url_resolver.dart       # "What's the URL for this track"
     now_playing_presence.dart      # "Tell the OS this is playing" — one seam,
-    windows_presence.dart          #   two implementations
-    linux_presence.dart
-    mpris_service.dart             # Linux MPRIS D-Bus server
-    windows_media_controls_service.dart   windows_wakelock.dart
+    windows_presence.dart          #   two adapters: SMTC + taskbar + wakelock,
+    linux_presence.dart            #   and a hand-rolled MPRIS D-Bus server
+    windows_wakelock.dart
+    notices.dart                   # One-shot failure messages, shown by the shell
     library_scanner.dart           # Cache-first scan; holds the FolderTree
     folder_walk.dart  folder_tree.dart  library_browser.dart  library_cache.dart
     session_scoped.dart            # Base for the three services bound to a login

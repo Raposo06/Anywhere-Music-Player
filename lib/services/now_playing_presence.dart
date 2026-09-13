@@ -1,9 +1,7 @@
-import 'package:just_audio/just_audio.dart';
 import '../models/track.dart';
 
 /// Transport-control callbacks a presence adapter routes system button
-/// presses (SMTC, MPRIS) back into. `stop` is included for completeness even
-/// though today only [WindowsPresence] wires it.
+/// presses (SMTC, MPRIS) back into.
 typedef PlaybackCommands = ({
   void Function() play,
   void Function() pause,
@@ -12,17 +10,35 @@ typedef PlaybackCommands = ({
   void Function() stop,
 });
 
+/// The two live facts an adapter reads from the player, handed over at
+/// [NowPlayingPresence.bind] so the player itself never crosses the seam.
+///
+/// [playing] is the raw play/pause stream, *ungated* — unlike
+/// [NowPlayingPresence.setPlaying], which is only called while a track is
+/// current. The Windows wakelock needs the raw one: the PC must never
+/// suspend while audio is actually playing, whatever the metadata state.
+/// See docs/decisions.md, 2026-08-27. [position] is polled: MPRIS's
+/// `Position` property is read on demand, by spec, never pushed.
+typedef PlaybackSignals = ({
+  Stream<bool> playing,
+  Duration Function() position,
+});
+
 /// Tells the OS what's playing and exposes system-level transport controls
 /// for it — the SMTC/taskbar/window-title/wakelock quartet on Windows, the
 /// MPRIS D-Bus interface on Linux. The adapters used to be interleaved inline
 /// in [AudioPlayerService] behind platform branches; this is the seam that
 /// removed them. See docs/reviews/2026-08-22-architecture-review.html
 /// Candidate 06.
+///
+/// One class per platform implements this directly, OS calls inside. There
+/// is no second layer: until 2026-09-14 each adapter forwarded to a
+/// `*Service` singleton that re-implemented this same interface minus
+/// [bind] — see docs/decisions.md.
 abstract class NowPlayingPresence {
-  /// Wire transport-control callbacks, and the live player for adapters that
-  /// need it to broadcast state. Called once, right after the player is
-  /// created.
-  void bind(AudioPlayer player, PlaybackCommands commands);
+  /// Wire transport-control callbacks and the player's live signals. Called
+  /// once, right after the player is created.
+  void bind(PlaybackCommands commands, PlaybackSignals signals);
 
   /// Show [track] as now playing.
   void show(Track track);
@@ -43,7 +59,7 @@ abstract class NowPlayingPresence {
 class NoPresence implements NowPlayingPresence {
   const NoPresence();
   @override
-  void bind(AudioPlayer player, PlaybackCommands commands) {}
+  void bind(PlaybackCommands commands, PlaybackSignals signals) {}
   @override
   void show(Track track) {}
   @override
