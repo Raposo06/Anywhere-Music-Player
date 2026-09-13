@@ -622,6 +622,30 @@ The server is **Gonic** at `https://gonic.foxcore.dev` (`type: gonic`,
 1 music folder, 239 directories, 4,384 songs, full scan ~7.5 s. See
 [overview.md](overview.md) for the full measurement.
 
+### Gonic: a large playlist lists fine but 502s when opened
+
+**Symptom.** A playlist shows in Playlists with the right track count, but
+opening it fails — the app logs `PlaylistsService: loadTracks(...) failed: HTTP
+error 502`. (Before 2026-09-13 it spun forever instead; the error is shown now.)
+
+**Cause.** Two things in gonic's source, neither configurable:
+`cmd/gonic/gonic.go` builds its `http.Server` with `WriteTimeout: 5 *
+time.Second`, and `server/ctrlsubsonic/handlers_playlist.go` resolves
+`getPlaylist` one item at a time — a path lookup plus a track load, two SQLite
+queries per entry, no batching. A 4,384-entry playlist is ~9,000 queries; the
+response is still being built at 5 s, Go closes the socket, Traefik reports
+502. The app's own 15 s request timeout never gets a say.
+
+**Where the line is.** Not measured. A few hundred entries is fine in practice;
+the whole library is not. If a hand-made playlist starts doing this, split it.
+
+**Do not** try to reproduce "All Tracks" as an m3u. It was tried: gonic reads
+`<GONIC_PLAYLISTS_PATH>/<userid>/<name>.m3u` (metadata as `#GONIC-NAME:"…"`
+and `#GONIC-IS-PUBLIC:"true"` lines, then one absolute container path per
+track), and a `find /music … | sort` into `/playlists/1/all-tracks.m3u` lists
+correctly — and then hits exactly this. The Library header's Play All /
+Shuffle buttons are the replacement; see [decisions.md](decisions.md).
+
 The hosting details below described the Navidrome instance this replaced — a
 Docker service on the fox-core VPS under Coolify, with `/mnt/music` (a Hetzner
 Storage Box over CIFS) bind-mounted read-only into the container as `/music`.

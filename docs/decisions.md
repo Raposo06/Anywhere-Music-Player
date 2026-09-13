@@ -14,6 +14,56 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## "All Tracks" is two buttons in the Library header, not a playlist (2026-09-13)
+
+**Decided.** Play All and Shuffle in the Library header, acting on
+`LibraryScanner.allTracks`. No screen, no playlist-shaped object, nothing on the
+server.
+
+**Why — the history matters here.** All Tracks has been three things:
+
+1. A pinned card in the playlists grid (deleted 2026-08-30: it needed the
+   scanner injected into the playlists screen for a count, a picker exclusion,
+   had no cover, and made the header say "0 playlists" with one on screen).
+2. A Navidrome smart playlist, `all-tracks.nsp` (2026-08-30 → 2026-09-08). The
+   right answer for Navidrome: a real playlist, no app code. Gone with it.
+3. The Gonic equivalent, tried today: a generated
+   `<GONIC_PLAYLISTS_PATH>/1/all-tracks.m3u`. It lists — 4,384 tracks, correct
+   count, public — and **cannot be opened.** gonic's `http.Server` has
+   `WriteTimeout: 5s`, and `getPlaylist` resolves entries one at a time with two
+   SQLite queries each. ~9,000 queries do not finish in 5 s; Go closes the
+   socket; the app sees a 502. Not a proxy setting, not an app timeout: a
+   property of gonic. See [operations.md](operations.md).
+
+So on Gonic a whole-library *playlist* is impossible, and the 2026-09-01 entry's
+fallback — "special-case the fetch, serve it from the library cache" — would
+have meant the app recognising one particular playlist by name and treating it
+differently in fetch, editability and the picker. That is the seam (1) was
+deleted for, back again with a magic string on top.
+
+What the playlist was ever *for* is two verbs. The Library header already shows
+the track count beside refresh and search; the folder and playlist screens
+already have Play All / Shuffle. Putting the same two buttons there, over the
+list the scanner already holds, is the whole feature. The deletion test holds:
+remove them and nothing reappears elsewhere.
+
+**Not done.** A flat, searchable list of every track. Library search already
+covers tracks via `search3`, and nobody asked for the list — only for playing
+and shuffling. If it is wanted, the shape is `DesktopFolderScreen` over the
+tree's root (teach `FolderTree` to answer `''`), not a new screen.
+
+**Also fixed on the way, independent of size:** a failed `getPlaylist` used to
+spin forever — the detail screen never consulted the service's error, and
+`loadTracks` marked a playlist fetched *before* fetching and never unmarked it
+on failure, so reopening was a silent no-op. Both are tested now.
+
+**What would reverse it.** gonic batching `getPlaylist` (one query for all
+items) or lifting the write timeout — then an m3u becomes viable again, and the
+Navidrome-era argument for "a real playlist, no app code" applies. Check the
+two source locations named in operations.md before assuming either changed.
+
+---
+
 ## Android is removed; the app is desktop-only (2026-09-13)
 
 **Decided.** The Android phone and Android TV targets are gone from the tree,

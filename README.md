@@ -149,7 +149,7 @@ sudo pacman -U anywhere-music-player-*.pkg.tar.zst
 
 **Library & playback**
 - Folder-based browsing that mirrors your server's filesystem structure
-- All-tracks list with local search, reached from the top of Playlists
+- Play All / Shuffle over the whole library, from the Library header
 - Streaming with background playback, seeking, and gapless-style advance
 - Manual queue (add / remove / reorder), plus shuffle and repeat (off / all / one) — both persisted across restarts
 - ReplayGain volume normalization, attenuate-only so clipping is impossible

@@ -109,7 +109,7 @@ foxcore.dev pointing at the latest — see [operations](operations.md) and
   folder grid, docked mini player, and a full-window Now Playing with a
   permanent "Up Next" queue panel
 - Folder-based browsing that mirrors the server's filesystem structure
-- All-tracks list with local search, reached from the top of Playlists
+- Play All / Shuffle over the whole library, from the Library header
 - Streaming with background playback, seeking, and gapless-style advance
 - Manual queue (add / remove / reorder), plus shuffle and repeat
   (off / all / one), both persisted across restarts
@@ -214,10 +214,11 @@ Field coverage on song responses, which is what the client can actually rely on:
   client change.
 - **No playlists and no starred songs exist on this server.** Both features work;
   there is simply nothing in them yet. Under Navidrome, **All Tracks** was a
-  smart playlist (`all-tracks.nsp`) rather than app code — Gonic has no smart
-  playlists, its playlists are m3u files under `GONIC_PLAYLISTS_PATH` named
-  `<userid>/<name>.m3u`, so that entry is gone until an equivalent is created
-  there.
+  smart playlist (`all-tracks.nsp`). Gonic has no smart playlists, and a static
+  m3u of the whole library cannot be opened there (its HTTP server cuts any
+  response over 5 s; see [operations](operations.md)) — so "play everything"
+  is now two buttons in the Library header, not a playlist. See
+  [decisions](decisions.md), 2026-09-13.
 - **Library layout.** Gonic asks that all files in a folder belong to one album,
   and that one album not span folders. This library keeps loose tracks directly
   inside top-level category folders and browses fine regardless; the rule is
