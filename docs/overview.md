@@ -263,10 +263,10 @@ reachable on the real OS.
 
 **Remaining / known gaps:**
 - *Screen* test coverage is thin: the playlists screens, the shell, the
-  library header and Now Playing's transport are covered, but the folder
-  screen and most of Now Playing are not. The widget tests cover the
-  shortcuts, the favourite heart and the track row; `test/` otherwise covers
-  the services.
+  library header (over the real scanner and an in-memory cache) and Now
+  Playing's transport are covered, but the folder screen and most of Now
+  Playing are not. The widget tests cover the shortcuts, the favourite heart
+  and the track row; `test/` otherwise covers the services.
 - Playlists cannot be reordered — Subsonic has no reorder parameter, so it
   means rewriting the whole playlist plus a drag surface.
 - Library cache is a single file per install, wiped on logout — no per-account

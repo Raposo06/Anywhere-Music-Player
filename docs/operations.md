@@ -488,7 +488,13 @@ directly, or indirectly via `HomeScreen`'s `initState`. `flutter test`'s
 per-test timeout (10 min) is what eventually kills it; no exception, no
 useful stack trace beyond `dart:isolate _RawReceivePort._handleMessage`.
 
-**Cause:** `LibraryScanner.scan()` calls `LibraryCache.load`/`save`, which use
+**Since 2026-09-14 this only bites with the disk cache.** `LibraryScanner`
+takes a `LibraryCache`; hand it a `MemoryLibraryCache` (what
+`test/support/fake_scanner.dart`'s `scannerWithSongs` does) and there is no
+isolate — the scan still needs `runAsync` for the MockClient's futures, but
+nothing below hangs. The rest of this entry is the disk-cache story.
+
+**Cause:** `LibraryScanner.scan()` calls `DiskLibraryCache.load`/`save`, which use
 `compute()` (spawns a real isolate). `testWidgets()` runs the test body in a
 fake-async zone so animations/timers are deterministic — but a `Future`'s
 continuation stays bound to the zone it was *created* in, and a real

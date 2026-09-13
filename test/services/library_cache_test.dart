@@ -6,8 +6,13 @@ import 'package:anywhere_music_player/services/library_cache.dart';
 import 'package:anywhere_music_player/models/track.dart';
 import '../support/fake_path_provider.dart';
 
+// Covers DiskLibraryCache — the on-disk adapter, against a temp directory
+// via FakePathProviderPlatform. The seam it implements (LibraryCache) has an
+// in-memory adapter too; LibraryScanner's tests use that one, so this file
+// is the only one that needs a filesystem.
 void main() {
   late Directory tempDir;
+  const cache = DiskLibraryCache();
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('library_cache_test_');
@@ -27,14 +32,14 @@ void main() {
   );
 
   test('load returns null when no cache file exists (first launch)', () async {
-    expect(await LibraryCache.loadEntry(), isNull);
+    expect(await cache.load(), isNull);
   });
 
   test('save then load round-trips the track list', () async {
     final tracks = [track('1'), track('2'), track('3')];
 
-    await LibraryCache.save(tracks);
-    final loaded = (await LibraryCache.loadEntry())?.tracks;
+    await cache.save(tracks);
+    final loaded = (await cache.load())?.tracks;
 
     expect(loaded, isNotNull);
     expect(loaded!.map((t) => t.id), ['1', '2', '3']);
@@ -42,7 +47,7 @@ void main() {
   });
 
   test('save writes atomically: no leftover .tmp or .old file after a successful save', () async {
-    await LibraryCache.save([track('1')]);
+    await cache.save([track('1')]);
 
     final tmp = File('${tempDir.path}${Platform.pathSeparator}library_cache.tmp');
     final old = File('${tempDir.path}${Platform.pathSeparator}library_cache.old');
@@ -56,10 +61,10 @@ void main() {
     // denied") because a just-deleted path can briefly stay in a
     // pending-delete state. This is exactly the second-save scenario, where
     // a real cache file already sits at the target path.
-    await LibraryCache.save([track('1')]);
-    await LibraryCache.save([track('1'), track('2')]);
+    await cache.save([track('1')]);
+    await cache.save([track('1'), track('2')]);
 
-    final loaded = (await LibraryCache.loadEntry())?.tracks;
+    final loaded = (await cache.load())?.tracks;
     expect(loaded!.map((t) => t.id), ['1', '2']);
   });
 
@@ -75,14 +80,14 @@ void main() {
           'tracks': [track('1').toJson()],
         }));
 
-    expect(await LibraryCache.loadEntry(), isNull);
+    expect(await cache.load(), isNull);
   });
 
   test('load self-heals a corrupt cache file: deletes it and returns null', () async {
     final file = File('${tempDir.path}${Platform.pathSeparator}library_cache.json');
     await file.writeAsString('not valid json{{{');
 
-    final loaded = await LibraryCache.loadEntry();
+    final loaded = await cache.load();
 
     expect(loaded, isNull);
     expect(await file.exists(), isFalse);
@@ -95,17 +100,17 @@ void main() {
       'tracks': [track('1').toJson()],
     }));
 
-    final loaded = await LibraryCache.loadEntry();
+    final loaded = await cache.load();
 
     expect(loaded, isNull);
     expect(await file.exists(), isFalse);
   });
 
-  test('loadEntry returns when the scan that wrote the cache ran', () async {
+  test('load returns when the scan that wrote the cache ran', () async {
     final before = DateTime.now().toUtc();
-    await LibraryCache.save([track('1')]);
+    await cache.save([track('1')]);
 
-    final entry = await LibraryCache.loadEntry();
+    final entry = await cache.load();
 
     expect(entry, isNotNull);
     expect(entry!.tracks.map((t) => t.id), ['1']);
@@ -120,16 +125,16 @@ void main() {
     );
   });
 
-  test('loadEntry reports a missing scannedAt as null, not a throw', () async {
+  test('load reports a missing scannedAt as null, not a throw', () async {
     // A cache file written by a build that predates the stamp, or one whose
     // stamp got mangled. The caller reads null as "age unknown" and rescans.
     final file = File('${tempDir.path}${Platform.pathSeparator}library_cache.json');
-    await LibraryCache.save([track('1')]);
+    await cache.save([track('1')]);
     final decoded = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
     decoded['scannedAt'] = 'not a date';
     await file.writeAsString(jsonEncode(decoded));
 
-    final entry = await LibraryCache.loadEntry();
+    final entry = await cache.load();
 
     expect(entry, isNotNull);
     expect(entry!.tracks, hasLength(1));
@@ -137,14 +142,14 @@ void main() {
   });
 
   test('clear deletes the cache file', () async {
-    await LibraryCache.save([track('1')]);
-    await LibraryCache.clear();
+    await cache.save([track('1')]);
+    await cache.clear();
 
-    expect(await LibraryCache.loadEntry(), isNull);
+    expect(await cache.load(), isNull);
   });
 
   test('clear is a no-op (does not throw) when there is no cache file', () async {
-    await expectLater(LibraryCache.clear(), completes);
+    await expectLater(cache.clear(), completes);
   });
 
   test('the persisted JSON stores only the cover art id, never a URL (security)', () async {
@@ -161,7 +166,7 @@ void main() {
       createdAt: DateTime(2024),
     );
 
-    await LibraryCache.save([withCover]);
+    await cache.save([withCover]);
 
     final raw = await File(
       '${tempDir.path}${Platform.pathSeparator}library_cache.json',

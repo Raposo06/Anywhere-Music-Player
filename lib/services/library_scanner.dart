@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/track.dart';
-import '../models/folder.dart';
 import 'session_scoped.dart';
 import 'folder_tree.dart';
 import 'folder_walk.dart';
@@ -12,8 +11,12 @@ import 'library_cache.dart';
 ///
 /// The scan walks the server's own directory tree (`FolderWalk.run`) and
 /// keeps the flat list of tracks it returns; the tree here is rebuilt from
-/// their paths so that a library hydrated from the on-disk cache — which
+/// their paths so that a library hydrated from the [LibraryCache] — which
 /// stores only that flat list — browses identically to a freshly scanned one.
+///
+/// Browsing goes through [tree]. This class owns *when* the tree changes
+/// (scan, rescan, reset) and the [isScanning] / [hasInitialData] / [error]
+/// it reports around that; what the tree answers is `FolderTree`'s.
 class LibraryScanner extends SessionScoped {
   List<Track> _allTracks = [];
   FolderTree _tree = FolderTree.empty;
@@ -21,11 +24,15 @@ class LibraryScanner extends SessionScoped {
   bool _hasInitialData = false;
   String? _error;
 
-  LibraryScanner(super.api, {super.notices});
+  final LibraryCache _cache;
 
-  /// Whether this scanner has a valid API connection.
-  bool get hasApi => api != null;
+  /// [cache] is where the last scan waits between launches; the on-disk one
+  /// unless a test hands in a [MemoryLibraryCache].
+  LibraryScanner(super.api, {super.notices, LibraryCache? cache})
+    : _cache = cache ?? const DiskLibraryCache();
 
+  /// Whether a walk of the server is running — a first load or a refresh
+  /// behind data already shown; [hasInitialData] tells the two apart.
   bool get isScanning => _isScanning;
 
   /// True once we have *any* library data to display — either from the
@@ -38,7 +45,12 @@ class LibraryScanner extends SessionScoped {
   /// browsing carries on and the failure goes to [notices].
   String? get error => _error;
 
+  /// Every scanned track, flat. [tree] is the same tracks, browsable.
   List<Track> get allTracks => _allTracks;
+
+  /// The browsable library — folders, their contents, search, and the
+  /// scanned copy of a track by id. Rebuilt whole on every scan.
+  FolderTree get tree => _tree;
 
   /// How long a cache read counts as fresh. Inside this window a cold start
   /// renders from disk and stops there — no phase 2 — because the walk costs
@@ -79,7 +91,7 @@ class LibraryScanner extends SessionScoped {
       // Loading the cache no longer needs a live api client (stream/cover URLs
       // are resolved at the point of use, not recomputed here).
       if (!_hasInitialData) {
-        final cached = await LibraryCache.loadEntry();
+        final cached = await _cache.load();
         if (cached != null && cached.tracks.isNotEmpty) {
           debugPrint(
             'LibraryScanner: hydrated ${cached.tracks.length} tracks from cache',
@@ -117,7 +129,7 @@ class LibraryScanner extends SessionScoped {
 
       // Persist for the next cold start. Fire-and-forget; failures don't
       // affect the user-visible state.
-      unawaited(LibraryCache.save(tracks));
+      unawaited(_cache.save(tracks));
     } catch (e) {
       debugPrint('LibraryScanner: error scanning library: $e');
       if (_hasInitialData) {
@@ -152,34 +164,15 @@ class LibraryScanner extends SessionScoped {
     await scan(force: true);
   }
 
-  /// Reset all in-memory state and delete the on-disk cache. Called from
-  /// logout flows so the next login starts with a clean library.
+  /// Reset all in-memory state and clear the cache. Called from logout
+  /// flows so the next login starts with a clean library.
   Future<void> resetAndClearCache() async {
     _allTracks = [];
     _tree = FolderTree.empty;
     _hasInitialData = false;
     _isScanning = false;
     _error = null;
-    await LibraryCache.clear();
+    await _cache.clear();
     notifyListeners();
   }
-
-  /// The browsable tree built from [allTracks]. Prefer this over the
-  /// forwarders below in new code; they exist so the screens didn't all have
-  /// to change at once.
-  FolderTree get tree => _tree;
-
-  /// The scanned copy of [id] — the one carrying a real library path — or
-  /// null. Lets a track that arrived by another route (a playlist fetch,
-  /// whose paths are tag-based) be resolved back to its canonical form.
-  Track? trackById(String id) => _tree.trackById(id);
-  bool isFlattenedRoot(String folderPath) => _tree.isFlattenedRoot(folderPath);
-  List<Folder> getTopLevelFolders() => _tree.topLevelFolders();
-  List<Track> getRootTracks() => _tree.rootTracks();
-  ({List<Folder> folders, List<Track> tracks}) getFolderContents(
-    String folderPath,
-  ) => _tree.contentsOf(folderPath);
-  List<Track> getAllTracksInFolder(String folderPath) =>
-      _tree.allTracksUnder(folderPath);
-  List<Folder> searchFolders(String query) => _tree.searchFolders(query);
 }

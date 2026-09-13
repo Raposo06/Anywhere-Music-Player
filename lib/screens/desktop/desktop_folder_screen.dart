@@ -97,11 +97,11 @@ class _DesktopFolderScreenState extends State<DesktopFolderScreen> {
   void _loadContents() {
     if (!mounted) return;
     final scanner = context.read<LibraryScanner>();
-    final contents = scanner.getFolderContents(widget.folderPath);
+    final contents = scanner.tree.contentsOf(widget.folderPath);
     setState(() {
       _subfolders = contents.folders;
       _tracks = contents.tracks;
-      _allTracks = scanner.getAllTracksInFolder(widget.folderPath);
+      _allTracks = scanner.tree.allTracksUnder(widget.folderPath);
       _totalTrackCount = _allTracks.length;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _followCurrentTrack());
@@ -178,7 +178,7 @@ class _DesktopFolderScreenState extends State<DesktopFolderScreen> {
   /// children are surfaced directly on the library screen) goes home instead,
   /// since a folder screen for it would just duplicate the library.
   void _openPath(String fullPath, String displayName) {
-    if (context.read<LibraryScanner>().isFlattenedRoot(fullPath)) {
+    if (context.read<LibraryScanner>().tree.isFlattenedRoot(fullPath)) {
       _goHome();
       return;
     }
@@ -339,7 +339,7 @@ class _Breadcrumb extends StatelessWidget {
           : '$accumulated/${segments[i]}';
       // The auto-flattened root is already what "Library" points at —
       // rendering it again would be two crumbs for one destination.
-      if (scanner.isFlattenedRoot(accumulated)) continue;
+      if (scanner.tree.isFlattenedRoot(accumulated)) continue;
 
       final isLast = i == segments.length - 1;
       final path = accumulated;

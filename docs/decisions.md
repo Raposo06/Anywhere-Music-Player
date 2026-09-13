@@ -14,6 +14,51 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Browsing goes through `scanner.tree`; the cache is a seam with two adapters (2026-09-14)
+
+**Decided.** `LibraryScanner`'s seven forwarders (`getFolderContents`,
+`getAllTracksInFolder`, `isFlattenedRoot`, `getTopLevelFolders`,
+`getRootTracks`, `searchFolders`, `trackById`) and `hasApi` are deleted;
+the ten call sites read `scanner.tree.contentsOf(…)` and so on. The
+scanner owns *when* the tree changes and the three facts around that
+(`isScanning`, `hasInitialData`, `error`); what the tree answers is
+`FolderTree`'s. `LibraryCache` is now an interface — `load`, `save`,
+`clear` — with `DiskLibraryCache` (the former static class, unchanged
+inside, rename-aside write and all) and `MemoryLibraryCache`. The scanner
+takes one: `LibraryScanner(api, {notices, cache})`, disk by default.
+
+**Why.** C02 (2026-09-09, below) extracted `FolderTree` and left the
+forwarders "so the screens didn't all have to change at once". Four days
+later `scanner.tree` had zero callers and the forwarders eight: transitional
+glue that never transitioned, and a second copy of `FolderTree`'s interface
+on the scanner. Deleted; the callers changed in one sed.
+
+The static cache was the real cost. With no way to hand the scanner a
+cache, its only test seam was the filesystem: `library_scanner_test.dart`
+installed a `FakePathProviderPlatform`, wrote real files to a temp dir,
+polled for the unawaited save to land, retried the teardown delete twenty
+times, and edited JSON on disk to age a `scannedAt` stamp. The screen tests
+paid too — `compute()` in the disk cache spawns an isolate that
+`testWidgets`' fake-async zone never resolves (the trap in operations.md),
+which is why `desktop_library_screen_test.dart` subclassed the scanner to
+override `allTracks` rather than run it. Now: the scanner tests set
+`cache.entry` and read it back, no disk, no polling; the library screen test
+drives the real scanner over the fake server with a memory cache. Two
+adapters, both used — a real seam by the codebase-design rule.
+
+**What was considered and not done.** A `LibraryPhase` (empty / scanning /
+ready / failed) replacing the three booleans — the review card said "five",
+there are three, and the refresh button needs `isScanning` *independently*
+of whether data is shown; a sealed type plus a separate `isRefreshing` is
+not fewer concepts. Making the cache per-account — unchanged, still the
+single-file-per-install noted in overview.md's gaps.
+
+**What would reverse it.** Nothing about the forwarders. The cache seam
+would go back to one adapter only if the in-memory one stopped being used
+in tests — at which point delete it and the interface with it.
+
+---
+
 ## One presence adapter per platform; the seam hands over signals, not the player (2026-09-14)
 
 **Decided.** `WindowsPresence` and `LinuxPresence` implement

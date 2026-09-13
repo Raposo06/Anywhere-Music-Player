@@ -12,17 +12,7 @@ import 'package:anywhere_music_player/services/favourites_service.dart';
 import 'package:anywhere_music_player/services/library_scanner.dart';
 import 'package:anywhere_music_player/widgets/play_actions.dart';
 import '../support/fake_auth.dart';
-import '../support/fixtures.dart';
-
-/// A scanner with a fixed library. The real one fills [allTracks] from a
-/// scan that testWidgets' fake-async zone never resolves, and the header
-/// only reads the list — so overriding the getter is enough.
-class _FakeScanner extends LibraryScanner {
-  @override
-  final List<Track> allTracks;
-
-  _FakeScanner(this.allTracks) : super(null);
-}
+import '../support/fake_scanner.dart';
 
 /// Records what the screen asks to play instead of loading it. A real load
 /// leaves just_audio's position poll and load timeout pending past the end
@@ -53,10 +43,11 @@ void main() {
   late AuthService auth;
   late int playerOpened;
 
+  // What the fake server browses to; the scanner walks it for real.
   final library = [
-    sampleTrack(id: '1', title: 'One'),
-    sampleTrack(id: '2', title: 'Two'),
-    sampleTrack(id: '3', title: 'Three'),
+    browseSong(id: '1', path: 'Rock/One.mp3'),
+    browseSong(id: '2', path: 'Rock/Two.mp3'),
+    browseSong(id: '3', path: 'Soul/Three.mp3'),
   ];
 
   setUp(() async {
@@ -77,16 +68,20 @@ void main() {
     }
   }
 
-  Future<void> pump(WidgetTester tester, List<Track> tracks) async {
+  Future<void> pump(
+    WidgetTester tester,
+    List<Map<String, dynamic>> songs,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final scanner = scannerWithSongs(songs);
+    await tester.runAsync(scanner.scan);
 
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          ChangeNotifierProvider<LibraryScanner>(
-            create: (_) => _FakeScanner(tracks),
-          ),
+          ChangeNotifierProvider<LibraryScanner>.value(value: scanner),
           ChangeNotifierProvider<AudioPlayerService>.value(value: player),
           ChangeNotifierProvider<AuthService>.value(value: auth),
           ChangeNotifierProvider<FavouritesService>(
@@ -132,21 +127,25 @@ void main() {
     await pump(tester, const []);
 
     expect(
-      tester.widget<ElevatedButton>(
-        find.ancestor(
-          of: find.text('Play All'),
-          matching: find.byType(ElevatedButton),
-        ),
-      ).enabled,
+      tester
+          .widget<ElevatedButton>(
+            find.ancestor(
+              of: find.text('Play All'),
+              matching: find.byType(ElevatedButton),
+            ),
+          )
+          .enabled,
       isFalse,
     );
     expect(
-      tester.widget<OutlinedButton>(
-        find.ancestor(
-          of: find.text('Shuffle'),
-          matching: find.byType(OutlinedButton),
-        ),
-      ).enabled,
+      tester
+          .widget<OutlinedButton>(
+            find.ancestor(
+              of: find.text('Shuffle'),
+              matching: find.byType(OutlinedButton),
+            ),
+          )
+          .enabled,
       isFalse,
     );
   });

@@ -85,7 +85,7 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
       final canonicalById = {for (final t in scanner.allTracks) t.id: t};
 
       setState(() {
-        _searchFolders = scanner.searchFolders(query);
+        _searchFolders = scanner.tree.searchFolders(query);
         _searchTracks = result.songs
             .map((t) => canonicalById[t.id] ?? t)
             .toList();
@@ -111,7 +111,7 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
   void _playFolder(Folder folder) {
     final id = folder.id ?? folder.folderPath;
     if (id.isEmpty) return;
-    final tracks = context.read<LibraryScanner>().getAllTracksInFolder(id);
+    final tracks = context.read<LibraryScanner>().tree.allTracksUnder(id);
     if (tracks.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No tracks found in this folder')),
@@ -164,7 +164,7 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
     if (!scanner.hasInitialData) {
       return scanner.isScanning ? 'Scanning library…' : '';
     }
-    final folders = scanner.getTopLevelFolders().length;
+    final folders = scanner.tree.topLevelFolders().length;
     final tracks = scanner.allTracks.length;
     return '$folders folders · ${_thousands(tracks)} tracks';
   }
@@ -187,8 +187,8 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
       return DesktopErrorState(message: error, onRetry: scanner.rescan);
     }
 
-    final folders = scanner.getTopLevelFolders();
-    final rootTracks = scanner.getRootTracks();
+    final folders = scanner.tree.topLevelFolders();
+    final rootTracks = scanner.tree.rootTracks();
 
     if (folders.isEmpty && rootTracks.isEmpty) {
       return const Center(

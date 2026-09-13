@@ -10,7 +10,7 @@ import '../services/library_scanner.dart';
 /// and its tap-through to the folder — consistent regardless of how playback
 /// started.
 Track canonicalTrack(Track playing, LibraryScanner scanner) =>
-    scanner.trackById(playing.id) ?? playing;
+    scanner.tree.trackById(playing.id) ?? playing;
 
 /// The folder path to show on Now Playing: the track's real path in full.
 ///

@@ -1,13 +1,10 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:anywhere_music_player/services/library_cache.dart';
 import 'package:anywhere_music_player/services/library_scanner.dart';
 import 'package:anywhere_music_player/services/subsonic_api_service.dart';
 import '../support/fake_gonic.dart';
-import '../support/fake_path_provider.dart';
 
 Map<String, dynamic> _song({
   required String id,
@@ -21,27 +18,15 @@ Map<String, dynamic> _song({
   album: 'Some Album',
 );
 
+// Covers LibraryScanner: the cache-first, two-phase scan and what it reports
+// around it. The cache is a MemoryLibraryCache — LibraryCache's in-memory
+// adapter — so nothing here touches a filesystem or an isolate, and a test
+// can put the cached entry either side of the freshness window by setting
+// its scannedAt. The disk adapter has its own tests in library_cache_test.
 void main() {
-  late Directory tempDir;
+  late MemoryLibraryCache cache;
 
-  setUp(() async {
-    tempDir = await Directory.systemTemp.createTemp('library_scanner_test_');
-    PathProviderPlatform.instance = FakePathProviderPlatform(tempDir.path);
-  });
-
-  tearDown(() async {
-    // scan() fires LibraryCache.save() without awaiting it (by design — see
-    // library_cache.dart), so it can still be mid-write here. Retry the
-    // cleanup instead of racing it.
-    for (var attempt = 0; attempt < 20; attempt++) {
-      try {
-        if (await tempDir.exists()) await tempDir.delete(recursive: true);
-        return;
-      } on FileSystemException {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-    }
-  });
+  setUp(() => cache = MemoryLibraryCache());
 
   SubsonicApiService apiWith(List<Map<String, dynamic>> songs) => SubsonicApiService(
     serverUrl: 'https://gonic.example.com',
@@ -50,13 +35,15 @@ void main() {
     httpClient: gonicBrowseClient(songs),
   );
 
+  LibraryScanner scannerWith(List<Map<String, dynamic>> songs) =>
+      LibraryScanner(apiWith(songs), cache: cache);
+
   group('with no api connection', () {
-    test('hasApi is false and scan() sets a fatal error', () async {
-      final scanner = LibraryScanner(null);
+    test('scan() sets a fatal error', () async {
+      final scanner = LibraryScanner(null, cache: cache);
 
       await scanner.scan();
 
-      expect(scanner.hasApi, isFalse);
       expect(scanner.error, isNotNull);
       expect(scanner.hasInitialData, isFalse);
     });
@@ -64,7 +51,7 @@ void main() {
 
   group('scan()', () {
     test('walks the server tree and rebuilds it from the paths it descended', () async {
-      final scanner = LibraryScanner(apiWith([
+      final scanner = scannerWith(([
         _song(id: '1', path: 'Anime/Naruto/01 - Opening.mp3'),
         _song(id: '2', path: 'Rock/Album/02 - Song.mp3'),
       ]));
@@ -75,12 +62,12 @@ void main() {
       expect(scanner.error, isNull);
       expect(scanner.allTracks, hasLength(2));
 
-      final topLevel = scanner.getTopLevelFolders().map((f) => f.folderPath).toList();
+      final topLevel = scanner.tree.topLevelFolders().map((f) => f.folderPath).toList();
       expect(topLevel, ['Anime', 'Rock']); // alphabetically sorted
     });
 
     test('populates folderName on scanned tracks (was left empty by the old inline parser)', () async {
-      final scanner = LibraryScanner(apiWith([
+      final scanner = scannerWith(([
         _song(id: '1', path: 'Anime/Naruto/01 - Opening.mp3'),
       ]));
 
@@ -90,26 +77,26 @@ void main() {
     });
 
     test('trackById returns the scanned copy, with its real path', () async {
-      final scanner = LibraryScanner(apiWith([
+      final scanner = scannerWith(([
         _song(id: '42', path: 'SOUNDTRACKS/Movies/HP/01 - Hedwig.flac'),
       ]));
       await scanner.scan();
 
-      expect(scanner.trackById('42')?.folderPath, 'SOUNDTRACKS/Movies/HP');
-      expect(scanner.trackById('nope'), isNull);
+      expect(scanner.tree.trackById('42')?.folderPath, 'SOUNDTRACKS/Movies/HP');
+      expect(scanner.tree.trackById('nope'), isNull);
     });
 
     test('getFolderContents drills into a nested subfolder', () async {
-      final scanner = LibraryScanner(apiWith([
+      final scanner = scannerWith(([
         _song(id: '1', path: 'Anime/Naruto/01 - Opening.mp3'),
       ]));
       await scanner.scan();
 
-      final animeContents = scanner.getFolderContents('Anime');
+      final animeContents = scanner.tree.contentsOf('Anime');
       expect(animeContents.folders.map((f) => f.folderPath), ['Anime/Naruto']);
       expect(animeContents.tracks, isEmpty);
 
-      final narutoContents = scanner.getFolderContents('Anime/Naruto');
+      final narutoContents = scanner.tree.contentsOf('Anime/Naruto');
       expect(narutoContents.tracks, hasLength(1));
       expect(narutoContents.tracks.single.id, '1');
     });
@@ -118,45 +105,45 @@ void main() {
       // "Anime" has no subfolders of its own here (its children map stays
       // empty), so it doesn't trigger the single-folder auto-flatten below —
       // that's covered separately.
-      final scanner = LibraryScanner(apiWith([
+      final scanner = scannerWith(([
         _song(id: '1', path: 'loose-track.mp3'),
         _song(id: '2', path: 'Anime/song.mp3'),
       ]));
       await scanner.scan();
 
-      expect(scanner.getRootTracks().map((t) => t.id), ['1']);
+      expect(scanner.tree.rootTracks().map((t) => t.id), ['1']);
     });
 
     test('a single top-level folder with subfolders is auto-flattened', () async {
       // Only one root folder ("Library") whose children get promoted to
       // top level, so the home screen doesn't show a redundant single entry.
-      final scanner = LibraryScanner(apiWith([
+      final scanner = scannerWith(([
         _song(id: '1', path: 'Library/Anime/song.mp3'),
         _song(id: '2', path: 'Library/Rock/song.mp3'),
       ]));
       await scanner.scan();
 
-      final topLevel = scanner.getTopLevelFolders().map((f) => f.folderPath).toList();
+      final topLevel = scanner.tree.topLevelFolders().map((f) => f.folderPath).toList();
       expect(topLevel, ['Library/Anime', 'Library/Rock']);
-      expect(scanner.isFlattenedRoot('Library'), isTrue);
+      expect(scanner.tree.isFlattenedRoot('Library'), isTrue);
     });
 
     test('searchFolders matches on leaf name only, case-insensitively', () async {
-      final scanner = LibraryScanner(apiWith([
+      final scanner = scannerWith(([
         _song(id: '1', path: 'Anime/Naruto Shippuden/song.mp3'),
         _song(id: '2', path: 'Rock/Naruto Tribute Band/song.mp3'),
       ]));
       await scanner.scan();
 
-      final results = scanner.searchFolders('naruto');
+      final results = scanner.tree.searchFolders('naruto');
       expect(results, hasLength(2));
     });
 
     test('searchFolders returns nothing for a blank query', () async {
-      final scanner = LibraryScanner(apiWith([_song(id: '1', path: 'A/song.mp3')]));
+      final scanner = scannerWith(([_song(id: '1', path: 'A/song.mp3')]));
       await scanner.scan();
 
-      expect(scanner.searchFolders('   '), isEmpty);
+      expect(scanner.tree.searchFolders('   '), isEmpty);
     });
 
     test('a scan failure with no prior data sets a fatal error, not a soft one', () async {
@@ -167,6 +154,7 @@ void main() {
           password: 'p',
           httpClient: MockClient((request) async => http.Response('boom', 500)),
         ),
+        cache: cache,
       );
 
       await scanner.scan();
@@ -178,38 +166,31 @@ void main() {
   });
 
   group('cache freshness', () {
-    File cacheFile() =>
-        File('${tempDir.path}${Platform.pathSeparator}library_cache.json');
-
-    /// scan() saves the cache without awaiting it, so poll for the file
-    /// rather than racing it (same reason as the tearDown above).
+    /// scan() saves without awaiting (by design — see library_cache.dart),
+    /// so give the save its microtask before reading the entry back.
     Future<void> waitForCache() async {
-      for (var attempt = 0; attempt < 50; attempt++) {
-        if (await cacheFile().exists()) return;
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-      fail('cache file was never written');
+      await Future<void>.delayed(Duration.zero);
+      expect(cache.entry, isNotNull, reason: 'cache was never written');
     }
 
-    /// Rewrite the cache's scannedAt stamp to [age] ago, so a test can put a
-    /// cache either side of LibraryScanner.cacheFreshFor without waiting.
-    Future<void> ageCacheBy(Duration age) async {
-      final file = cacheFile();
-      final decoded = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      decoded['scannedAt'] =
-          DateTime.now().toUtc().subtract(age).toIso8601String();
-      await file.writeAsString(jsonEncode(decoded));
+    /// Restamp the cached entry to [age] ago, so a test can put it either
+    /// side of LibraryScanner.cacheFreshFor without waiting.
+    void ageCacheBy(Duration age) {
+      cache.entry = (
+        tracks: cache.entry!.tracks,
+        scannedAt: DateTime.now().toUtc().subtract(age),
+      );
     }
 
     test('a fresh cache renders from disk and skips the walk', () async {
       final songs = [_song(id: '1', path: 'Anime/song.mp3')];
-      await LibraryScanner(apiWith(songs)).scan();
+      await scannerWith(songs).scan();
       await waitForCache();
 
       // The server gains a track. A launch inside the freshness window must
       // not see it — that's the whole point: no walk, no 200-odd requests.
       songs.add(_song(id: '2', path: 'Rock/song.mp3'));
-      final second = LibraryScanner(apiWith(songs));
+      final second = scannerWith(songs);
       await second.scan();
 
       expect(second.allTracks.map((t) => t.id), ['1']);
@@ -219,12 +200,12 @@ void main() {
 
     test('a cache older than cacheFreshFor still walks the server', () async {
       final songs = [_song(id: '1', path: 'Anime/song.mp3')];
-      await LibraryScanner(apiWith(songs)).scan();
+      await scannerWith(songs).scan();
       await waitForCache();
-      await ageCacheBy(LibraryScanner.cacheFreshFor + const Duration(minutes: 1));
+      ageCacheBy(LibraryScanner.cacheFreshFor + const Duration(minutes: 1));
 
       songs.add(_song(id: '2', path: 'Rock/song.mp3'));
-      final second = LibraryScanner(apiWith(songs));
+      final second = scannerWith(songs);
       await second.scan();
 
       expect(second.allTracks.map((t) => t.id), unorderedEquals(['1', '2']));
@@ -232,15 +213,12 @@ void main() {
 
     test('a cache with no scannedAt stamp counts as stale', () async {
       final songs = [_song(id: '1', path: 'Anime/song.mp3')];
-      await LibraryScanner(apiWith(songs)).scan();
+      await scannerWith(songs).scan();
       await waitForCache();
-      final decoded =
-          jsonDecode(await cacheFile().readAsString()) as Map<String, dynamic>;
-      decoded.remove('scannedAt');
-      await cacheFile().writeAsString(jsonEncode(decoded));
+      cache.entry = (tracks: cache.entry!.tracks, scannedAt: null);
 
       songs.add(_song(id: '2', path: 'Rock/song.mp3'));
-      final second = LibraryScanner(apiWith(songs));
+      final second = scannerWith(songs);
       await second.scan();
 
       expect(second.allTracks.map((t) => t.id), unorderedEquals(['1', '2']));
@@ -248,11 +226,11 @@ void main() {
 
     test('rescan() walks the server however fresh the cache is', () async {
       final songs = [_song(id: '1', path: 'Anime/song.mp3')];
-      await LibraryScanner(apiWith(songs)).scan();
+      await scannerWith(songs).scan();
       await waitForCache();
 
       songs.add(_song(id: '2', path: 'Rock/song.mp3'));
-      final second = LibraryScanner(apiWith(songs));
+      final second = scannerWith(songs);
       await second.rescan();
 
       expect(second.allTracks.map((t) => t.id), unorderedEquals(['1', '2']));
@@ -261,7 +239,7 @@ void main() {
 
   group('resetAndClearCache', () {
     test('clears in-memory tracks and folder state', () async {
-      final scanner = LibraryScanner(apiWith([
+      final scanner = scannerWith(([
         _song(id: '1', path: 'Anime/Naruto/song.mp3'),
       ]));
       await scanner.scan();
@@ -271,7 +249,8 @@ void main() {
 
       expect(scanner.allTracks, isEmpty);
       expect(scanner.hasInitialData, isFalse);
-      expect(scanner.getTopLevelFolders(), isEmpty);
+      expect(scanner.tree.topLevelFolders(), isEmpty);
+      expect(cache.entry, isNull);
     });
   });
 }

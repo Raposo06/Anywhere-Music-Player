@@ -10,6 +10,41 @@ import '../models/track.dart';
 /// "age unknown", never as "just scanned".
 typedef CachedLibrary = ({List<Track> tracks, DateTime? scannedAt});
 
+/// Where the scanned library waits between launches, so the first frame can
+/// render from it while a fresh scan runs. `LibraryScanner` is handed one;
+/// production gives it [DiskLibraryCache], tests [MemoryLibraryCache].
+abstract class LibraryCache {
+  /// The cached tracks plus when they were scanned, or null when there is
+  /// no usable cache — never a partial or stale-schema one.
+  Future<CachedLibrary?> load();
+
+  /// Remember [tracks] as scanned now. Never throws: the cache is an
+  /// optimisation, not a source of truth.
+  Future<void> save(List<Track> tracks);
+
+  /// Forget everything. Called on logout.
+  Future<void> clear();
+}
+
+/// The cache tests want: no disk, no isolate, and a [scannedAt] a test can
+/// set to put the entry either side of the freshness window.
+class MemoryLibraryCache implements LibraryCache {
+  CachedLibrary? entry;
+  int saves = 0;
+
+  @override
+  Future<CachedLibrary?> load() async => entry;
+
+  @override
+  Future<void> save(List<Track> tracks) async {
+    saves++;
+    entry = (tracks: List.of(tracks), scannedAt: DateTime.now().toUtc());
+  }
+
+  @override
+  Future<void> clear() async => entry = null;
+}
+
 /// On-disk cache of the user's library. Stores a flat list of [Track]s as
 /// JSON so the home screen can render instantly on cold start while a fresh
 /// scan runs in the background.
@@ -24,10 +59,15 @@ typedef CachedLibrary = ({List<Track> tracks, DateTime? scannedAt});
 ///   [save] for why it isn't a plain delete-then-rename.
 /// - Self-healing on corruption: [load] catches parse errors, deletes the
 ///   bad file, and returns null so the caller falls through to a fresh scan.
-class LibraryCache {
-  static const _fileName  = 'library_cache.json';
-  static const _tmpName   = 'library_cache.tmp';
-  static const _oldName   = 'library_cache.old';
+/// - JSON runs on a background isolate via `compute` both ways: a large
+///   library's file is several MB, and a synchronous decode or encode on the
+///   main thread visibly stalls the frame.
+class DiskLibraryCache implements LibraryCache {
+  const DiskLibraryCache();
+
+  static const _fileName = 'library_cache.json';
+  static const _tmpName = 'library_cache.tmp';
+  static const _oldName = 'library_cache.old';
   // Bumped to 2 when stream_url was dropped from the serialized schema, to
   // 3 when cover_art_url (a full URL with a live auth token+salt baked in)
   // was replaced by the bare cover_art_id — storing the resolved URL meant a
@@ -45,7 +85,7 @@ class LibraryCache {
   // tree until the next scan, which is the exact bug the change fixes.
   // Old caches are discarded on load (version mismatch) and rebuilt from a
   // fresh scan.
-  static const _version   = 6;
+  static const _version = 6;
 
   /// Load the cached track list, plus the `scannedAt` stamp it was written
   /// with so a caller can decide whether the cache is fresh enough to skip
@@ -57,7 +97,8 @@ class LibraryCache {
   /// JSON decode runs on a background isolate via [compute] — for a large
   /// library the cache file is several MB, and a synchronous decode on the
   /// main thread visibly stalls the first frame on cold start.
-  static Future<CachedLibrary?> loadEntry() async {
+  @override
+  Future<CachedLibrary?> load() async {
     try {
       final file = await _cacheFile();
       if (!await file.exists()) return null;
@@ -100,7 +141,8 @@ class LibraryCache {
   /// guarantee — not strictly atomic, but never corrupting). Errors are
   /// logged but never thrown — the cache is an optimization, not a source
   /// of truth.
-  static Future<void> save(List<Track> tracks) async {
+  @override
+  Future<void> save(List<Track> tracks) async {
     try {
       final dir = await getApplicationSupportDirectory();
       final tmp = File('${dir.path}${Platform.pathSeparator}$_tmpName');
@@ -138,7 +180,8 @@ class LibraryCache {
   }
 
   /// Delete the cache file. Called on logout.
-  static Future<void> clear() async {
+  @override
+  Future<void> clear() async {
     try {
       final file = await _cacheFile();
       if (await file.exists()) await file.delete();
@@ -147,7 +190,7 @@ class LibraryCache {
     }
   }
 
-  static Future<File> _cacheFile() async {
+  Future<File> _cacheFile() async {
     final dir = await getApplicationSupportDirectory();
     return File('${dir.path}${Platform.pathSeparator}$_fileName');
   }
