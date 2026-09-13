@@ -5,7 +5,6 @@ import '../models/playlist.dart';
 import '../models/track.dart';
 import '../services/library_scanner.dart';
 import '../services/playlists_service.dart';
-import '../utils/platform_detector.dart';
 
 /// Searches the library and files songs into [playlist], without leaving it.
 ///
@@ -28,32 +27,15 @@ class AddSongsToPlaylist {
   /// Shows the picker. Returns the number of tracks added.
   static Future<int> show(BuildContext context, Playlist playlist) async {
     final body = _AddSongsBody(playlist: playlist);
-    final added = PlatformDetector.isDesktop
-        ? await showDialog<int>(
-            context: context,
-            builder: (_) => Dialog(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: 560,
-                  maxHeight: 640,
-                ),
-                child: body,
-              ),
-            ),
-          )
-        : await showModalBottomSheet<int>(
-            context: context,
-            isScrollControlled: true,
-            showDragHandle: true,
-            builder: (_) => SafeArea(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-                ),
-                child: body,
-              ),
-            ),
-          );
+    final added = await showDialog<int>(
+      context: context,
+      builder: (_) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 640),
+          child: body,
+        ),
+      ),
+    );
     return added ?? 0;
   }
 }

@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
@@ -23,11 +22,9 @@ import 'services/playlists_service.dart';
 import 'services/session_scoped.dart';
 import 'services/subsonic_api_service.dart';
 import 'screens/login_screen.dart';
-import 'screens/main_screen.dart';
-import 'screens/tv_home_screen.dart';
+import 'screens/desktop/desktop_shell.dart';
 import 'theme/app_theme.dart';
 import 'widgets/desktop/window_chrome.dart';
-import 'utils/platform_detector.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -80,9 +77,6 @@ void main() async {
   }
 
   await dotenv.load(fileName: '.env');
-
-  // Initialize native platform detection (Android TV detection)
-  await PlatformDetector.initialize();
 
   // Mints stream/cover-art URLs on demand from the *current* authenticated
   // session (see StreamUrlResolver) — a stable reference that outlives any
@@ -327,7 +321,6 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> {
   bool _initialized = false;
-  bool _screenSizeDetected = false;
 
   @override
   void initState() {
@@ -338,34 +331,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
         await context.read<AuthService>().initialize();
       }
       if (mounted) setState(() => _initialized = true);
-      // Request notification permission for lock screen controls (Android 13+)
-      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-        _requestNotificationPermission();
-      }
     });
-  }
-
-  Future<void> _requestNotificationPermission() async {
-    try {
-      final status = await Permission.notification.request();
-      debugPrint('Notification permission: $status');
-    } catch (e) {
-      debugPrint('Permission request failed: $e');
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
-
-    // Initialize platform detection with screen size (fallback heuristic).
-    // Only needs to run once — this build method re-runs on every auth
-    // state change, and the detection result never changes at runtime.
-    if (!_screenSizeDetected) {
-      _screenSizeDetected = true;
-      final size = MediaQuery.of(context).size;
-      PlatformDetector.initializeWithScreenSize(size.width, size.height);
-    }
 
     // Show loading screen only during initial auth check (not during login)
     if (!_initialized) {
@@ -376,13 +347,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
       );
     }
 
-    // Show appropriate screen based on auth state and platform
     if (!authService.isAuthenticated) {
       return const DesktopWindowFrame(child: LoginScreen());
     }
-
-    return PlatformDetector.isAndroidTV
-        ? const TvHomeScreen()
-        : const MainScreen();
+    return const DesktopShell();
   }
 }

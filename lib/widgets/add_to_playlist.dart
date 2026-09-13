@@ -5,7 +5,6 @@ import '../models/playlist.dart';
 import '../models/track.dart';
 import '../services/auth_service.dart';
 import '../services/playlists_service.dart';
-import '../utils/platform_detector.dart';
 
 /// Picks a playlist to add [tracks] to, or creates one for them.
 ///
@@ -26,28 +25,12 @@ class AddToPlaylist {
     // the list, and it may be opened before the Playlists tab ever was.
     context.read<PlaylistsService>().load();
 
-    final body = _AddToPlaylistBody(tracks: tracks);
-    if (PlatformDetector.isDesktop) {
-      return showDialog<String>(
-        context: context,
-        builder: (_) => Dialog(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420, maxHeight: 520),
-            child: body,
-          ),
-        ),
-      );
-    }
-    return showModalBottomSheet<String>(
+    return showDialog<String>(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => SafeArea(
+      builder: (_) => Dialog(
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.7,
-          ),
-          child: body,
+          constraints: const BoxConstraints(maxWidth: 420, maxHeight: 520),
+          child: _AddToPlaylistBody(tracks: tracks),
         ),
       ),
     );

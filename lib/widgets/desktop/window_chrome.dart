@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
-import '../../utils/platform_detector.dart';
 
 /// The app's name as shown to a person — in the title bar and the taskbar.
 ///
@@ -24,7 +23,6 @@ class DesktopWindowFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!PlatformDetector.isDesktop) return child;
     return ColoredBox(
       color: AppColors.background,
       child: Column(
