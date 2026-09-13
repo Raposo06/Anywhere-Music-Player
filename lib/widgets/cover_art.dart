@@ -9,9 +9,8 @@ import '../services/stream_url_resolver.dart';
 ///
 /// Hides the facts every render site used to restate by hand: multiplying
 /// [size] by the device pixel ratio and passing that same rounded value to
-/// both the URL and the cache key (so they can't fall out of step — the same
-/// failure mode docs/decisions.md documents for the Android stream cache,
-/// keying an image cache on a URL that silently changes), the null check,
+/// both the URL and the cache key (so they can't fall out of step — keying an
+/// image cache on a URL whose auth salt silently changes), the null check,
 /// the rounded clip, and the fallback icon for the loading/error states.
 /// Resolves the URL itself via the live [AuthService.apiService] — callers
 /// only ever need to say what and how big.

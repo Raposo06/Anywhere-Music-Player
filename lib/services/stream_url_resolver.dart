@@ -9,8 +9,8 @@ import '../models/cover_art_ref.dart';
 /// the model had to import the transport just to mint it. Consulting a
 /// resolver at the moment of use (playback, or a cover render) instead
 /// reverses that dependency and mints a fresh URL each time — which is what
-/// the auth scheme already assumes (see the Android stream-cache decision:
-/// keyed on track id because the salt rotates on every request).
+/// the auth scheme already assumes: the salt rotates on every request, so a
+/// URL is never a stable key for anything.
 ///
 /// See docs/reviews/2026-08-22-architecture-review.html Candidate 07, and
 /// docs/decisions.md "Cached cover art stores the id, not the resolved URL"

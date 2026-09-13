@@ -15,9 +15,7 @@ class AuthService with ChangeNotifier {
 
   /// Use flutter_secure_storage for credentials (encrypted on-device).
   /// Falls back to SharedPreferences for non-sensitive data (server URL).
-  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   // Test-only seam: lets tests substitute a SubsonicApiService backed by a
   // fake http.Client instead of one that hits the network. Production call

@@ -38,9 +38,8 @@ typedef ScrubBarView = ({
 /// visible — the `Slider`'s theme, the label text styles, the column spacing —
 /// stays with the caller, via [builder].
 ///
-/// Seeking works on every platform (Android plays from a seekable cache file),
-/// so the only gate is whether the track's length is known. Pass a null
-/// [onSeek] for a display-only bar (the TV remote has no scrub gesture).
+/// The only gate on seeking is whether the track's length is known. Pass a
+/// null [onSeek] for a display-only bar.
 class ScrubBar extends StatefulWidget {
   /// Length of the current track. `Duration.zero` (unknown) pins the bar at the
   /// start and disables seeking.

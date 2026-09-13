@@ -29,9 +29,7 @@ const pointerCursor = SystemMouseCursors.click;
 
 /// The redesign theme — a warm off-black ramp with a single teal accent.
 ///
-/// Applied on every platform (phone, Android TV, desktop) so the app looks
-/// like one product; only the *layout* differs by form factor. Replaces the
-/// former navy/amber "PS1 classic" theme.
+/// Replaces the former navy/amber "PS1 classic" theme.
 ThemeData buildAppTheme() {
   const scheme = ColorScheme.dark(
     primary: AppColors.accent,

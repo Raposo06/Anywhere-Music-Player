@@ -396,13 +396,13 @@ class AudioPlayerService with ChangeNotifier {
       if (resumeFrom != null && resumeFrom > Duration.zero) {
         await _player!.seek(resumeFrom);
       }
-      // NOT awaited, and must never be. just_audio's play() completes when
-      // playback *stops*, not when it starts: on Android the platform holds
-      // the method-channel reply until STATE_ENDED, so awaiting it pins
-      // _isLoading true for the whole track — which gates off the completed
-      // handler that advances the playlist, and disables drop recovery.
-      // media_kit returns immediately, so desktop never showed it. See the
-      // trap in docs/operations.md.
+      // NOT awaited, and must never be. just_audio's contract is that play()
+      // completes when playback *stops*, not when it starts. media_kit happens
+      // to return at once, but a backend that honours the contract (ExoPlayer
+      // did, when this app had it) holds the reply until the track ends —
+      // awaiting it then pins _isLoading true for the whole song, which gates
+      // off the completed handler that advances the playlist and disables
+      // drop recovery. Not a missing await.
       unawaited(
         _player!.play().catchError((Object e) {
           if (token == _loadToken) _handlePlaybackError(e);

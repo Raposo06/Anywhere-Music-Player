@@ -26,9 +26,9 @@ void main() async {
 
   // Bound the Flutter image cache. Default is 1000 entries / 100 MB, which a
   // music library with thousands of covers can blow through during long
-  // scrolls — leading to OOM kills on lower-RAM Android devices. We render
-  // each cover at a server-sized URL (small thumbnails + a larger player
-  // cover), so 50 MB / 300 entries comfortably holds the working set.
+  // scrolls. We render each cover at a server-sized URL (small thumbnails +
+  // a larger player cover), so 50 MB / 300 entries comfortably holds the
+  // working set.
   PaintingBinding.instance.imageCache.maximumSizeBytes = 50 << 20; // 50 MB
   PaintingBinding.instance.imageCache.maximumSize = 300;
 

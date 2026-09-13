@@ -111,9 +111,8 @@ class SubsonicApiService
 
   /// Build a stream URL for a song (with auth params baked in).
   ///
-  /// Always requests the original file. Android wraps this URL in
-  /// [LockCachingAudioSource] so ExoPlayer seeks against a local byte-range
-  /// cache instead of the server's live transcoder output.
+  /// Always requests the original file; media_kit seeks the server's stream
+  /// directly.
   @override
   String buildStreamUrl(String songId) {
     return '$_baseUrl/rest/stream?id=$songId&format=raw&estimateContentLength=true&${_authQueryString()}';
