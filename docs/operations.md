@@ -18,8 +18,7 @@ flutter run
 | `API_BASE_URL` | Server base URL, e.g. `https://gonic.foxcore.dev` |
 
 Credentials are **not** configured here — you log in through the app, and they're
-stored in `flutter_secure_storage` on the device (encrypted; `AndroidOptions(
-encryptedSharedPreferences: true)`). `SharedPreferences` holds only the
+stored in `flutter_secure_storage` on the device. `SharedPreferences` holds only the
 non-sensitive server URL, plus legacy credentials that `AuthService` migrates
 out of on first run. Accounts are created in Gonic's own
 admin web UI (the app has no signup — see [decisions.md](decisions.md)).
@@ -27,7 +26,6 @@ admin web UI (the app has no signup — see [decisions.md](decisions.md)).
 ## Build & release
 
 ```bash
-flutter build apk            # Android phone + TV
 flutter build windows        # Windows
 flutter build linux          # Linux — needs libmpv installed first, see Traps
 ```
@@ -57,11 +55,6 @@ git tag v1.2.0 && git push origin v1.2.0
 Assets: `-setup.exe`, `-x86_64.pkg.tar.zst` (Arch package) and `SHA256SUMS`.
 Linux ships **only** the Arch package — see [decisions.md](decisions.md),
 2026-09-02. The build number is the workflow run number, so it always increases.
-
-**No APK since 2026-09-09** — Android was dropped from releases (see
-[decisions.md](decisions.md)). The app still builds and runs on phone and TV;
-`flutter build apk` produces one locally, and the signing setup below is kept
-for exactly that. It is simply not published.
 
 **Installing on Arch/Omarchy** — download the `.pkg.tar.zst` from the release
 (or the foxcore.dev card) and:
@@ -95,48 +88,9 @@ would, so it is the cheap way to check a build before making it permanent.
   build's asset bundle; the job fails fast if it's unset. It is not a secret
   (it's public DNS), so a variable, not a secret.
 
-**Android signing (local builds only, since 2026-09-09).** CI no longer builds
-the APK, so the four `ANDROID_*` repo secrets were deleted on 2026-09-09. The
-`release` build type is debug-signed unless `android/key.properties` + a
-keystore are present (both gitignored). Make a real upload key once:
-
-```bash
-keytool -genkey -v -keystore android/app/upload-keystore.jks \
-  -keyalg RSA -keysize 2048 -validity 10000 -alias upload
-```
-
-Store the two passwords in Vaultwarden. For a **local** signed build, also write
-`android/key.properties`:
-
-```
-storePassword=…
-keyPassword=…
-keyAlias=upload
-storeFile=upload-keystore.jks
-```
-
-If the CI APK build is ever restored, it reconstructs `key.properties` from four
-repo **secrets** (Settings → Secrets and variables → Actions → Secrets):
-
-| Secret | Value |
-|---|---|
-| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 android/app/upload-keystore.jks` |
-| `ANDROID_KEYSTORE_PASSWORD` | store password from `keytool` |
-| `ANDROID_KEY_PASSWORD` | key password from `keytool` |
-| `ANDROID_KEY_ALIAS` | `upload` |
-
-⚠️ **The keystore is unrecoverable if lost, and no GitHub secret changes that.**
-A device with the app installed can only take updates signed by the same key;
-losing it means every user uninstalls and reinstalls. `ANDROID_KEYSTORE_BASE64`
-looks like an off-machine copy and is not one — **Actions secrets are
-write-only**, so nothing can ever read it back out, not even to make a backup
-before deleting it. The only real backup is `android/app/upload-keystore.jks`
-itself, copied somewhere off this machine (it is gitignored, so it is not in the
-repo), with the two passwords in Vaultwarden. Check that both exist before
-trusting either.
-
-No iOS: `ios/` is unconfigured scaffolding, and download-page distribution isn't
-possible on iOS anyway (App Store / TestFlight only).
+Windows and Linux only. Android was dropped from releases on 2026-09-09 and
+from the codebase on 2026-09-13; the `ios/` and `macos/` scaffolding went with
+it. See [decisions.md](decisions.md).
 
 Linux distribution (personal-use install, not published anywhere) is a
 [PKGBUILD](https://wiki.archlinux.org/title/PKGBUILD) at
@@ -220,33 +174,6 @@ deprecation warning. Both are runner-toolchain drift, not a code change here.
 it wins on `PATH` — and/or bump `smtc_windows` / `permission_handler` to versions
 that dropped the tarball-through-symlink and `<experimental/coroutine>`.
 
-### Checking which key an APK is signed with
-
-Worth doing after any signing change, and before the first release of a new key:
-`android/app/build.gradle` **falls back to debug signing when
-`android/key.properties` is absent**, and that path builds green, so a missing
-key looks exactly like success until users can't take an update.
-
-```powershell
-$env:JAVA_HOME = "C:\Program Files\Android\Android Studio1\jbr"
-& "C:\Android\Sdk\build-tools\36.1.0\apksigner.bat" verify --print-certs app.apk
-```
-
-`Signer #1 certificate DN:` is the answer — `CN=Android Debug, O=Android, C=US`
-means it fell back to the debug key.
-
-Two traps in that one command, both of which read as failures and are not:
-
-- **`keytool -printcert -jarfile` reports "Not a signed jar file"** on a
-  perfectly good APK. keytool only understands v1 (JAR) signing; with
-  `minSdk 21+` AGP signs v2/v3 and skips v1 entirely. Use `apksigner`, which
-  reads all schemes — not keytool.
-- **`apksigner.bat` fails with "JAVA_HOME is not set and no 'java' command
-  could be found"**. This machine has no JDK on `PATH`; the only one is the JBR
-  bundled with Android Studio (at `Android Studio1`, note the `1`). Hence the
-  `$env:JAVA_HOME` line above. `java -jar
-  C:\Android\Sdk\build-tools\36.1.0\lib\apksigner.jar` works too.
-
 ### Windows: SmartScreen blocks the installer, "Editor desconhecido"
 
 **Symptom:** running `AnywhereMusicPlayer-<version>-setup.exe` raises a red
@@ -254,8 +181,7 @@ Two traps in that one command, both of which read as failures and are not:
 unrecognised publisher.
 
 **This is expected, and it is not a finding about the binary.** Nothing in the
-pipeline Authenticode-signs the `.exe` — the release signing we do set up is the
-Android upload keystore, which is Android-only and unrelated. SmartScreen weighs
+pipeline Authenticode-signs the `.exe`. SmartScreen weighs
 two things and we fail both by construction: a known-publisher signature, and
 per-file-hash reputation, which a freshly published asset cannot have.
 
@@ -269,44 +195,6 @@ still shows the prompt until each release accrues reputation; only EV grants
 immediate trust. Azure Trusted Signing is the cheap path if you can satisfy its
 business-identity check. Deliberately not done — see [decisions.md](decisions.md),
 2026-09-02 "The Windows installer is not code-signed".
-
-### Phone: the APK download sticks at 100% and never finishes
-
-**Symptom:** Brave on Android shows a full-screen "A transferir… / Downloading…"
-with `58,02 MB/58,02 MB` and a live pause/cancel, forever. Nothing is wrong with
-the file — the whole transfer already happened.
-
-**Cause:** the tab was navigated *directly* to the asset URL, so it has no
-document behind it, and Brave's download-owning tab in that state doesn't
-reliably fire the completion handler. Verified server-side that GitHub is not at
-fault: the asset serves `Content-Length: 58017378` (exactly the figure the phone
-displays), `Accept-Ranges: bytes`, no chunked or gzip encoding, correct
-`application/vnd.android.package-archive`.
-
-**Fix:** open the download link in a **new tab** (long-press → Open in new tab)
-so a real page stays as the owner. Downloading from the foxcore.dev cards does
-this naturally, which is the easiest route on a phone. Otherwise the file is
-often already complete in `/storage/emulated/0/Download` — check there before
-retrying, and just install it. `adb install` from a desktop sidesteps the
-browser entirely.
-
-**Not** Play Protect, and not the VPN — both are the obvious suspects for a
-stalled sideload and neither was it here.
-
-### Android: audio never starts, only on Android
-
-**Symptom:** playback works on Windows but silently fails on Android.
-
-**Cause:** just_audio's Android stream cache (`LockCachingAudioSource`) proxies
-ExoPlayer through a **local loopback HTTP server on 127.0.0.1** — cleartext,
-even when the origin URL is HTTPS. Android blocks cleartext by default, which
-kills that loopback specifically.
-
-**Fix:** already in the tree —
-`android/app/src/main/res/xml/network_security_config.xml` permits cleartext for
-`127.0.0.1`/`localhost` only, wired via `android:networkSecurityConfig` in the
-manifest. **Don't "simplify" this to app-wide `usesCleartextTraffic="true"`** —
-that would unblock cleartext for every real network destination.
 
 ### Linux build/run fails or plays no audio: missing libmpv
 
@@ -531,101 +419,6 @@ against a different server is only convincing-looking rubbish. Bumping
 `LibraryCache._version` covers the same ground for installs that update without
 logging out.
 
-### Android TV: app missing from the launcher
-
-- `tv_banner.png` must exist at `android/app/src/main/res/drawable/`
-- The manifest needs the `LEANBACK_LAUNCHER` intent filter (it's there — check
-  it survived any manifest edit)
-
-### Android build: Kotlin daemon crashes on Windows, then the build retries
-
-**Symptom:** `flutter build apk` / `flutter run` on Windows prints a Kotlin
-daemon failure mid-build — `Daemon compilation failed: null`, with
-`Storage for [...] is already registered` or `Could not close incremental
-caches` in the stack trace — and drops a stack-trace file under
-`android/.kotlin/errors/`. **The build then succeeds anyway**, which is why it
-is easy to ignore: Gradle falls back to in-process compilation and carries on.
-The cost is the wasted retry, not a failure.
-
-**Cause:** Gradle's no-isolation Kotlin workers race each other on the
-incremental-compile cache files. It reproduces on Windows; it has not been seen
-on the Linux/CI path.
-
-**Fix:** already in the tree — `kotlin.incremental=false` in
-`android/gradle.properties`. This app's Kotlin surface is one file
-(`MainActivity.kt`), so incremental compilation buys nothing and turning it off
-removes the race outright.
-
-**Don't commit the evidence.** `android/.kotlin/errors/*.log` are build
-artifacts; add `android/.kotlin/` to `.gitignore` rather than checking the
-stack traces in.
-
-### First Android build on a fresh Linux machine: three version floors and a JRE-only JDK
-
-**Symptom.** `flutter build apk` fails, not on missing tools, but on version
-floors the installed Flutter (3.47.1) silently enforces against whatever the
-Android project last had checked in. Each fix uncovers the next one:
-
-1. `AGP version (8.6.0) is lower than Flutter's minimum supported version of
-   8.11.1` — bump `com.android.application` in `android/settings.gradle`'s
-   `plugins {}` block **and** `com.android.tools.build:gradle` in
-   `android/build.gradle`'s `buildscript.dependencies` — both exist, both must
-   move together, or the second one silently wins.
-2. Next: `Kotlin version (2.1.0) is lower than Flutter's minimum supported
-   version of 2.2.20` — same two-places pattern, `org.jetbrains.kotlin.android`
-   in `settings.gradle` and `ext.kotlin_version` in `build.gradle`.
-3. Then a real (not version-floor) failure: `Toolchain installation
-   '/usr/lib/jvm/java-21-openjdk' does not provide the required capabilities:
-   [JAVA_COMPILER]`. The system's "default" JDK was `jre21-openjdk` — a
-   runtime with no `javac` — while a full `jdk17-openjdk` sat installed and
-   unused. Fixed without touching the system default:
-   `flutter config --jdk-dir=/usr/lib/jvm/java-17-openjdk`.
-
-**Stop at AGP/Kotlin 8.11.1 / 2.2.20, don't chase the "will soon be dropped"
-warnings to 9.0.1 / 2.3.20+.** Once the build succeeds, Flutter *warns* that
-these floors are moving again, but the Flutter Fix box printed alongside it is
-explicit: **"Starting AGP 9+, only the new DSL interface will be read. This
-results in a build failure when applying the Flutter Gradle plugin"** — this
-project's Flutter Gradle plugin does not yet speak the new DSL
-(`android.newDsl=false` in `android/gradle.properties` is the existing,
-deliberate opt-out). Bumping past the warning breaks the build outright rather
-than just aging.
-
-**The Android SDK itself needs setting up on a machine that has never built
-Android before** — this one hadn't. `flutter doctor` reporting "Unable to
-locate Android SDK" means starting from nothing:
-`android-sdk-cmdline-tools-latest` and `android-sdk-platform-tools` from the
-AUR, both root-owned by the pacman install. `sdkmanager`/`android sdk install`
-then needs to *write into* that same directory (installing platforms,
-build-tools, licenses) — `sudo chown -R $USER:$USER /opt/android-sdk` once,
-rather than sudo for every component install afterward. Point Flutter at it
-with `flutter config --android-sdk /opt/android-sdk`.
-
-**`flutter doctor --android-licenses` can report "unknown" forever on a newer
-SDK.** It works by shelling out to `sdkmanager --licenses` and grepping the
-output for the literal string `"All SDK package licenses accepted."` — this
-SDK's `cmdline-tools` ships a newer "Android CLI" that intercepts `sdkmanager`
-calls with `Warning: The --licenses option is no longer needed.` and never
-prints that string, so the doctor check stays red even though licenses are
-genuinely fine (individual `android sdk install` runs accept them
-per-package, visible as `License for package ... accepted.` in the build log).
-**Trust the actual build, not this doctor line** — `flutter build apk`
-succeeding is stronger evidence than the license check passing.
-
-**First install on a phone that already had the app prompts "install
-anyway" / not-verified, even though nothing in the app changed.** Release
-builds sign with `signingConfigs.debug` (`android/app/build.gradle`) — the
-machine's own debug keystore, auto-created on first use. This SDK generation
-puts it at **`~/.config/.android/debug.keystore`**, not the traditional
-`~/.android/debug.keystore` — worth knowing before grepping the wrong
-directory. A machine that has never built Android before mints a brand-new
-certificate, which a phone that already trusts a *different* machine's debug
-key (Windows, say) has never seen — Android's installer treats an unrecognized
-certificate as more suspicious than a familiar one, regardless of what the
-app actually does. Not a bug, nothing to fix; it stops recurring once the
-phone has seen this machine's certificate a few times, since every later
-build from here reuses the same keystore.
-
 ### The server shows an empty library; the app shows 0 folders and 0 tracks
 
 **Symptom.** The library and playlists go empty across every client at once —
@@ -822,84 +615,6 @@ RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1); // the real an
 One gesture per test — a second `addPointer` with the same device id trips an
 assertion inside `MouseTracker` that reads like a framework bug and isn't.
 
-### Android: a song plays once, re-announces itself, then playback dead-stops
-
-**Symptom:** on the phone, pick a song — it plays through, the notification /
-lock screen appears to announce the track *again* right as it ends, and then
-playback stops instead of advancing. The same build advances fine on Windows.
-
-**Cause:** `await _player!.play()`. just_audio's `play()` returns a future that
-completes when playback **stops**, not when it starts — and the two backends
-disagree about what that means in practice:
-
-| Backend | `play()` resolves |
-|---|---|
-| ExoPlayer (Android) | at `STATE_ENDED` / pause / dispose — i.e. **at the end of the track** |
-| media_kit (Windows/Linux) | immediately |
-
-Verified in `just_audio-0.9.46/android/src/main/java/com/ryanheise/just_audio/AudioPlayer.java`
-(`play()` stashes the `Result` in `playResult`; only `STATE_ENDED`, `pause()`
-and `dispose()` complete it) versus `just_audio_media_kit-2.1.0/lib/mediakit_player.dart`
-(`play()` returns `PlayResponse()` straight away).
-
-Awaiting it on Android pinned `_isLoading = true` for the entire track, because
-`_loadAndPlay`'s `finally` is the only place that clears it. Three things follow:
-
-1. The end-of-track handler is `processingState == completed && !_isLoading`.
-   At `STATE_ENDED` the plugin broadcasts the `completed` event **before** it
-   completes `playResult`, and both cross the same binary messenger in order —
-   so Dart always sees `completed` while `_isLoading` is still true, and the
-   advance is skipped. `PlayerState` has value equality and the stream is
-   `.distinct()`, so `completed` is emitted exactly once: there is no second
-   chance. **Playback stops at the end of every track.**
-2. Everything after the `await` — `_presence.show(track)`, the `now-playing`
-   report — ran *at track end* instead of at track start, so the notification
-   pushed the finished song's metadata (and bumped the AVRCP queue counter)
-   right as it ended. That is the "it played a second time" the user sees.
-3. `_handleStreamError` bails while `_isLoading`, so mid-stream drop recovery
-   had never once engaged on Android.
-
-**Fix:** never await `play()` — fire it and attach a `catchError`. Introduced by
-`ad2629a` ("Refactor playback and URL resolution"), which turned a
-fire-and-forget `_player!.play();` into `await _player!.play();`.
-
-**How to check it.** `flutter run` on the phone and watch for the
-`AudioPlayerService: loading stream ... trackId=` line: exactly one appears per
-*user action*, and none at the end of a track, when this bug is present. A
-healthy build logs a fresh one the moment each track ends.
-
-### Android: one `LockCachingAudioSource` per cache file, ever
-
-**Symptom:** intermittent Android-only playback corruption or a mid-song error
-on a *first* (uncached) play of a track — a slow load, then garbled audio or a
-dead stop. Replaying the same track afterwards can stay broken until the app's
-storage is cleared.
-
-**Cause:** each `LockCachingAudioSource` memoizes its own download
-(`_response ??= _fetch()`) and `_fetch()` opens `audio_cache/<id>.part` with a
-**truncating** `openWrite()`. Two instances pointing at the same `cacheFile`
-therefore run two independent downloads that clobber one file. Two ways this
-happened:
-
-- `_setSourceWithRetry` called `_buildSource(track)` a second time on its 12s
-  timeout. `Future.timeout` does not cancel the load it gave up on, so the
-  first source was still alive and downloading. **Fix:** build the source once
-  and pass the same instance to both attempts — safe, because just_audio keys a
-  source on an id fixed at construction, so re-`setAudioSource` rebinds the
-  same proxy entry rather than creating a second one.
-- eviction skipped only the exact `<id>` file, so it could delete the playing
-  track's `<id>.part` mid-download once the cache passed its 2 GB cap. **Fix:**
-  skip `<id>` *and* its `.part`/`.mime` sidecars.
-
-**The rule:** anything that builds a source for a track must produce at most one
-live `LockCachingAudioSource` for that track's cache file, and anything that
-deletes from `audio_cache/` must treat `<id>`, `<id>.part` and `<id>.mime` as
-one unit.
-
-Both live in `lib/services/stream_cache.dart` now (`DiskStreamCache`), lifted
-out of `AudioPlayerService`; `_setSourceWithRetry` still owns the build-once
-retry. `test/services/stream_cache_test.dart` covers the eviction rule.
-
 ## Server dependency
 
 The server is **Gonic** at `https://gonic.foxcore.dev` (`type: gonic`,
@@ -934,9 +649,9 @@ flutter test
 ```
 
 See [overview.md](overview.md)'s "Test suite" section for what `flutter test`
-actually covers. Treat manual testing on a real device as the real gate for
-anything touching playback, though: the audio path differs by platform
-(media_kit/MPV on Windows and Linux, ExoPlayer + loopback cache on Android),
-so a change verified on one says little about the others.
+actually covers. Treat a manual run as the real gate for anything touching
+playback, though: both platforms share media_kit/MPV, but the presence layer
+differs (SMTC on Windows, MPRIS on Linux), so media keys and the OS
+now-playing surface need checking on each.
 
-Device logs: `adb logcat` on Android, `flutter logs` elsewhere.
+Logs: `flutter logs`, or the app's own `debugPrint` output on the console.

@@ -14,6 +14,55 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Android is removed; the app is desktop-only (2026-09-13)
+
+**Decided.** The Android phone and Android TV targets are gone from the tree,
+not merely unpublished. With them: the phone tab-bar layout and its five
+screens, the TV D-pad layout, the four widgets only they used, the
+`audio_service` handler and Android presence adapter, the on-disk stream cache
+and the next-track prefetch that fed it, `permission_handler`, the Android TV
+detector, and the `android/` tree. `ios/` and `macos/` — Flutter scaffolding,
+never built — went too. Two platform directories remain: `windows/` and
+`linux/`. About a third of the Dart in `lib/` was deleted (~5,400 lines of UI,
+~1,100 of playback), plus 15 test files.
+
+**Why.** The 2026-09-09 entry below kept Android "supported, not released" on
+the theory that an APK could always be built by hand. Four days later the
+question was put directly: is the phone or TV build actually used? It is not.
+Keeping a platform nobody runs costs real things — every playback change had
+to be reasoned about against ExoPlayer *and* media_kit; the stream cache
+existed only because ExoPlayer cannot seek a live HTTP stream; two of three UI
+layouts had to be kept in step with the third; and the only honest answer to
+"is this verified?" for anything Android-shaped was "no, and it can't be from
+this machine". Desktop-only makes the app one thing.
+
+**Two consequences worth knowing about.**
+
+- *The `StreamCache` seam was deleted, not narrowed.* `DirectStreamCache` was
+  the only adapter left, and it was fourteen lines around `AudioSource.uri`.
+  One adapter is a hypothetical seam. The C05 work from 2026-09-09 (below) was
+  correct for what was known then and is gone entirely now.
+- *Drop recovery had been relying on an accidental `await`.* Building the source
+  synchronously made four drop-recovery tests fail. `_handleStreamError` runs
+  inside just_audio's own error dispatch (rxdart's subject is synchronous), and
+  reloading from in there re-enters a controller still firing. The disk cache's
+  async directory lookup had been yielding first — on every platform, by
+  accident. The yield is now explicit and is CLAUDE.md item 7.
+
+**What was kept.** The never-awaited `play()`: media_kit returns at once, but
+just_audio's contract is "completes when playback stops", and the `unawaited`
+form is correct under either. The image-cache bound in `main()`: the OOM
+motivation was Android, but a bounded cache is right anyway. `PlaybackPolicy`:
+the prefetch cap left it, the scrobble and ReplayGain rules stay.
+
+**What would reverse it.** Actually wanting to run on a phone or TV again. That
+is a `git revert` of four commits for the code, but the *cost* that reverses
+with it is the one above — two audio backends to reason about, three layouts
+to keep in step. Don't restore it for "might be nice"; restore it for a device
+that is going to be used.
+
+---
+
 ## Playback's pure policies live in `PlaybackPolicy`; drop recovery does not (2026-09-09)
 
 **Decided.** The scrobble threshold, the ReplayGain curve and the prefetch cap
@@ -53,6 +102,8 @@ module with state, which belongs somewhere else.
 ---
 
 ## The warm slot is one field, and the cache key one expression (2026-09-09)
+
+> **Superseded (2026-09-13)** — `DiskStreamCache` was deleted with Android; see "Android is removed" at the top.
 
 **Decided.** `DiskStreamCache`'s two lockstep fields (`_warmId` + `_warm`)
 become one nullable record, and the two `LockCachingAudioSource` constructions
@@ -224,6 +275,8 @@ step-by-step plan this was built from.
 
 ## Desktop cannot use LockCachingAudioSource; it renames an open file (2026-09-09)
 
+> **Moot (2026-09-13)** — `LockCachingAudioSource` is no longer used anywhere; the stream cache went with Android. The finding about Windows and open-file renames stands as a fact about just_audio.
+
 **Decided.** Windows and Linux go back to `DirectStreamCache`, hours after being
 moved to `DiskStreamCache`. The disk cache and the next-track prefetch it enables
 are **Android-only**. `StreamCache.prefetch`, the 50 MB cap and every test stay —
@@ -279,6 +332,8 @@ shipping, not after.
 ---
 
 ## The next track is prefetched to disk; desktop joins the stream cache (2026-09-09)
+
+> **Superseded (2026-09-13)** — prefetch and the stream cache were deleted with Android; see "Android is removed" at the top.
 
 **Decided.** Two changes, one mechanism:
 
@@ -729,6 +784,8 @@ as a reference for the list/search wiring, not as-is.
 
 ## The phone gets a shared `CentredMessage`, like the desktop's `DesktopErrorState` (2026-09-01)
 
+> **Superseded (2026-09-13)** — the phone layout and `CentredMessage` were deleted with Android.
+
 **Decided.** `lib/widgets/centred_message.dart` holds `CentredMessage` — the
 centred icon + title (+ optional subtitle and action) for a phone screen's empty
 and error states. Favourites and Playlists each had a byte-identical private
@@ -758,6 +815,8 @@ costs.
 ---
 
 ## The stream cache is a `StreamCache` seam, not `AudioPlayerService` internals (2026-09-01)
+
+> **Superseded (2026-09-13)** — the seam had one adapter left once Android went, and was deleted rather than kept hypothetical; see "Android is removed" at the top.
 
 **Decided.** The Android on-disk stream cache — directory bootstrap, the
 `LockCachingAudioSource` choice, and the 2 GB LRU eviction with its
@@ -921,6 +980,8 @@ stays a local `flutter build` + manual upload).
 
 ## `just_audio`'s `play()` is fired, never awaited (2026-09-01)
 
+> **Still in force (2026-09-13)** — the Android backend that made this visible is gone, but the rule holds under just_audio's contract regardless. Now CLAUDE.md item 6.
+
 **Decided.** `AudioPlayerService._loadAndPlay` fires `_player!.play()` and moves
 on, with a `catchError` for the error path. It must stay that way, and the
 comment saying so must stay with it.
@@ -1013,6 +1074,8 @@ the window too — this only scales the boxes, the 34px title is unchanged.
 ---
 
 ## Desktop gets its own screens; the phone keeps the old ones (2026-08-28)
+
+> **Superseded (2026-09-13)** — the phone screens were deleted with Android; the desktop screens are the only ones.
 
 **Decided.** The desktop redesign lives in `lib/screens/desktop/` and
 `lib/widgets/desktop/` as a parallel set of screens, selected by
@@ -1366,6 +1429,8 @@ Windows bundle.
 
 ## The Android stream cache is keyed by track id, never by URL
 
+> **Superseded (2026-09-13)** — the stream cache was deleted with Android. The underlying fact — a stream URL's salt rotates per request, so nothing may be keyed on one — survives as CLAUDE.md item 4.
+
 **Decided.** Android wraps playback in `LockCachingAudioSource`, writing each
 song to a per-track file keyed by **track id**. Capped at **2 GB**, oldest
 evicted after each load, never evicting the track currently playing. Desktop
@@ -1429,6 +1494,8 @@ discarded on load and rebuilt, so the bad field can't survive an upgrade.
 ---
 
 ## Cleartext is permitted for loopback only, not app-wide
+
+> **Moot (2026-09-13)** — this was the Android network-security config; `android/` is gone.
 
 **Decided.** `network_security_config.xml` permits cleartext traffic for
 `127.0.0.1` and `localhost` only. The app does **not** set
@@ -1738,6 +1805,8 @@ shows no hearts.
 ---
 
 ## 2026-08-30 — Favourites on the phone; the heart becomes a shared widget
+
+> **Partly superseded (2026-09-13)** — the phone screen went with Android; `FavouriteButton` stays, on the desktop rows.
 
 **Decided.** The phone gets the same favourites: a heart on every [TrackTile]
 and in [PlayerScreen]'s app bar, plus a third bottom-nav destination listing
@@ -2277,6 +2346,8 @@ nuisance.
 ---
 
 ## 2026-09-09 — Releases are desktop-only; Android is no longer published
+
+> **Superseded (2026-09-13)** — "what did not change" below changed: Android was removed from the tree four days later. See "Android is removed" at the top.
 
 **Decided.** `.github/workflows/release.yml` no longer builds or publishes an
 APK. The `android` job is gone, the `include_android` dispatch input with it,

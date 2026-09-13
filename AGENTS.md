@@ -1,8 +1,8 @@
 # Anywhere Music Player
 
 Flutter client for a self-hosted **Gonic** server, over the **Subsonic API**
-(`/rest/*`). Targets Android phone, Android TV and Windows. See `README.md` for
-setup, `docs/overview.md` for how it fits together.
+(`/rest/*`). Targets Windows and Linux (Arch). See `README.md` for setup,
+`docs/overview.md` for how it fits together.
 
 Migrated from Navidrome on 2026-09-08 — see `docs/decisions.md`. Gonic is
 folder-native, so the library scan **walks the server's own directory tree**
@@ -17,45 +17,46 @@ Each of these looks like an obvious cleanup and is not. The reasoning is in
 1. **Sequencing is manual, in Dart.** One track is loaded at a time; playlist
    order, shuffle, repeat and the queue are hand-rolled. `ConcatenatingAudioSource`
    is buggy under `just_audio_media_kit` on Windows/Linux.
-2. **The stream cache is keyed by track id, never the URL.** Stream URLs
-   embed an auth token + salt that rotate on every request build — keying on the
-   URL silently produces a 100% miss rate. (`LockCachingAudioSource` defaults to
-   hashing the URL, which is exactly this trap; the cache passes an explicit
-   `cacheFile`.) Only ever **one** live source per cache file — two race a
-   truncating write into `<id>.part` — which is why a prefetched source is
-   *handed over* to `sourceFor` rather than rebuilt.
-3. **ReplayGain is attenuate-only** (`clamp(0, 1)`). The clamp is what makes
+2. **ReplayGain is attenuate-only** (`clamp(0, 1)`). The clamp is what makes
    clipping impossible; the `+6 dB` pre-amp is the tuning knob, not the clamp.
-4. **The scan reads each track's path from the song's own `path` field**, and
+3. **The scan reads each track's path from the song's own `path` field**, and
    only synthesizes one from the directories it walked when the server's is
    absent or absolute. This was the other way round until 2026-09-09: the walk
    is only as folder-shaped as `getIndexes`, and this server answered it with a
    tag-shaped artist index, so the synthesized path buried the real folder tree
    under `Artist/Album`. Don't flip it back without re-reading the entry — both
    directions have a failure mode, and the fallbacks cover the walk's.
-5. **The library cache stores `cover_art_id`, never a resolved cover-art URL.**
+4. **The library cache stores `cover_art_id`, never a resolved cover-art URL.**
    A resolved URL carries a live, password-equivalent credential into a plaintext
-   file on disk. Schema v3 exists to enforce this.
-6. **Cleartext is permitted for loopback only.** Never widen it to
-   `usesCleartextTraffic="true"` — that unblocks cleartext for the real server too.
-7. **Drop recovery never auto-resumes while paused.** Idle connections drop when
+   file on disk. Schema v3 exists to enforce this. The same salt rotation is why
+   nothing anywhere is keyed on a stream or cover URL.
+5. **Drop recovery never auto-resumes while paused.** Idle connections drop when
    paused; resuming there starts music the user deliberately stopped.
-8. **`just_audio`'s `play()` is never awaited.** It completes when playback
-   *stops*, not when it starts — on Android the platform holds that future until
-   the track ends, so awaiting it pins `_isLoading` true for the whole song and
-   silently kills end-of-track advance. media_kit returns immediately, so the
-   bug is invisible on desktop. It reads like a missing `await`; it is not.
+6. **`just_audio`'s `play()` is never awaited.** Its contract is that it completes
+   when playback *stops*, not when it starts. media_kit happens to return at
+   once, but a backend that honours the contract holds the reply until the
+   track ends — awaiting it then pins `_isLoading` true for the whole song and
+   silently kills end-of-track advance. It reads like a missing `await`; it is
+   not.
+7. **Drop recovery yields one microtask before reloading.** `_handleStreamError`
+   runs *inside* just_audio's own error dispatch (its event subject is
+   synchronous), and calling `setAudioSource` from in there re-enters a
+   controller still firing; the reload fails and the drop is never recovered.
+   The `await Future<void>.value()` reads like a pointless `await`; it is not.
+   Until 2026-09-13 an incidental `await` in the Android disk cache did this by
+   accident — removing the cache removed the yield and took recovery with it.
 
 ## Platform reality
 
-The audio path **differs by platform**: media_kit/MPV on Windows/Linux,
-ExoPlayer + loopback stream cache on Android. Desktop streams direct —
-`LockCachingAudioSource` is **broken on Windows** (it renames an open
-`<id>.part` into place, which Windows refuses), so the disk cache and the
-next-track prefetch it enables are Android-only. A playback change verified on
-one platform says little about the other — test both.
+Both targets share one audio path — media_kit/MPV, streaming direct from the
+server — so a playback change verified on one usually holds on the other. What
+**differs** is the presence layer: SMTC + taskbar + wakelock on Windows, a
+hand-rolled MPRIS D-Bus server on Linux. Media keys and the OS now-playing
+surface need checking on each.
 
-There is **no web target** (no `web/` directory), despite older docs claiming one.
+Android (phone and TV) was a target until 2026-09-13 and is not now; the
+`android/`, `ios/` and `macos/` trees are gone, not merely unbuilt. There is
+**no web target** either.
 
 ## docs/ — keep it in sync
 

@@ -1,9 +1,8 @@
 # Anywhere Music Player
 
-> **Self-hosted, cross-platform music streaming powered by Gonic.**
-> *Write Once (Flutter), Host Anywhere (Gonic), Play Everywhere (TV, PC, Phone).*
+> **Self-hosted desktop music streaming powered by Gonic.**
 
-A private music streaming app that connects to a [Gonic](https://github.com/sentriz/gonic) server via the Subsonic API. Built with Flutter for Android TV, Android phones, Windows and Linux.
+A private music streaming app that connects to a [Gonic](https://github.com/sentriz/gonic) server via the Subsonic API. Built with Flutter for Windows and Linux.
 
 Browsing follows your **actual folder tree**, not an artist/album index derived from tags — which is why the server is Gonic, whose browse-by-folder keeps that tree intact. Any Subsonic-compatible server that does the same should work; see [docs/decisions.md](docs/decisions.md).
 
@@ -27,14 +26,9 @@ Every asset below comes from the **[latest release](https://github.com/Raposo06/
 > would need a build from source; media_kit links the *system* libmpv rather
 > than bundling it, which is what makes a distro-agnostic binary awkward.
 >
-> **Android — no download.** Phone and TV are still supported targets and the
-> app builds for both, but CI stopped publishing an APK on 2026-09-09; releases
-> are desktop-only. Build it yourself with `flutter build apk` — see
+> **Desktop only.** The app targeted Android phone and TV until 2026-09-13;
+> that code was removed, along with the unused iOS and macOS scaffolding. See
 > [docs/decisions.md](docs/decisions.md).
->
-> **iOS / macOS.** Scaffolded by Flutter, never distributed. iOS needs a paid
-> Apple Developer account and a Mac to build, and has no download-page path
-> regardless (App Store or TestFlight only). Out of scope until that changes.
 
 ### Releases
 
@@ -134,11 +128,6 @@ flutter run
 
 ### 3. Build for Production
 
-**Android (phone + TV):**
-```bash
-flutter build apk
-```
-
 **Windows:**
 ```bash
 flutter build windows
@@ -167,35 +156,29 @@ sudo pacman -U anywhere-music-player-*.pkg.tar.zst
 - Album cover art, with prefetching for upcoming tracks
 
 **Server-side, shared with anything else pointed at the same server**
-- Playlists (desktop + phone): create, rename, delete, add and remove tracks
-- Favourites: star songs from any track row, the mini player or Now Playing, with a dedicated list on both layouts
+- Playlists: create, rename, delete, add and remove tracks
+- Favourites: star songs from any track row, the mini player or Now Playing, with a dedicated list
 - Scrobbling: plays reported back past half the track or four minutes, so play counts and "recently played" reflect this app
 
 **Platform integration**
-- Lock screen / notification controls (Android)
 - System Media Transport Controls + keep-awake while playing (Windows)
 - MPRIS media keys via a hand-rolled D-Bus server (Linux)
-- Android TV UI with D-pad navigation, auto-detected via `UiModeManager`
 
-**Desktop (Windows/Linux)**
+**Desktop shell**
 - App-drawn title bar, sidebar navigation, folder grid, docked mini player
 - Full-window Now Playing with a permanent "Up Next" queue panel
 - Keyboard shortcuts: space, arrow-key seek/volume, Ctrl+arrow skip, Ctrl+F to focus search, Alt+← / Escape to go back
 
 **Reliability**
 - On-disk library cache for instant cold start
-- Android on-disk stream cache (seekable replay, 2 GB cap)
 - Automatic recovery from mid-stream connection drops
 
-**Not yet:** favourites and playlists are absent on Android TV; playlists can't be reordered (Subsonic has no reorder parameter); the library cache is a single file per install, wiped on logout.
+**Not yet:** playlists can't be reordered (Subsonic has no reorder parameter); the library cache is a single file per install, wiped on logout.
 
 ## Project Structure
 
-Three UI layouts over one set of shared services. `MainScreen` picks between phone
-and desktop; `AuthWrapper` sends Android TV straight to `TvHomeScreen`. The
-layouts are separate screens on purpose — see [docs/decisions.md](docs/decisions.md).
-
-Abridged; the shape matters more than the full 60-odd files.
+One desktop shell over a set of services that never import a widget.
+Abridged; the shape matters more than the full file list.
 
 ```
 lib/
@@ -203,14 +186,6 @@ lib/
     track.dart  folder.dart  playlist.dart  user.dart  cover_art_ref.dart
   screens/
     login_screen.dart              # Credentials login
-    main_screen.dart               # Phone scaffold + layout switch
-    home_screen.dart               # Folder browsing
-    folder_detail_screen.dart      # Folder contents
-    player_screen.dart             # Now playing (phone)
-    playlists_screen.dart          # Playlists (phone)
-    favourites_screen.dart         # Favourites (phone)
-    tv_home_screen.dart            # Android TV track list
-    tv_player_screen.dart          # Android TV full-screen player
     desktop/
       desktop_shell.dart           # Sidebar shell + nested navigators
       desktop_library_screen.dart  desktop_folder_screen.dart
@@ -219,30 +194,28 @@ lib/
   services/
     subsonic_api_service.dart      # Subsonic API client
     auth_service.dart              # Subsonic token auth
-    audio_player_service.dart      # Playback (just_audio + media_kit on desktop)
-    audio_handler.dart             # audio_service background handler
+    audio_player_service.dart      # Playback (just_audio + media_kit)
     playback_cursor.dart           # Sequencing: order, shuffle, repeat, queue.
                                    #   Pure Dart, no player or Flutter import
+    playback_policy.dart           # Scrobble threshold, ReplayGain curve. Pure Dart
     stream_url_resolver.dart       # "What's the URL for this track"
-    stream_cache.dart              # Android on-disk cache vs direct streaming
     now_playing_presence.dart      # "Tell the OS this is playing" — one seam,
-    android_presence.dart          #   three implementations
-    windows_presence.dart
+    windows_presence.dart          #   two implementations
     linux_presence.dart
     mpris_service.dart             # Linux MPRIS D-Bus server
     windows_media_controls_service.dart   windows_wakelock.dart
-    library_scanner.dart  library_cache.dart
+    library_scanner.dart           # Cache-first scan; holds the FolderTree
+    folder_walk.dart  folder_tree.dart  library_browser.dart  library_cache.dart
+    session_scoped.dart            # Base for the three services bound to a login
     playlists_service.dart  favourites_service.dart
     playback_reporter.dart         # Scrobbling
   theme/
     app_colors.dart  app_theme.dart
   utils/
-    platform_detector.dart         # Android TV detection
     responsive.dart  now_playing_folder.dart
   widgets/
-    mini_player.dart  track_tile.dart  queue_sheet.dart  scrub_bar.dart
-    cover_art.dart  play_actions.dart  favourite_button.dart
-    add_to_playlist.dart  centred_message.dart
+    scrub_bar.dart  cover_art.dart  play_actions.dart  favourite_button.dart
+    add_to_playlist.dart  add_songs_to_playlist.dart
     desktop/
       window_chrome.dart           # App-drawn title bar
       sidebar.dart  up_next_panel.dart  desktop_mini_player.dart
@@ -250,9 +223,9 @@ lib/
   main.dart                        # Entry point; hides the native frame on desktop
 ```
 
-The four extracted seams — `PlaybackCursor`, `StreamUrlResolver`, `StreamCache`
-and `NowPlayingPresence` — each carry a no-op or pass-through test default, which
-is why the suite runs with no real Windows or Android platform channel.
+The extracted seams — `PlaybackCursor`, `PlaybackPolicy`, `StreamUrlResolver`,
+`NowPlayingPresence`, `LibraryBrowser` — each carry a no-op or in-memory test
+default, which is why the suite runs with no real platform channel.
 
 ## Key Dependencies
 
@@ -262,59 +235,24 @@ is why the suite runs with no real Windows or Android platform channel.
 | `just_audio_media_kit`         | Windows/Linux audio backend (replaces WMF)      |
 | `media_kit_libs_windows_audio` | Native MPV audio libraries for Windows          |
 | `media_kit_libs_linux`         | Links MPV audio to the system's libmpv on Linux |
-| `audio_service`                | Background playback + media controls            |
 | `smtc_windows`                 | Windows system media transport controls (SMTC)  |
 | `windows_taskbar`              | Windows taskbar thumbnail playback buttons      |
-| `dbus`                         | Linux MPRIS media keys — `audio_service` has no Linux implementation, so the D-Bus interface is hand-rolled on top of this |
+| `dbus`                         | Linux MPRIS media keys — the D-Bus interface is hand-rolled on top of this |
 | `provider`                     | State management                                |
 | `crypto`                       | MD5 hashing for Subsonic auth tokens            |
 | `flutter_secure_storage`       | Encrypted local credential storage              |
 | `shared_preferences`           | Legacy credential storage, migrated on launch   |
-| `path_provider`                | Cache directories (library + stream cache)      |
+| `path_provider`                | The library cache directory                     |
 | `cached_network_image`         | Cover art loading and caching                   |
 | `flutter_cache_manager`        | Pre-warms cover art without decoding it into the image cache |
 | `scrollable_positioned_list`   | "Follow the playing track" in track lists       |
 | `http`                         | HTTP client for Subsonic API calls              |
-| `permission_handler`           | Android notification permission                 |
 | `window_manager`               | Desktop title bar and window management         |
 | `flutter_dotenv`               | Runtime `.env` configuration                    |
 
 ## Authentication
 
 The app uses Subsonic token authentication: for every request it generates a random salt and computes `token = MD5(password + salt)`. Credentials are stored locally in encrypted storage (`flutter_secure_storage`); older installs that still had them in SharedPreferences get migrated automatically on the next launch. No signup flow — users are created via the server's own web UI.
-
-## Android TV
-
-The app automatically detects Android TV (via `UiModeManager`) and switches to a TV-optimized UI with large elements for 10-foot viewing.
-
-### Screens
-
-**Track list screen** — shows all tracks alphabetically with a "Shuffle All" button in the header.
-
-**Full-screen player** — opens when a track starts playing. Shows large cover art, track title, progress bar, and playback controls. Press Back to return to the track list.
-
-### Remote Control Navigation
-
-**Track list screen**
-
-| Button | Action |
-|--------|--------|
-| D-pad up/down | Move between tracks |
-| D-pad down (from Shuffle All button) | Jump to first track |
-| Select / Enter | Play selected track |
-| Back | Exit app |
-
-**Full-screen player**
-
-| Button | Action |
-|--------|--------|
-| D-pad left/right | Move between Prev / Play-Pause / Next |
-| Select / Enter | Activate focused button |
-| Media Play/Pause | Toggle playback |
-| Media Next/Previous | Skip tracks |
-| Back | Return to track list |
-
-The Android manifest includes `LEANBACK_LAUNCHER` for TV launcher integration.
 
 ## Troubleshooting
 
@@ -323,12 +261,8 @@ The Android manifest includes `LEANBACK_LAUNCHER` for TV launcher integration.
 - Check that the server is reachable from the device
 
 ### Audio not playing
-- Check device logs (`adb logcat` on Android, `flutter logs` for others)
+- Check `flutter logs`
 - Verify the server user exists and can stream
-
-### Android TV: app not in launcher
-- Ensure `tv_banner.png` exists at `android/app/src/main/res/drawable/`
-- Verify `AndroidManifest.xml` has the `LEANBACK_LAUNCHER` intent filter
 
 ### Windows: build fails with MAX_PATH error
 - Enable long path support (see build instructions above) and restart your terminal

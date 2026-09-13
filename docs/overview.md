@@ -7,14 +7,14 @@
 > code they describe. Last reviewed: 2026-09-08.
 
 Self-hosted, cross-platform music streaming: **write once (Flutter), host
-anywhere (Gonic), play everywhere**. A private client for a personal music
+anywhere (Gonic), play on the desktop**. A private client for a personal music
 library — no accounts to create, no catalogue but your own.
 
 ## Index
 
 - [Decisions](decisions.md) — **the decision log.** Why sequencing is manual,
-  why the Windows audio backend was swapped, why the stream cache is
-  Android-only. Read before "simplifying" any of it.
+  why the Windows audio backend was swapped, why Android was dropped. Read
+  before "simplifying" any of it.
 - [Operations](operations.md) — building, running, releasing, and the traps
   that have cost time.
 
@@ -23,7 +23,7 @@ library — no accounts to create, no catalogue but your own.
 ```
 ┌────────────────────────────────────────┐
 │            Flutter App                 │
-│      Android TV │ Android │ Windows    │
+│         Windows │ Linux (Arch)         │
 └──────────────────┬─────────────────────┘
                    │ Subsonic API (/rest/*)
                    ▼
@@ -73,19 +73,16 @@ on-disk one regardless — see "The song's own `path` decides the folder tree".
 
 | Platform | State |
 |---|---|
-| Android (phone) | Supported, **not released** — builds locally (`flutter build apk`); CI stopped publishing an APK on 2026-09-09 |
-| Android TV | Supported, **not released** — D-pad UI, `LEANBACK_LAUNCHER`; same APK, same story |
 | Windows | Shipped — Inno Setup installer (`installer.iss`), published by CI |
-| iOS | Scaffolded (`ios/`), not distributed — needs an Apple Developer account, and iOS has no download-page path regardless |
 | Linux | Shipped — Arch package only (`pacman -U`), published by CI. Needs the system's libmpv, see [operations](operations.md) |
-| macOS | Scaffolded by Flutter, not built or distributed |
+| Android (phone, TV) | **Removed 2026-09-13.** Was a target; dropped from releases on 2026-09-09 and from the tree four days later. `android/` is gone — see [decisions](decisions.md) |
+| iOS, macOS | **Removed 2026-09-13** with Android. Were Flutter scaffolding, never built |
 | Web | **Not supported** — there is no `web/` directory |
 
 Tagged releases (`v*`) are built for Windows and Linux and published to GitHub
 Releases by `.github/workflows/release.yml`, with a hosted download page on
 foxcore.dev pointing at the latest — see [operations](operations.md) and
-[decisions](decisions.md) (2026-09-01, and 2026-09-09 for the Android drop).
-Android still builds by hand; it is simply not published.
+[decisions](decisions.md) (2026-09-01).
 
 > ⚠️ The README and the old WikiJS page both listed **Web** as a target. That was
 > never true in this tree; corrected 2026-08-17. The Windows audio backend
@@ -96,8 +93,7 @@ Android still builds by hand; it is simply not published.
 | Layer | Tech | Notes |
 |---|---|---|
 | App | **Flutter** | SDK `>=3.8.0 <4.0.0`; version `1.0.0+2` |
-| Audio | **just_audio** | `just_audio_media_kit` (MPV) on Windows/Linux. Android streams through an on-disk cache that also prefetches the next track; desktop streams direct (`LockCachingAudioSource` is broken on Windows) — see [decisions](decisions.md) |
-| Background playback | **audio_service** | Android notification + lock screen controls |
+| Audio | **just_audio** | `just_audio_media_kit` (MPV), streaming direct from the server — see [decisions](decisions.md) |
 | Windows media keys | **smtc_windows** | System Media Transport Controls |
 | Linux media keys | **dbus** | Hand-rolled MPRIS server — see [decisions](decisions.md) |
 | State | **provider** | |
@@ -120,9 +116,8 @@ Android still builds by hand; it is simply not published.
 - ReplayGain volume normalization — attenuate-only, clipping impossible
 - Caching: on-disk library cache for instant cold start — and, while that cache
   is under six hours old, a launch renders from it and skips the folder walk
-  entirely (pull-to-refresh on phone, the header refresh button on desktop, and
-  any Retry force the walk); Android on-disk stream cache (seekable replay,
-  2 GB cap), cover-art prefetching
+  entirely (the header refresh button and any Retry force the walk);
+  cover-art prefetching
 - Scrobbling: plays are reported back to the server (past half the track or
   four minutes), so the server's play counts and "recently played" reflect this
   app; a "now playing" announcement drives its live panel
@@ -130,35 +125,29 @@ Android still builds by hand; it is simply not published.
   Ctrl+F to focus search,
   Alt+← (or Escape) to go back a folder or playlist / leave Now Playing — the
   title bar's back chevron does the same thing for the mouse
-- Playlists (desktop + phone): create, rename, delete, add and remove tracks on
+- Playlists: create, rename, delete, add and remove tracks on
   server-side playlists — stored by the server, so anything else pointed at it
   sees the same lists. Reordering is not supported, see
   [decisions](decisions.md)
 - Favourites: star songs from any track row, the mini player or Now Playing,
-  with a dedicated list on both desktop (sidebar) and phone (tab, pull to
-  refresh). Server-side, so it stays in sync with anything else pointed at the
-  same server
+  with a dedicated sidebar list. Server-side, so it stays in sync with anything
+  else pointed at the same server
 - Automatic recovery from mid-stream connection drops
-- Lock screen / notification controls (Android); SMTC + keep-awake (Windows);
-  MPRIS media keys (Linux)
-- Android TV UI with remote navigation, auto-detected via `UiModeManager`
+- SMTC + keep-awake (Windows); MPRIS media keys (Linux)
 
 ## UI layout
 
-Three layouts over one set of services. `MainScreen` picks between the first two;
-`AuthWrapper` sends Android TV straight to `TvHomeScreen`.
+One shell. `AuthWrapper` renders `DesktopShell` (`screens/desktop/desktop_shell.dart`)
+once logged in: a 224px sidebar (Library / Favourites / Playlists) with a nested
+navigator per drill-down destination, and a full-window `DesktopPlayerScreen`
+with a docked "Up Next" panel pushed on the root navigator. Everything below
+the widget layer — `AudioPlayerService` with `PlaybackCursor` and
+`PlaybackPolicy`, `LibraryScanner` with its `FolderWalk`/`FolderTree`,
+`CoverArt` — never imports a widget.
 
-| Form factor | Entry point | Navigation | Player |
-|---|---|---|---|
-| Desktop (Windows/Linux) | `screens/desktop/desktop_shell.dart` | 224px sidebar (Library / Favourites / Playlists) + a nested navigator per drill-down destination; All Tracks is an ordinary (read-only) playlist | Full-window `DesktopPlayerScreen` with a docked "Up Next" panel |
-| Android phone | `MainScreen`'s `_PhoneScaffold` | Bottom tab bar (Folders / Favourites / Playlists); All Tracks is an ordinary (read-only) playlist | `PlayerScreen` + modal `QueueSheet` |
-| Android TV | `screens/tv_home_screen.dart` | D-pad focus traversal | `TvPlayerScreen` |
-
-Desktop and phone are **separate screens on purpose** — see
-[decisions](decisions.md). What they share is everything below the widget layer
-(`AudioPlayerService` with `PlaybackCursor` and `PlaybackPolicy`,
-`LibraryScanner` with its `FolderWalk`/`FolderTree`, `CoverArt`) plus the theme
-in `lib/theme/`.
+Until 2026-09-13 there were three layouts (this one, a phone tab bar, an
+Android TV D-pad screen) over the same services; the other two went with
+Android — see [decisions](decisions.md).
 
 The desktop shell owns the window: `main()` hides the native frame on
 Windows/Linux, so `WindowChrome` is the only way to move, maximise or close the
@@ -241,13 +230,12 @@ The app is useless without a reachable server; there is no offline library mode
 
 **Implemented:** browsing, search, streaming, queue, shuffle/repeat, ReplayGain,
 playlists (create, fill by search, reorder-free add/remove, rename, delete),
-library + stream + cover caching, drop recovery, Android TV UI, Windows SMTC and
-wakelock, Windows installer, Linux MPRIS media keys, Arch packaging (PKGBUILD),
-the desktop redesign (theme + sidebar shell + custom window chrome), scrobbling,
-desktop keyboard shortcuts, favourites (desktop + phone), and playlists
-(desktop + phone).
+library + cover caching, drop recovery, Windows SMTC and wakelock, Windows
+installer, Linux MPRIS media keys, Arch packaging (PKGBUILD), the desktop
+redesign (theme + sidebar shell + custom window chrome), scrobbling, desktop
+keyboard shortcuts, favourites, and playlists.
 
-**Test suite:** 35 test files under `test/` (~7,500 lines including support
+**Test suite:** 30 test files under `test/` (~7,100 lines including support
 fakes) covering the models, services, the screens and the shared widgets.
 Playback is exercised against a fake `just_audio` platform
 (`test/support/fake_just_audio.dart`) rather than a live backend. Sequencing
@@ -255,25 +243,20 @@ Playback is exercised against a fake `just_audio` platform
 with no player or Flutter dependency, tested directly rather than through
 seams on `AudioPlayerService`; "what tells the OS this is playing"
 (`NowPlayingPresence`), "what's the URL for this track" (`StreamUrlResolver`),
-and "how the audio is cached" (`StreamCache` — Android's on-disk cache vs
-streaming direct, see [decisions](decisions.md)) are similarly pulled out into
-their own seams, each with a no-op/throwing/pass-through test default so nothing
-in the suite needs a real Windows or Android platform channel. Run with
-`flutter test`. **This does not replace on-device testing** — the audio path
-differs by platform (media_kit/MPV on Windows/Linux, ExoPlayer + the loopback
-disk stream cache on Android), so a green suite says nothing about either
-backend — as the Windows rename bug in [decisions](decisions.md) demonstrated.
+and "what the server's directory tree looks like" (`LibraryBrowser`) are
+similarly pulled out into their own seams, each with a no-op/throwing/in-memory
+test default so nothing in the suite needs a real platform channel. Run with
+`flutter test`. **This does not replace running the app** — the fake player
+does not exercise media_kit, and the presence layer (SMTC, MPRIS) is only
+reachable on the real OS.
 
 **Remaining / known gaps:**
-- iOS is scaffolded but never distributed (needs an Apple Developer account).
-- Desktop *screen* test coverage is thin: the playlists screens are covered,
-  but the library, folder and player screens are not. The desktop widget tests
-  cover the shortcuts, the favourite heart and the track row; `test/` otherwise
-  covers the phone widgets and the services beneath both.
-- Favourites and playlists are not on Android TV — desktop and phone have both,
-  but the TV's D-pad screens have neither.
+- *Screen* test coverage is thin: the playlists screens and the shell are
+  covered, but the library, folder and player screens are not. The widget
+  tests cover the shortcuts, the favourite heart and the track row; `test/`
+  otherwise covers the services.
 - Playlists cannot be reordered — Subsonic has no reorder parameter, so it
-  means rewriting the whole playlist plus a drag surface on both layouts.
+  means rewriting the whole playlist plus a drag surface.
 - Library cache is a single file per install, wiped on logout — no per-account
   scoping, so switching users rebuilds from a full scan.
 
