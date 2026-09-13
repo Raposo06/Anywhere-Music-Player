@@ -35,7 +35,6 @@ class PlaybackCursor {
   List<Track> get playlist => List.unmodifiable(_playlist);
   int get currentIndex => _currentIndex;
   List<Track> get queue => List.unmodifiable(_queue);
-  int get queueLength => _queue.length;
   bool get isShuffleEnabled => _isShuffleEnabled;
   RepeatMode get repeatMode => _repeatMode;
 
@@ -115,6 +114,20 @@ class PlaybackCursor {
   Track? peekNext() {
     if (_queue.isNotEmpty) return _queue.first;
     final idx = _peekNextIndex();
+    return idx == null ? null : _playlist[idx];
+  }
+
+  /// What [rewind] would return right now, without mutating any state — the
+  /// [peekNext] counterpart, and the same "is the button live?" question
+  /// asked of the other direction. Built on the index arithmetic [rewind]
+  /// commits, so they can't disagree.
+  Track? peekPrevious() {
+    if (_playingFromQueue &&
+        _currentIndex >= 0 &&
+        _currentIndex < _playlist.length) {
+      return _playlist[_currentIndex];
+    }
+    final idx = _peekPrevIndex();
     return idx == null ? null : _playlist[idx];
   }
 
@@ -290,29 +303,36 @@ class PlaybackCursor {
     return idx;
   }
 
-  int? _prevPlaylistIndex() {
+  /// Previous playlist index respecting shuffle and loop, with no side
+  /// effects. Mirrors [_peekNextIndex].
+  int? _peekPrevIndex() {
     if (_playlist.isEmpty) return null;
     if (_shuffleActive) {
-      var prev = _shufflePos - 1;
+      final prev = _shufflePos - 1;
       if (prev < 0) {
-        if (_repeatMode == RepeatMode.all) {
-          prev = _shuffleOrder.length - 1;
-        } else {
-          return null;
-        }
+        return _repeatMode == RepeatMode.all
+            ? _shuffleOrder[_shuffleOrder.length - 1]
+            : null;
       }
-      _shufflePos = prev;
       return _shuffleOrder[prev];
     }
-    var prev = _currentIndex - 1;
+    final prev = _currentIndex - 1;
     if (prev < 0) {
-      if (_repeatMode == RepeatMode.all) {
-        prev = _playlist.length - 1;
-      } else {
-        return null;
-      }
+      return _repeatMode == RepeatMode.all ? _playlist.length - 1 : null;
     }
     return prev;
+  }
+
+  /// Previous playlist index, committing the shuffle cursor. Mirrors
+  /// [_nextPlaylistIndex].
+  int? _prevPlaylistIndex() {
+    final idx = _peekPrevIndex();
+    if (idx == null) return null;
+    if (_shuffleActive) {
+      final prev = _shufflePos - 1;
+      _shufflePos = prev < 0 ? _shuffleOrder.length - 1 : prev;
+    }
+    return idx;
   }
 
   // -------- Test-only seam --------

@@ -20,7 +20,14 @@ export 'playback_cursor.dart' show RepeatMode;
 /// cursor what plays next and is responsible for actually loading and
 /// playing it. Telling the OS what's playing is [NowPlayingPresence]'s job;
 /// minting the stream/cover URLs to play and show is [StreamUrlResolver]'s —
-/// neither is this class's own concern. The user-facing API is unchanged.
+/// neither is this class's own concern.
+///
+/// State reaches widgets one way: this is a [ChangeNotifier], and every
+/// getter below is current at every notification — select on them. The one
+/// exception is [positionStream], which ticks too often to notify on. Facts
+/// the transport buttons need ([canGoNext], [canGoPrevious], [duration]) are
+/// computed *here*, once, so no widget re-derives them from the parts and
+/// gets a different answer than the next widget over.
 class AudioPlayerService with ChangeNotifier {
   AudioPlayer? _player;
   final NowPlayingPresence _presence;
@@ -63,28 +70,32 @@ class AudioPlayerService with ChangeNotifier {
   StreamSubscription<Duration>? _scrobbleSubscription;
   StreamSubscription<PlayerState>? _playerStateSubscription;
   StreamSubscription<bool>? _playingSubscription;
+  StreamSubscription<Duration?>? _durationSubscription;
   StreamSubscription<PlaybackEvent>? _playbackEventSubscription;
   bool _playerInitialized = false;
 
-  // Provide safe stream getters that return empty streams before init.
-  static const _emptyDurationStream = Stream<Duration>.empty();
-  static const _emptyNullDurationStream = Stream<Duration?>.empty();
-  static const _emptyBoolStream = Stream<bool>.empty();
-
+  /// Playback position, ticking. The only stream on this interface: it fires
+  /// a few times a second, which is too often to notify every listener over.
+  /// Empty before the first play.
   Stream<Duration> get positionStream =>
-      _player?.positionStream ?? _emptyDurationStream;
-  Stream<Duration?> get durationStream =>
-      _player?.durationStream ?? _emptyNullDurationStream;
-  Stream<Duration> get bufferedPositionStream =>
-      _player?.bufferedPositionStream ?? _emptyDurationStream;
-  Stream<bool> get playingStream => _player?.playingStream ?? _emptyBoolStream;
+      _player?.positionStream ?? const Stream<Duration>.empty();
 
-  AudioPlayer? get player => _player;
   Track? get currentTrack => _currentTrack;
   List<Track> get playlist => _cursor.playlist;
   int get currentIndex => _cursor.currentIndex;
   List<Track> get queue => _cursor.queue;
-  int get queueLength => _cursor.queueLength;
+
+  /// Whether Next would play something, rather than stop. The queue counts
+  /// first, then the playlist under the current shuffle and repeat modes —
+  /// the same answer [playNext] acts on. Both transports disable on this;
+  /// nothing re-derives it from [playlist].length, which gets the queued
+  /// case wrong.
+  bool get canGoNext => _currentTrack != null && _cursor.peekNext() != null;
+
+  /// Whether Previous would go somewhere: back to the interrupted playlist
+  /// track from a queued one, or one step back under the current modes.
+  bool get canGoPrevious =>
+      _currentTrack != null && _cursor.peekPrevious() != null;
 
   /// The upcoming tracks from the browsing context (playlist), in play order
   /// and shuffle-aware, starting after the current playback position. Does not
@@ -97,9 +108,20 @@ class AudioPlayerService with ChangeNotifier {
   String? get lastError => _lastError;
 
   bool get isPlaying => _player?.playing ?? false;
-  Duration? get duration => _player?.duration;
+
+  /// The current track's length. The player's own duration is authoritative
+  /// once the stream has opened; until then the track's metadata covers it,
+  /// so a scrub bar has a total to show from the first frame. Null only
+  /// when nothing is loaded and the metadata has none either. Notified when
+  /// the player learns the real value.
+  Duration? get duration {
+    final loaded = _player?.duration;
+    if (loaded != null) return loaded;
+    final seconds = _currentTrack?.durationSeconds;
+    return seconds == null ? null : Duration(seconds: seconds);
+  }
+
   Duration? get position => _player?.position;
-  Duration? get bufferedPosition => _player?.bufferedPosition;
 
   AudioPlayerService({
     NowPlayingPresence? presence,
@@ -177,6 +199,11 @@ class AudioPlayerService with ChangeNotifier {
       notifyListeners();
     });
 
+    // [duration] switches from metadata to the real value here.
+    _durationSubscription = _player!.durationStream.listen((_) {
+      notifyListeners();
+    });
+
     // When the single-track source finishes, decide what to play next.
     _playerStateSubscription = _player!.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed && !_isLoading) {
@@ -208,13 +235,7 @@ class AudioPlayerService with ChangeNotifier {
     final track = _currentTrack;
     if (track == null || _scrobbledSession == _listenSession) return;
 
-    // The player's own duration is authoritative once loaded; the track's
-    // metadata covers the window before that where it is still null.
-    final total =
-        _player?.duration ??
-        (track.durationSeconds != null
-            ? Duration(seconds: track.durationSeconds!)
-            : null);
+    final total = duration;
     if (total == null || total <= Duration.zero) return;
 
     if (position < PlaybackPolicy.scrobbleThreshold(total)) return;
@@ -297,11 +318,6 @@ class AudioPlayerService with ChangeNotifier {
     await _loadAndPlay(track, token, resumeFrom: resumeFrom);
   }
 
-  void clearError() {
-    _lastError = null;
-    notifyListeners();
-  }
-
   // -------- Source helpers --------
 
   /// Load the source, retrying once if it stalls. A single setAudioSource on
@@ -316,7 +332,9 @@ class AudioPlayerService with ChangeNotifier {
     // two live. Re-issuing the same instance is safe: just_audio keys a source
     // on an id fixed at construction, so the second setAudioSource rebinds the
     // same entry.
-    final source = AudioSource.uri(Uri.parse(_resolver.buildStreamUrl(track.id)));
+    final source = AudioSource.uri(
+      Uri.parse(_resolver.buildStreamUrl(track.id)),
+    );
     try {
       await _player!.setAudioSource(source).timeout(loadTimeout);
     } on TimeoutException {
@@ -687,6 +705,7 @@ class AudioPlayerService with ChangeNotifier {
     _scrobbleSubscription?.cancel();
     _playerStateSubscription?.cancel();
     _playingSubscription?.cancel();
+    _durationSubscription?.cancel();
     _playbackEventSubscription?.cancel();
     _presence.dispose();
     // Cleared before the await so nothing can reach a half-disposed player.

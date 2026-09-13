@@ -236,7 +236,7 @@ installer, Linux MPRIS media keys, Arch packaging (PKGBUILD), the desktop
 redesign (theme + sidebar shell + custom window chrome), scrobbling, desktop
 keyboard shortcuts, favourites, and playlists.
 
-**Test suite:** 30 test files under `test/` (~7,100 lines including support
+**Test suite:** 32 test files under `test/` (~7,900 lines including support
 fakes) covering the models, services, the screens and the shared widgets.
 Playback is exercised against a fake `just_audio` platform
 (`test/support/fake_just_audio.dart`) rather than a live backend. Sequencing
@@ -252,10 +252,11 @@ does not exercise media_kit, and the presence layer (SMTC, MPRIS) is only
 reachable on the real OS.
 
 **Remaining / known gaps:**
-- *Screen* test coverage is thin: the playlists screens and the shell are
-  covered, but the library, folder and player screens are not. The widget
-  tests cover the shortcuts, the favourite heart and the track row; `test/`
-  otherwise covers the services.
+- *Screen* test coverage is thin: the playlists screens, the shell, the
+  library header and Now Playing's transport are covered, but the folder
+  screen and most of Now Playing are not. The widget tests cover the
+  shortcuts, the favourite heart and the track row; `test/` otherwise covers
+  the services.
 - Playlists cannot be reordered — Subsonic has no reorder parameter, so it
   means rewriting the whole playlist plus a drag surface.
 - Library cache is a single file per install, wiped on logout — no per-account

@@ -133,11 +133,13 @@ class _ProgressStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final playerService = context.read<AudioPlayerService>();
+    final duration =
+        context.select<AudioPlayerService, Duration?>((ps) => ps.duration) ??
+        Duration.zero;
     return StreamBuilder<Duration>(
       stream: playerService.positionStream,
       builder: (context, snapshot) {
         final position = snapshot.data ?? Duration.zero;
-        final duration = playerService.duration ?? Duration.zero;
         final progress = duration.inMilliseconds > 0
             ? position.inMilliseconds / duration.inMilliseconds
             : 0.0;
@@ -159,37 +161,40 @@ class _Controls extends StatelessWidget {
   Widget build(BuildContext context) {
     final playerService = context.read<AudioPlayerService>();
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const _ShuffleToggle(),
-        TransportButton(
-          icon: Icons.skip_previous,
-          size: 18,
-          tooltip: 'Previous (Ctrl+←)',
-          onPressed: playerService.playPrevious,
-        ),
-        StreamBuilder<bool>(
-          stream: playerService.playingStream,
-          initialData: playerService.isPlaying,
-          builder: (context, snapshot) {
-            final isPlaying = snapshot.data ?? false;
-            return AccentCircleButton(
-              size: 38,
-              icon: isPlaying ? Icons.pause : Icons.play_arrow,
-              tooltip: isPlaying ? 'Pause (Space)' : 'Play (Space)',
-              onPressed: playerService.togglePlayPause,
-            );
-          },
-        ),
-        TransportButton(
-          icon: Icons.skip_next,
-          size: 18,
-          tooltip: 'Next (Ctrl+→)',
-          onPressed: playerService.playNext,
-        ),
-        const _RepeatToggle(),
-      ],
+    return Selector<
+      AudioPlayerService,
+      ({bool previous, bool playing, bool next})
+    >(
+      selector: (_, ps) => (
+        previous: ps.canGoPrevious,
+        playing: ps.isPlaying,
+        next: ps.canGoNext,
+      ),
+      builder: (context, state, _) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const _ShuffleToggle(),
+          TransportButton(
+            icon: Icons.skip_previous,
+            size: 18,
+            tooltip: 'Previous (Ctrl+←)',
+            onPressed: state.previous ? playerService.playPrevious : null,
+          ),
+          AccentCircleButton(
+            size: 38,
+            icon: state.playing ? Icons.pause : Icons.play_arrow,
+            tooltip: state.playing ? 'Pause (Space)' : 'Play (Space)',
+            onPressed: playerService.togglePlayPause,
+          ),
+          TransportButton(
+            icon: Icons.skip_next,
+            size: 18,
+            tooltip: 'Next (Ctrl+→)',
+            onPressed: state.next ? playerService.playNext : null,
+          ),
+          const _RepeatToggle(),
+        ],
+      ),
     );
   }
 }

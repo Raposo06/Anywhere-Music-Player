@@ -7,7 +7,7 @@ import '../support/fixtures.dart';
 // why it isn't ConcatenatingAudioSource): playlist advance/rewind, shuffle-
 // order generation and wraparound, repeat modes, queue priority, and
 // upcoming-list bookkeeping. Exercised entirely through PlaybackCursor's own
-// public methods — advance/rewind/peekNext/jumpTo*/reorderUpcoming/
+// public methods — advance/rewind/peekNext/peekPrevious/jumpTo*/reorderUpcoming/
 // toggleShuffle/toggleRepeatMode — plus the seed() seam for setting up
 // scenarios (a stale shuffle order, an arbitrary shufflePos) that no
 // production entry point produces on its own. Formerly
@@ -246,6 +246,90 @@ void main() {
       final advanced = cursor.advance();
       expect(peeked?.id, advanced?.id);
       expect(peeked?.id, tracks[1].id); // anchored at the still-playing track
+    });
+  });
+
+  group('peekPrevious', () {
+    test('from a queued track: the playlist track that was interrupted', () {
+      final tracks = playlist(3);
+      final cursor = PlaybackCursor()
+        ..seed(
+          playlist: tracks,
+          currentIndex: 1,
+          queue: [sampleTrack(id: 'q')],
+        );
+      expect(cursor.advance()?.id, 'q');
+      expect(cursor.peekPrevious()?.id, tracks[1].id);
+      expect(cursor.rewind()?.id, tracks[1].id);
+    });
+
+    test('sequential: the previous playlist track', () {
+      final tracks = playlist(3);
+      final cursor = PlaybackCursor()..seed(playlist: tracks, currentIndex: 2);
+      expect(cursor.peekPrevious()?.id, tracks[1].id);
+    });
+
+    test('sequential: null at the start with repeat off', () {
+      final cursor = PlaybackCursor()
+        ..seed(
+          playlist: playlist(3),
+          currentIndex: 0,
+          repeatMode: RepeatMode.off,
+        );
+      expect(cursor.peekPrevious(), isNull);
+      expect(cursor.rewind(), isNull);
+    });
+
+    test('sequential: wraps to the last track with repeat-all', () {
+      final tracks = playlist(3);
+      final cursor = PlaybackCursor()
+        ..seed(playlist: tracks, currentIndex: 0, repeatMode: RepeatMode.all);
+      expect(cursor.peekPrevious()?.id, tracks[2].id);
+    });
+
+    test('shuffle-aware and side-effect free', () {
+      final tracks = playlist(4);
+      final cursor = PlaybackCursor()
+        ..seed(
+          playlist: tracks,
+          currentIndex: 3,
+          isShuffleEnabled: true,
+          shuffleOrder: [2, 0, 3, 1],
+          shufflePos: 2,
+        );
+      expect(cursor.peekPrevious()?.id, tracks[0].id); // shuffleOrder[1]
+      expect(cursor.peekPrevious()?.id, tracks[0].id); // stable
+      // Had peek moved shufflePos, rewind would now land on shuffleOrder[0].
+      expect(cursor.rewind()?.id, tracks[0].id);
+    });
+
+    test('shuffle: wraps to the end of the order with repeat-all, '
+        'and predicts what rewind() commits', () {
+      final tracks = playlist(4);
+      final cursor = PlaybackCursor()
+        ..seed(
+          playlist: tracks,
+          currentIndex: 2,
+          isShuffleEnabled: true,
+          shuffleOrder: [2, 0, 3, 1],
+          shufflePos: 0,
+          repeatMode: RepeatMode.all,
+        );
+      expect(cursor.peekPrevious()?.id, tracks[1].id); // shuffleOrder[3]
+      expect(cursor.rewind()?.id, tracks[1].id);
+    });
+
+    test('shuffle: null at the start of the order with repeat off', () {
+      final cursor = PlaybackCursor()
+        ..seed(
+          playlist: playlist(4),
+          currentIndex: 2,
+          isShuffleEnabled: true,
+          shuffleOrder: [2, 0, 3, 1],
+          shufflePos: 0,
+          repeatMode: RepeatMode.off,
+        );
+      expect(cursor.peekPrevious(), isNull);
     });
   });
 

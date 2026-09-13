@@ -14,6 +14,64 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## The player answers "is Next live?" itself; the interface loses its second transport (2026-09-13)
+
+**Decided.** `AudioPlayerService` gained `canGoNext`, `canGoPrevious` and a
+`duration` that is the player's once the stream is open and the track's
+metadata before that. Both transports (Now Playing, the mini player) select
+on those three and nothing else re-derives them. `PlaybackCursor` gained
+`peekPrevious()`, the side-effect-free twin of `peekNext()`, with the
+previous-index arithmetic split into a pure peek and a committing step the
+way the next-index arithmetic already was. Six members left the interface:
+`playingStream`, `durationStream`, `bufferedPositionStream`,
+`bufferedPosition`, `player` (the raw `AudioPlayer`), `queueLength`, plus
+`clearError` — none had a caller.
+
+**Why.** The module had one implementation and two interfaces. Play/pause
+left by *both* a `ChangeNotifier` notification and a raw just_audio stream,
+so three widgets each carried the `StreamBuilder(playingStream,
+initialData: isPlaying)` idiom by hand, and five getters existed for no
+caller at all. Worse, the facts the transport buttons need were computed in
+the widgets: Now Playing decided Next was live with `playlist.length > 1`,
+the mini player never disabled it, and MPRIS says `CanGoNext=true`
+unconditionally. The cursor's `peekNext()` had the real answer all along —
+the queue head first — so playing one track and queueing another left Now
+Playing's Next *disabled* while Up Next's row worked. That bug is what the
+2026-09-13 architecture review's D01 was written around; the first test of
+`desktop_player_screen.dart` is that scenario, and killing `canGoNext` back
+to `playlist.length > 1` fails three of its four cases.
+
+Duration had three rules: the scrobble threshold used player-then-metadata,
+Now Playing's scrub bar used metadata only, the mini player's progress strip
+read the player's un-notified value from inside a position `StreamBuilder`
+and was right by accident. One getter, one subscription to `durationStream`
+that notifies, three callers.
+
+**What was considered and not done.** The review card proposed a value-type
+`PlaybackSnapshot` on a `ValueListenable`. Rejected on the deletion test:
+`Selector` already gives sliced, atomic reads (the transport now selects a
+`(previous, playing, next)` record), and a snapshot type would have rewritten
+~30 selector sites and ~70 test reads to swap one transport for another with
+no more leverage. Depth here was fewer transports and module-owned rules, not
+a new type. `positionStream` stays a stream: it ticks several times a second,
+too often to notify every listener over. MPRIS/SMTC still hardcode their
+capabilities; feeding them `canGoNext` is the presence seam's job (D03 on the
+same review).
+
+**A behaviour change to know about.** Next at the end of a playlist with
+repeat off is now *disabled* on both transports. Before, the mini player let
+you press it and it called `stop()`. Under the app's default, repeat all, a
+single track's Next is live and restarts it — that is what pressing does,
+so the button says so.
+
+**What would reverse it.** A widget that needs a fact the getters don't
+carry — the right move then is another getter on the module, not a stream
+or a re-derivation in the widget. A second consumer of play/pause that
+genuinely cannot subscribe to a `ChangeNotifier` would justify bringing a
+stream back, and none exists.
+
+---
+
 ## "All Tracks" is two buttons in the Library header, not a playlist (2026-09-13)
 
 **Decided.** Play All and Shuffle in the Library header, acting on

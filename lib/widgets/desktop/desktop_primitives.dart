@@ -302,13 +302,9 @@ class _PlayingBarsState extends State<PlayingBars>
 
   @override
   Widget build(BuildContext context) {
-    final playerService = context.read<AudioPlayerService>();
-
-    return StreamBuilder<bool>(
-      stream: playerService.playingStream,
-      initialData: playerService.isPlaying,
-      builder: (context, snapshot) {
-        final isPlaying = snapshot.data ?? false;
+    return Selector<AudioPlayerService, bool>(
+      selector: (_, ps) => ps.isPlaying,
+      builder: (context, isPlaying, _) {
         // Deferred to after the frame on purpose. Starting or stopping the
         // controller notifies its listeners synchronously, and the
         // AnimatedBuilder below is already one of them on every rebuild after

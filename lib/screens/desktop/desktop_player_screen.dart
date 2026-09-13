@@ -364,10 +364,6 @@ class _Details extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final duration = track.durationSeconds != null
-        ? Duration(seconds: track.durationSeconds!)
-        : Duration.zero;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -422,7 +418,7 @@ class _Details extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 24),
-        _ScrubBar(duration: duration),
+        const _ScrubBar(),
         const SizedBox(height: 20),
         const _Transport(),
         const SizedBox(height: 20),
@@ -439,13 +435,14 @@ class _Details extends StatelessWidget {
 /// The scrub bar: a slim accent track with a small round handle, elapsed and
 /// total time beneath it. The drag/seek machinery lives in [ScrubBar].
 class _ScrubBar extends StatelessWidget {
-  final Duration duration;
-
-  const _ScrubBar({required this.duration});
+  const _ScrubBar();
 
   @override
   Widget build(BuildContext context) {
     final ps = context.read<AudioPlayerService>();
+    final duration =
+        context.select<AudioPlayerService, Duration?>((ps) => ps.duration) ??
+        Duration.zero;
     return ScrubBar(
       duration: duration,
       trackId: ps.currentTrack?.id,
@@ -497,10 +494,16 @@ class _Transport extends StatelessWidget {
   Widget build(BuildContext context) {
     final playerService = context.read<AudioPlayerService>();
 
-    return Selector<AudioPlayerService, int>(
-      selector: (_, ps) => ps.playlist.length,
-      builder: (context, playlistLength, _) {
-        final canSkip = playlistLength > 1;
+    return Selector<
+      AudioPlayerService,
+      ({bool previous, bool playing, bool next})
+    >(
+      selector: (_, ps) => (
+        previous: ps.canGoPrevious,
+        playing: ps.isPlaying,
+        next: ps.canGoNext,
+      ),
+      builder: (context, state, _) {
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -508,29 +511,22 @@ class _Transport extends StatelessWidget {
               icon: Icons.skip_previous,
               size: 26,
               tooltip: 'Previous (Ctrl+←)',
-              onPressed: canSkip ? playerService.playPrevious : null,
+              onPressed: state.previous ? playerService.playPrevious : null,
             ),
             const SizedBox(width: 22),
-            StreamBuilder<bool>(
-              stream: playerService.playingStream,
-              initialData: playerService.isPlaying,
-              builder: (context, snapshot) {
-                final isPlaying = snapshot.data ?? false;
-                return AccentCircleButton(
-                  size: 60,
-                  glow: true,
-                  icon: isPlaying ? Icons.pause : Icons.play_arrow,
-                  tooltip: isPlaying ? 'Pause (Space)' : 'Play (Space)',
-                  onPressed: playerService.togglePlayPause,
-                );
-              },
+            AccentCircleButton(
+              size: 60,
+              glow: true,
+              icon: state.playing ? Icons.pause : Icons.play_arrow,
+              tooltip: state.playing ? 'Pause (Space)' : 'Play (Space)',
+              onPressed: playerService.togglePlayPause,
             ),
             const SizedBox(width: 22),
             TransportButton(
               icon: Icons.skip_next,
               size: 26,
               tooltip: 'Next (Ctrl+→)',
-              onPressed: canSkip ? playerService.playNext : null,
+              onPressed: state.next ? playerService.playNext : null,
             ),
           ],
         );

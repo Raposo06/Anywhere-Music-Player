@@ -318,4 +318,130 @@ void main() {
 
     expect(presence.clearCount, 1);
   });
+
+  // canGoNext / canGoPrevious are the module's own answer to "is the button
+  // live?" — the transports select on them instead of re-deriving from
+  // playlist.length, which got the queued case wrong (a single track
+  // playing plus one queued track showed Next disabled).
+  group('canGoNext / canGoPrevious', () {
+    test('false with nothing playing', () {
+      final service = AudioPlayerService(
+        resolver: const FakeStreamUrlResolver(),
+      );
+      expect(service.canGoNext, isFalse);
+      expect(service.canGoPrevious, isFalse);
+    });
+
+    test('a single track under repeat off: neither, until something is '
+        'queued', () async {
+      final service = AudioPlayerService(
+        resolver: const FakeStreamUrlResolver(),
+      );
+      service.seedForTest(repeatMode: RepeatMode.off);
+      await service.playTrack(sampleTrack(id: '1'));
+      await waitUntil(() => !service.isLoading);
+      expect(service.canGoNext, isFalse);
+      expect(service.canGoPrevious, isFalse);
+
+      var notified = 0;
+      service.addListener(() => notified++);
+      await service.addToQueue(sampleTrack(id: 'q'));
+
+      expect(service.canGoNext, isTrue);
+      expect(notified, 1);
+    });
+
+    test(
+      'follows the playlist edges under repeat off, and wraps under repeat all',
+      () async {
+        final service = AudioPlayerService(
+          resolver: const FakeStreamUrlResolver(),
+        );
+        service.seedForTest(
+          playlist: [
+            sampleTrack(id: '1'),
+            sampleTrack(id: '2'),
+          ],
+          currentIndex: 1,
+          currentTrack: sampleTrack(id: '2'),
+          repeatMode: RepeatMode.off,
+        );
+        expect(service.canGoNext, isFalse);
+        expect(service.canGoPrevious, isTrue);
+
+        service.toggleRepeatMode(); // off → all
+        expect(service.canGoNext, isTrue);
+      },
+    );
+
+    test(
+      'a single track under repeat all: Next replays it, so it is live',
+      () async {
+        final service = AudioPlayerService(
+          resolver: const FakeStreamUrlResolver(),
+        );
+        service.seedForTest(repeatMode: RepeatMode.all);
+        await service.playTrack(sampleTrack(id: '1'));
+        await waitUntil(() => !service.isLoading);
+        expect(service.canGoNext, isTrue);
+        expect(service.canGoPrevious, isTrue);
+      },
+    );
+
+    test('from a queued track, Previous returns to the playlist', () async {
+      final service = AudioPlayerService(
+        resolver: const FakeStreamUrlResolver(),
+      );
+      service.seedForTest(repeatMode: RepeatMode.off);
+      await service.playTrack(sampleTrack(id: '1'));
+      await waitUntil(() => !service.isLoading);
+      await service.addToQueue(sampleTrack(id: 'q'));
+      await service.playNext();
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      await waitUntil(() => !service.isLoading);
+
+      expect(service.currentTrack?.id, 'q');
+      expect(service.canGoPrevious, isTrue);
+      expect(service.canGoNext, isFalse);
+    });
+  });
+
+  // One rule for "how long is this track": the player's duration once the
+  // stream is open, the track's metadata before that. The scrub bar, the
+  // progress strip and the scrobble threshold all read this; none derives
+  // its own.
+  group('duration', () {
+    test('null with nothing loaded', () {
+      final service = AudioPlayerService(
+        resolver: const FakeStreamUrlResolver(),
+      );
+      expect(service.duration, isNull);
+    });
+
+    test(
+      'is the metadata before the load, the player after, and notifies on the switch',
+      () async {
+        final service = AudioPlayerService(
+          resolver: const FakeStreamUrlResolver(),
+        );
+        service.seedForTest(
+          currentTrack: sampleTrack(id: '1', durationSeconds: 42),
+        );
+        expect(service.duration, const Duration(seconds: 42));
+
+        var notifiedWithLoaded = false;
+        service.addListener(() {
+          if (service.duration == const Duration(minutes: 3)) {
+            notifiedWithLoaded = true;
+          }
+        });
+        await service.playTrack(sampleTrack(id: '1', durationSeconds: 42));
+        await waitUntil(() => !service.isLoading);
+
+        // FakeJustAudioPlatform reports a 3-minute source.
+        expect(service.duration, const Duration(minutes: 3));
+        expect(notifiedWithLoaded, isTrue);
+      },
+    );
+  });
 }
