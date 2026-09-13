@@ -168,6 +168,16 @@ class _DesktopLibraryScreenState extends State<DesktopLibraryScreen> {
               query: _query,
               onQueryChanged: _onQueryChanged,
               onRefresh: scanner.isScanning ? null : scanner.rescan,
+              // The whole library, in scan order — the "All Tracks" that used
+              // to be a server-side playlist. Gonic cannot serve a playlist
+              // this size (see decisions.md, 2026-09-13), and the scanner
+              // already holds every track, so the two verbs live here.
+              onPlayAll: scanner.allTracks.isEmpty
+                  ? null
+                  : () => playAll(context, scanner.allTracks),
+              onShuffle: scanner.allTracks.isEmpty
+                  ? null
+                  : () => playAll(context, scanner.allTracks, shuffled: true),
             ),
             const SizedBox(height: 20),
             Expanded(
@@ -316,11 +326,18 @@ class _Header extends StatelessWidget {
   /// short of restarting hours later. Null while a scan is already running.
   final VoidCallback? onRefresh;
 
+  /// Play, or shuffle, every track in the library. Null while there is
+  /// nothing to play.
+  final VoidCallback? onPlayAll;
+  final VoidCallback? onShuffle;
+
   const _Header({
     required this.subtitle,
     required this.query,
     required this.onQueryChanged,
     required this.onRefresh,
+    required this.onPlayAll,
+    required this.onShuffle,
   });
 
   @override
@@ -352,6 +369,18 @@ class _Header extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         DesktopSearchField(onChanged: onQueryChanged),
+        const SizedBox(width: 12),
+        ElevatedButton.icon(
+          onPressed: onPlayAll,
+          icon: const Icon(Icons.play_arrow, size: 18),
+          label: const Text('Play All'),
+        ),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: onShuffle,
+          icon: const Icon(Icons.shuffle, size: 16),
+          label: const Text('Shuffle'),
+        ),
       ],
     );
   }
