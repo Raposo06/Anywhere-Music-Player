@@ -29,7 +29,9 @@ abstract class PlaybackReporter {
 ///
 /// Unlike [NoResolver] — where a missing resolver means playback genuinely
 /// cannot proceed, so it throws — a missing reporter is harmless. Losing a
-/// play count is not a failure worth propagating, so this stays silent.
+/// play count is not a failure worth propagating, so this stays silent. In
+/// production the reporter is `AuthService`, which follows the session and
+/// drops reports the same way while logged out.
 class NoPlaybackReporter implements PlaybackReporter {
   const NoPlaybackReporter();
 
@@ -38,26 +40,4 @@ class NoPlaybackReporter implements PlaybackReporter {
 
   @override
   Future<void> scrobble(String songId, {DateTime? startedAt}) async {}
-}
-
-/// A stable reporter reference that [AudioPlayerService] can be constructed
-/// with once, before login, and that keeps working across logout/re-login —
-/// exactly like [RotatingStreamUrlResolver], and wired the same way from
-/// `main.dart` whenever [AuthService] changes.
-///
-/// Reports while logged out are dropped rather than thrown: "no session" is a
-/// normal state for telemetry to be in, not an error.
-class RotatingPlaybackReporter implements PlaybackReporter {
-  PlaybackReporter? _current;
-
-  void updateFrom(PlaybackReporter? reporter) {
-    _current = reporter;
-  }
-
-  @override
-  Future<void> nowPlaying(String songId) async => _current?.nowPlaying(songId);
-
-  @override
-  Future<void> scrobble(String songId, {DateTime? startedAt}) async =>
-      _current?.scrobble(songId, startedAt: startedAt);
 }

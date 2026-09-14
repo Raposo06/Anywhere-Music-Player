@@ -43,38 +43,6 @@ void main() {
     });
   });
 
-  group('RotatingStreamUrlResolver', () {
-    test('throws when nothing has been bound yet (not logged in)', () {
-      final rotating = RotatingStreamUrlResolver();
-      expect(() => rotating.buildStreamUrl('1'), throwsStateError);
-      expect(() => rotating.buildCoverArtUrl('1'), throwsStateError);
-    });
-
-    test('delegates to whatever it was last updated with', () {
-      final rotating = RotatingStreamUrlResolver();
-      rotating.updateFrom(resolver);
-
-      expect(rotating.buildStreamUrl('1'), resolver.buildStreamUrl('1'));
-    });
-
-    test('reverts to throwing after updateFrom(null) — e.g. on logout', () {
-      final rotating = RotatingStreamUrlResolver();
-      rotating.updateFrom(resolver);
-      rotating.updateFrom(null);
-
-      expect(() => rotating.buildStreamUrl('1'), throwsStateError);
-    });
-
-    test('picks up a new session after updateFrom is called again — e.g. re-login', () {
-      final rotating = RotatingStreamUrlResolver();
-      rotating.updateFrom(resolver);
-      const otherResolver = FakeStreamUrlResolver();
-      rotating.updateFrom(otherResolver);
-
-      expect(rotating.buildStreamUrl('1'), otherResolver.buildStreamUrl('1'));
-    });
-  });
-
   group('NoResolver', () {
     test('throws on every call — the safe default when nothing is configured', () {
       const none = NoResolver();

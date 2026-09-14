@@ -14,6 +14,52 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## `AuthService` is the session-following resolver and reporter; the `Rotating*` wrappers go (2026-09-14)
+
+**Decided.** `AuthService implements StreamUrlResolver, PlaybackReporter`,
+delegating each call to the client of the moment: URLs throw a
+`StateError` while logged out (as `NoResolver` does), reports drop (as
+`NoPlaybackReporter` does). `main()` builds the `AuthService` alongside the
+player and the presence adapter and hands it to both; `MyApp` takes it by
+value. Deleted: `RotatingStreamUrlResolver`, `RotatingPlaybackReporter`,
+their `updateFrom` protocol, the two `auth.addListener` hooks inside
+`MyApp`'s `create:` closure, and the `if (resolver is
+RotatingStreamUrlResolver)` type test that guarded them. `MyApp` lost its
+`presence`/`resolver`/`reporter` parameters — only the widget-test branch
+ever read them, with defaults.
+
+**Why.** The player is built once, before login, and must mint URLs and
+report plays against whatever session is current. That is a fact about the
+session, and `AuthService` already *is* the session — a `ChangeNotifier`
+holding the current client. The two wrappers were a second copy of "the
+current client", kept in step by listeners registered where no test could
+reach them; the review card counted four mechanisms for one question. Now
+there are two, and the second (`sessionScoped`'s identity guard,
+2026-09-09) answers a different question — "does this module instance
+belong to this session?" — so it stays. Widgets that read
+`AuthService.apiService` directly were listed as the fourth mechanism; they
+are reading the source, which is the opposite of a leak, and are unchanged.
+
+The four `Rotating*` tests became four `AuthService` tests, one of which —
+"after logout, URLs throw again and reports drop" — is the re-pointing that
+was untestable before. Writing it surfaced the salt rotation in miniature:
+two `buildStreamUrl` calls on the same session differ in `t=` and `s=`, so
+the test compares host, id and user, never the whole URL (CLAUDE.md item 4).
+
+**What was considered and not done.** A `ValueListenable<SubsonicApiService?>`
+on `AuthService`, as the card sketched — the player would then need to
+listen and re-bind, which is the wrapper again with the listener moved.
+Delegation is the deeper move: nothing listens, because nothing is copied.
+Making `AuthService` the resolver for *widgets* too (`CoverArt`,
+`UpcomingCoverPrecacher`) — they want "null while logged out", which
+`apiService` already is; the throwing contract is the player's.
+
+**What would reverse it.** A second client per session — a separate
+transport for streaming, say — at which point "the current client" is no
+longer one field and a resolver object earns its own name again.
+
+---
+
 ## Shell navigation is one module the shell provides, not two protocols (2026-09-14)
 
 **Decided.** `ShellNavigation` (`screens/desktop/shell_navigation.dart`) has
@@ -1646,6 +1692,8 @@ manually even without unit tests.
 
 ## Track/Folder stopped carrying a resolved streamUrl/coverArtUrl (2026-08-24)
 
+> **Refined (2026-09-14)** — `RotatingStreamUrlResolver` below is gone; `AuthService` is the resolver that follows the session. The reasoning about not holding minted URLs stands untouched.
+
 **Decided.** `Track.streamUrl` and `Track.coverArtUrl`/`Folder.coverArtUrl` are
 gone. Both models now hold only the raw `coverArtId` (`Track.path`/`id` double
 as the stream key). A new `StreamUrlResolver` interface (implemented by
@@ -1969,6 +2017,8 @@ and the 2 s shutdown timeout are both deliberate.
 ---
 
 ## 2026-08-30 — Scrobbling: position-based threshold, best-effort delivery
+
+> **Refined (2026-09-14)** — `RotatingPlaybackReporter` below is gone; `AuthService` is the reporter that follows the session. The threshold and delivery rules stand.
 
 **Decided.** The app now reports listening to the server over `/rest/scrobble`:
 a `submission=false` "now playing" announcement when a track starts, and a

@@ -252,4 +252,74 @@ void main() {
       expect(secureStore, isEmpty);
     });
   });
+
+  // AuthService is the resolver and reporter the player is built with, once,
+  // before login — so what it answers has to follow the session. Until
+  // 2026-09-14 this lived in two Rotating* wrappers re-pointed by listeners
+  // inside main.dart's create: closure, where no test could reach it.
+  group('as the session-following resolver and reporter', () {
+    final scrobbled = <String>[];
+
+    AuthService authWith({String scrobbleTag = ''}) => AuthService(
+      apiFactory: ({required serverUrl, required username, required password}) =>
+          SubsonicApiService(
+            serverUrl: serverUrl,
+            username: username,
+            password: password,
+            httpClient: MockClient((request) async {
+              if (request.url.path.endsWith('/scrobble')) {
+                scrobbled.add('$scrobbleTag:${request.url.queryParameters['id']}');
+              }
+              return _pingOk();
+            }),
+          ),
+    );
+
+    setUp(scrobbled.clear);
+
+    test('logged out: URLs throw, reports drop', () async {
+      final auth = authWith();
+
+      expect(() => auth.buildStreamUrl('1'), throwsStateError);
+      expect(() => auth.buildCoverArtUrl('c'), throwsStateError);
+      await expectLater(auth.scrobble('1'), completes);
+      await expectLater(auth.nowPlaying('1'), completes);
+      expect(scrobbled, isEmpty);
+    });
+
+    test('logged in: URLs come from the session, reports reach it', () async {
+      final auth = authWith(scrobbleTag: 'a');
+      await auth.login('https://gonic.example.com', 'alice', 'secret');
+
+      // Not compared whole: the salt in the auth token rotates per call.
+      final url = Uri.parse(auth.buildStreamUrl('1'));
+      expect(url.host, 'gonic.example.com');
+      expect(url.queryParameters['id'], '1');
+      expect(url.queryParameters['u'], 'alice');
+      await auth.scrobble('42');
+      expect(scrobbled, ['a:42']);
+    });
+
+    test('after logout, URLs throw again and reports drop — the re-pointing '
+        'that used to be untestable', () async {
+      final auth = authWith(scrobbleTag: 'a');
+      await auth.login('https://gonic.example.com', 'alice', 'secret');
+      await auth.logout();
+
+      expect(() => auth.buildStreamUrl('1'), throwsStateError);
+      await auth.scrobble('42');
+      expect(scrobbled, isEmpty);
+    });
+
+    test('a re-login answers for the new session, not the disposed one', () async {
+      final auth = authWith(scrobbleTag: 'first');
+      await auth.login('https://gonic.example.com', 'alice', 'secret');
+      final before = auth.apiService;
+      await auth.logout();
+      await auth.login('https://other.example.com', 'bob', 'secret');
+
+      expect(auth.apiService, isNot(same(before)));
+      expect(auth.buildStreamUrl('1'), contains('other.example.com'));
+    });
+  });
 }

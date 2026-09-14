@@ -143,6 +143,28 @@ media_kit native libraries exceed it.
 **Fix:** enable long-path support, then **restart the terminal** — the setting
 isn't picked up by an already-open shell.
 
+### `flutter build windows` fails at INSTALL with MSB3073 after compiling fine
+
+**Symptom:** the C++ compile succeeds, then the `INSTALL.vcxproj` step fails
+with a wall of `error MSB3073: The command "setlocal ... cmake.exe
+-DBUILD_TYPE=Release -P cmake_install.cmake ...` lines and nothing more
+useful. `-v` shows the real line: `file cannot create directory: C:/Program
+Files/anywhere_music_player. Maybe need administrative privileges.`
+
+**Cause:** a stale `build/windows/x64/CMakeCache.txt` whose
+`CMAKE_INSTALL_PREFIX` is CMake's default (`C:/Program Files/<app>`) instead
+of the bundle directory Flutter normally sets. Seen on 2026-09-14 after a
+run of builds in one session; what flipped it was not pinned down. A running
+copy of the app (locking the `.exe`) is a *different* failure with a similar
+shape — close it first, then read the verbose error.
+
+**Fix:** delete the Windows build tree and build again; Flutter regenerates
+the cache with the right prefix:
+
+```bash
+rm -rf build/windows && flutter build windows --release
+```
+
 ### CI Windows build fails on `smtc_windows` tar extraction or `permission_handler` coroutines
 
 **Symptom:** the release workflow's `windows` job fails (a local `flutter build

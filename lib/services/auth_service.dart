@@ -2,9 +2,23 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
+import 'playback_reporter.dart';
+import 'stream_url_resolver.dart';
 import 'subsonic_api_service.dart';
 
-class AuthService with ChangeNotifier {
+/// The current session: who is logged in and the [SubsonicApiService] that
+/// talks for them. A whole new client each login; disposed on logout.
+///
+/// Also the session-following [StreamUrlResolver] and [PlaybackReporter]
+/// the player is built with. The player is constructed once, before login,
+/// and must keep resolving against whatever session is current across
+/// logout and re-login — so it holds *this* rather than a client, and each
+/// call is delegated to the client of the moment. Until 2026-09-14 that was
+/// two `Rotating*` wrappers re-pointed by listeners in `main.dart`; see
+/// docs/decisions.md.
+class AuthService
+    with ChangeNotifier
+    implements StreamUrlResolver, PlaybackReporter {
   SubsonicApiService? _apiService;
   User? _currentUser;
   bool _isLoading = false;
@@ -24,7 +38,8 @@ class AuthService with ChangeNotifier {
     required String serverUrl,
     required String username,
     required String password,
-  }) _apiFactory;
+  })
+  _apiFactory;
 
   AuthService({
     @visibleForTesting
@@ -40,6 +55,32 @@ class AuthService with ChangeNotifier {
   User? get currentUser => _currentUser;
   bool get isAuthenticated => _apiService != null && _currentUser != null;
   bool get isLoading => _isLoading;
+
+  // -------- The current session as resolver and reporter --------
+
+  /// A URL needs a session; asking for one logged out is a programming
+  /// error, not a state to paper over — same contract as [NoResolver].
+  SubsonicApiService get _sessionOrThrow =>
+      _apiService ?? (throw StateError('No session — not logged in?'));
+
+  @override
+  String buildStreamUrl(String songId) =>
+      _sessionOrThrow.buildStreamUrl(songId);
+
+  @override
+  String buildCoverArtUrl(String coverArtId, {int? size}) =>
+      _sessionOrThrow.buildCoverArtUrl(coverArtId, size: size);
+
+  /// Reports while logged out are dropped, not thrown: "no session" is a
+  /// normal state for telemetry to be in — same contract as
+  /// [NoPlaybackReporter].
+  @override
+  Future<void> nowPlaying(String songId) async =>
+      _apiService?.nowPlaying(songId);
+
+  @override
+  Future<void> scrobble(String songId, {DateTime? startedAt}) async =>
+      _apiService?.scrobble(songId, startedAt: startedAt);
 
   /// Initialize auth state from stored credentials.
   Future<void> initialize() async {
@@ -79,18 +120,25 @@ class AuthService with ChangeNotifier {
           await api.ping();
           _apiService = api;
           _currentUser = User(username: username);
-          if (kDebugMode) debugPrint('AuthService: Restored session for $username');
+          if (kDebugMode)
+            debugPrint('AuthService: Restored session for $username');
         } on SubsonicApiException catch (e) {
           if (e.code == 40) {
-            debugPrint('AuthService: Stored credentials rejected by server, clearing');
+            debugPrint(
+              'AuthService: Stored credentials rejected by server, clearing',
+            );
             await _clearStorage();
           } else {
-            debugPrint('AuthService: Ping failed ($e), continuing offline with cached session');
+            debugPrint(
+              'AuthService: Ping failed ($e), continuing offline with cached session',
+            );
             _apiService = api;
             _currentUser = User(username: username);
           }
         } catch (e) {
-          debugPrint('AuthService: Ping failed ($e), continuing offline with cached session');
+          debugPrint(
+            'AuthService: Ping failed ($e), continuing offline with cached session',
+          );
           _apiService = api;
           _currentUser = User(username: username);
         }

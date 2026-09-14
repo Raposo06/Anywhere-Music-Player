@@ -39,7 +39,9 @@ extension ResolveOrNull on StreamUrlResolver? {
 /// The default when no resolver is configured. Unlike [NowPlayingPresence]'s
 /// no-op default, there's no safe no-op here — a missing resolver means
 /// playback genuinely cannot proceed, so this fails loudly and immediately
-/// rather than silently building a broken URL.
+/// rather than silently building a broken URL. In production the resolver
+/// is `AuthService`, which follows the session and throws the same way
+/// while logged out.
 class NoResolver implements StreamUrlResolver {
   const NoResolver();
   @override
@@ -48,35 +50,4 @@ class NoResolver implements StreamUrlResolver {
   @override
   String buildCoverArtUrl(String coverArtId, {int? size}) =>
       throw StateError('No StreamUrlResolver configured — not logged in?');
-}
-
-/// A stable resolver reference that [AudioPlayerService] can be constructed
-/// with once, before login, and that keeps working across logout/re-login —
-/// unlike [AuthService.apiService] itself, which is a whole new instance
-/// each session. `main.dart` mutates this in place whenever [AuthService]
-/// changes; nothing else needs to know that's happening.
-class RotatingStreamUrlResolver implements StreamUrlResolver {
-  StreamUrlResolver? _current;
-
-  void updateFrom(StreamUrlResolver? resolver) {
-    _current = resolver;
-  }
-
-  @override
-  String buildStreamUrl(String songId) {
-    final resolver = _current;
-    if (resolver == null) {
-      throw StateError('No StreamUrlResolver bound — not logged in?');
-    }
-    return resolver.buildStreamUrl(songId);
-  }
-
-  @override
-  String buildCoverArtUrl(String coverArtId, {int? size}) {
-    final resolver = _current;
-    if (resolver == null) {
-      throw StateError('No StreamUrlResolver bound — not logged in?');
-    }
-    return resolver.buildCoverArtUrl(coverArtId, size: size);
-  }
 }

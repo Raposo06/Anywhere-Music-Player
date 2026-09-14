@@ -9,8 +9,6 @@ import 'services/audio_player_service.dart';
 import 'services/linux_presence.dart';
 import 'services/notices.dart';
 import 'services/now_playing_presence.dart';
-import 'services/playback_reporter.dart';
-import 'services/stream_url_resolver.dart';
 import 'services/windows_presence.dart';
 import 'services/favourites_service.dart';
 import 'services/library_scanner.dart';
@@ -74,25 +72,19 @@ void main() async {
 
   await dotenv.load(fileName: '.env');
 
-  // Mints stream/cover-art URLs on demand from the *current* authenticated
-  // session (see StreamUrlResolver) — a stable reference that outlives any
-  // one AuthService instance, so AudioPlayerService (constructed once, here,
-  // before login even happens) keeps working across logout/re-login. MyApp
-  // wires it to AuthService's changes.
-  final resolver = RotatingStreamUrlResolver();
-
-  // Same rotating-reference trick as [resolver], for the same reason: the
-  // player is built once, before login, but scrobbles have to reach whatever
-  // session is current. See RotatingPlaybackReporter.
-  final reporter = RotatingPlaybackReporter();
+  // The session. Built once, here, because the player and the presence
+  // adapter are built once, before login, and must mint URLs and report
+  // plays against whatever session is current across logout/re-login —
+  // AuthService is the resolver and reporter that follows it.
+  final auth = AuthService();
 
   // Which adapter tells the OS what's playing — see NowPlayingPresence.
   // Windows gets SMTC/taskbar/wakelock; Linux gets MPRIS (hardware media keys
   // go through it — see LinuxPresence).
   final NowPlayingPresence presence = Platform.isWindows
-      ? WindowsPresence(resolver: resolver)
+      ? WindowsPresence(resolver: auth)
       : Platform.isLinux
-      ? LinuxPresence(resolver: resolver)
+      ? LinuxPresence(resolver: auth)
       : const NoPresence();
 
   // Where every module's one-shot failures go, drained by the shell's
@@ -104,8 +96,8 @@ void main() async {
   // once-per-process services above.
   final playerService = AudioPlayerService(
     presence: presence,
-    resolver: resolver,
-    reporter: reporter,
+    resolver: auth,
+    reporter: auth,
     notices: notices,
   );
 
@@ -113,15 +105,7 @@ void main() async {
     await _DesktopCloseGuard(playerService).install();
   }
 
-  runApp(
-    MyApp(
-      presence: presence,
-      resolver: resolver,
-      reporter: reporter,
-      player: playerService,
-      notices: notices,
-    ),
-  );
+  runApp(MyApp(auth: auth, player: playerService, notices: notices));
 }
 
 /// Stops the audio player before the process is allowed to go away.
@@ -173,12 +157,10 @@ class _DesktopCloseGuard with WindowListener {
 }
 
 class MyApp extends StatelessWidget {
-  final NowPlayingPresence presence;
-  final StreamUrlResolver resolver;
-
-  /// Where scrobbles go. Kept pointed at the current session alongside
-  /// [resolver] below; null in tests, which don't report anywhere.
-  final RotatingPlaybackReporter? reporter;
+  /// The session, when the caller owns it — `main()` does, because the
+  /// player it also owns resolves through it. Null means "make your own",
+  /// which is what the widget tests do.
+  final AuthService? auth;
 
   /// The player, when the caller owns it — desktop does, so that window close
   /// can shut it down (see [_DesktopCloseGuard]). Null means "make your own",
@@ -189,14 +171,7 @@ class MyApp extends StatelessWidget {
   /// it. Null means "make your own", alongside the player.
   final Notices? notices;
 
-  const MyApp({
-    super.key,
-    this.presence = const NoPresence(),
-    this.resolver = const NoResolver(),
-    this.reporter,
-    this.player,
-    this.notices,
-  });
+  const MyApp({super.key, this.auth, this.player, this.notices});
 
   @override
   Widget build(BuildContext context) {
@@ -209,41 +184,24 @@ class MyApp extends StatelessWidget {
         else
           ChangeNotifierProvider<Notices>(create: (_) => Notices()),
 
-        // Auth Service (owns the SubsonicApiService after login). If
-        // [resolver] is the rotating kind (always true in production — see
-        // main()), keep it pointed at whatever session is current, so
-        // AudioPlayerService and the audio handler — both constructed once,
-        // before login — always resolve against the live session.
-        ChangeNotifierProvider<AuthService>(
-          create: (_) {
-            final auth = AuthService();
-            final resolver = this.resolver;
-            if (resolver is RotatingStreamUrlResolver) {
-              resolver.updateFrom(auth.apiService);
-              auth.addListener(() => resolver.updateFrom(auth.apiService));
-            }
-            // SubsonicApiService is both the resolver and the reporter, so
-            // the two rotate together off the same session change.
-            if (reporter case final reporter?) {
-              reporter.updateFrom(auth.apiService);
-              auth.addListener(() => reporter.updateFrom(auth.apiService));
-            }
-            return auth;
-          },
-        ),
+        // The session (owns the SubsonicApiService after login). A
+        // caller-supplied one is provided by value — the player already
+        // holds it as its resolver and reporter.
+        if (auth case final auth?)
+          ChangeNotifierProvider<AuthService>.value(value: auth)
+        else
+          ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
 
         // Audio Player Service. A caller-supplied player is provided by
         // value: its lifetime is main()'s, not this tree's, so Provider must
-        // not dispose it out from under the close guard.
+        // not dispose it out from under the close guard. The made-here one
+        // (widget tests) has no presence and no resolver.
         if (player case final player?)
           ChangeNotifierProvider<AudioPlayerService>.value(value: player)
         else
           ChangeNotifierProvider<AudioPlayerService>(
-            create: (context) => AudioPlayerService(
-              presence: presence,
-              resolver: resolver,
-              notices: context.read<Notices>(),
-            ),
+            create: (context) =>
+                AudioPlayerService(notices: context.read<Notices>()),
           ),
 
         // The library, the user's playlists and their starred songs. All
