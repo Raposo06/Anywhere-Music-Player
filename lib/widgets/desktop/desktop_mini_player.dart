@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:provider/provider.dart';
 
 import '../../models/track.dart';
+import '../../screens/desktop/shell_navigation.dart';
 import '../../services/audio_player_service.dart';
 import '../../theme/app_colors.dart';
 import '../cover_art.dart';
@@ -17,9 +18,7 @@ import '../favourite_button.dart';
 /// isn't a control opens the full player. Collapses to nothing when there is
 /// no current track, so the shell doesn't reserve space for an empty bar.
 class DesktopMiniPlayer extends StatelessWidget {
-  final VoidCallback onOpenPlayer;
-
-  const DesktopMiniPlayer({super.key, required this.onOpenPlayer});
+  const DesktopMiniPlayer({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +26,10 @@ class DesktopMiniPlayer extends StatelessWidget {
       selector: (_, ps) => ps.currentTrack,
       builder: (context, track, _) {
         if (track == null) return const SizedBox.shrink();
-        return _Bar(track: track, onOpenPlayer: onOpenPlayer);
+        return _Bar(
+          track: track,
+          onOpenPlayer: context.read<ShellNavigation>().openNowPlaying,
+        );
       },
     );
   }

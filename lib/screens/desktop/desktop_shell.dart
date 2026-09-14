@@ -11,12 +11,12 @@ import '../../widgets/desktop/desktop_shortcuts.dart';
 import '../../widgets/notices_listener.dart';
 import '../../widgets/desktop/sidebar.dart';
 import '../../widgets/desktop/window_chrome.dart';
-import '../../widgets/play_actions.dart';
 import 'desktop_favourites_screen.dart';
 import 'desktop_folder_screen.dart';
 import 'desktop_playlists_screen.dart';
 import 'desktop_library_screen.dart';
 import 'desktop_player_screen.dart';
+import 'shell_navigation.dart';
 
 /// Shared page padding for the shell's content area, per the design
 /// (28px vertical, 32px horizontal).
@@ -36,7 +36,8 @@ class DesktopShell extends StatefulWidget {
   State<DesktopShell> createState() => _DesktopShellState();
 }
 
-class _DesktopShellState extends State<DesktopShell> {
+class _DesktopShellState extends State<DesktopShell>
+    implements ShellNavigation {
   SidebarDestination _destination = SidebarDestination.library;
 
   /// Library keeps its own navigator so folder drill-down (and the back that
@@ -161,28 +162,33 @@ class _DesktopShellState extends State<DesktopShell> {
     SidebarDestination.favourites => false,
   };
 
-  /// True while Now Playing is on screen, so a second request — a queue jump,
-  /// a stray call from a list still mounted behind it — doesn't stack another
-  /// copy of it on the root navigator.
+  /// True while Now Playing is on screen — see [openNowPlaying].
   bool _playerOpen = false;
 
-  Future<void> _openPlayer() async {
+  @override
+  void openNowPlaying() {
     if (_playerOpen) return;
     _playerOpen = true;
-    final navigator = Navigator.of(context, rootNavigator: true);
-    // The player covers the whole window and so lives outside this shell; it
-    // hands back a folder to open when the user clicks the track's path.
-    final request = await navigator.push<FolderRequest>(
-      MaterialPageRoute(builder: (_) => const DesktopPlayerScreen()),
-    );
-    _playerOpen = false;
-    if (request == null || !mounted) return;
+    // The player covers the whole window and so lives outside this shell —
+    // above the Provider in build() too, so the route carries its own.
+    Navigator.of(context, rootNavigator: true)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => Provider<ShellNavigation>.value(
+              value: this,
+              child: const DesktopPlayerScreen(),
+            ),
+          ),
+        )
+        .whenComplete(() => _playerOpen = false);
+  }
+
+  @override
+  void showFolder({required String path, required String name}) {
+    if (_playerOpen) Navigator.of(context, rootNavigator: true).pop();
     setState(() => _destination = SidebarDestination.library);
     _libraryNavigator.currentState?.push(
-      DesktopFolderScreen.route(
-        folderPath: request.path,
-        folderName: request.name,
-      ),
+      DesktopFolderScreen.route(folderPath: path, folderName: name),
     );
   }
 
@@ -199,8 +205,8 @@ class _DesktopShellState extends State<DesktopShell> {
 
   @override
   Widget build(BuildContext context) {
-    return NowPlayingOpener(
-      open: _openPlayer,
+    return Provider<ShellNavigation>.value(
+      value: this,
       child: DesktopPlaybackShortcuts(
         onBack: _goBack,
         child: Scaffold(
@@ -259,7 +265,7 @@ class _DesktopShellState extends State<DesktopShell> {
                   ],
                 ),
               ),
-              DesktopMiniPlayer(onOpenPlayer: _openPlayer),
+              const DesktopMiniPlayer(),
               const NoticesListener(),
             ],
           ),

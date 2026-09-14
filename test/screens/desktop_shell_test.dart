@@ -6,6 +6,9 @@ import 'package:provider/provider.dart';
 import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:anywhere_music_player/models/track.dart';
+import 'package:anywhere_music_player/screens/desktop/desktop_folder_screen.dart';
+import 'package:anywhere_music_player/screens/desktop/desktop_player_screen.dart';
 import 'package:anywhere_music_player/screens/desktop/desktop_playlists_screen.dart';
 import 'package:anywhere_music_player/screens/desktop/desktop_shell.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
@@ -26,6 +29,9 @@ import '../support/fake_resolver.dart';
 // the shell's NoticesListener: a mutation the server refuses reaches the
 // user as a SnackBar from here, whatever screen they are on — until
 // 2026-09-13 playlist mutations had no listener at all and failed silently.
+// And the two ShellNavigation moves, through the real shell: the mini player
+// opens Now Playing on the root navigator, and Now Playing's folder line
+// lands in the Library on that folder.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -177,5 +183,33 @@ void main() {
 
     // Favourites is flat — there is nothing under it to go back through.
     expect(find.byTooltip('Back (Esc)'), findsNothing);
+  });
+
+  testWidgets('Now Playing opens from the mini player, and its folder line '
+      'lands in the Library on that folder', (tester) async {
+    final track = Track(
+      id: 't',
+      title: 'Filed',
+      path: 'Rock/Album/Filed.mp3',
+      folderPath: 'Rock/Album',
+      folderName: 'Album',
+      createdAt: DateTime(2024),
+    );
+    player.seedForTest(playlist: [track], currentIndex: 0, currentTrack: track);
+    await pump(tester);
+    expect(find.byType(DesktopPlayerScreen), findsNothing);
+
+    // The mini player's bar is one tap target; its title is inside it.
+    await tester.tap(find.text('Filed').first);
+    await settle(tester, frames: 16);
+    expect(find.byType(DesktopPlayerScreen), findsOneWidget);
+
+    await tester.tap(find.text('Rock/Album'));
+    await settle(tester, frames: 16);
+
+    expect(find.byType(DesktopPlayerScreen), findsNothing);
+    expect(find.byType(DesktopFolderScreen), findsOneWidget);
+    // The chrome follows: the folder's name is the context line.
+    expect(find.byTooltip('Back (Esc)'), findsOneWidget);
   });
 }

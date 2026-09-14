@@ -188,6 +188,7 @@ lib/
     login_screen.dart              # Credentials login
     desktop/
       desktop_shell.dart           # Sidebar shell + nested navigators
+      shell_navigation.dart        # The two moves only the shell can make
       desktop_library_screen.dart  desktop_folder_screen.dart
       desktop_player_screen.dart   # Full-window Now Playing
       desktop_playlists_screen.dart  desktop_favourites_screen.dart

@@ -10,8 +10,9 @@ import 'package:anywhere_music_player/services/audio_player_service.dart';
 import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/favourites_service.dart';
 import 'package:anywhere_music_player/services/library_scanner.dart';
-import 'package:anywhere_music_player/widgets/play_actions.dart';
+import 'package:anywhere_music_player/screens/desktop/shell_navigation.dart';
 import '../support/fake_auth.dart';
+import '../support/fake_navigation.dart';
 import '../support/fake_scanner.dart';
 
 /// Records what the screen asks to play instead of loading it. A real load
@@ -41,7 +42,7 @@ void main() {
 
   late _RecordingPlayer player;
   late AuthService auth;
-  late int playerOpened;
+  late RecordingShellNavigation navigation;
 
   // What the fake server browses to; the scanner walks it for real.
   final library = [
@@ -57,7 +58,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     auth = await loggedInAuthService();
     player = _RecordingPlayer();
-    playerOpened = 0;
+    navigation = RecordingShellNavigation();
   });
 
   tearDown(() => player.dispose());
@@ -81,6 +82,7 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
+          Provider<ShellNavigation>.value(value: navigation),
           ChangeNotifierProvider<LibraryScanner>.value(value: scanner),
           ChangeNotifierProvider<AudioPlayerService>.value(value: player),
           ChangeNotifierProvider<AuthService>.value(value: auth),
@@ -88,14 +90,7 @@ void main() {
             create: (_) => FavouritesService(null),
           ),
         ],
-        child: MaterialApp(
-          // The shell's opener, so playing doesn't push the real player
-          // screen — this test is about what gets played, not shown.
-          home: NowPlayingOpener(
-            open: () => playerOpened++,
-            child: const Scaffold(body: DesktopLibraryScreen()),
-          ),
-        ),
+        child: const MaterialApp(home: Scaffold(body: DesktopLibraryScreen())),
       ),
     );
     await settle(tester);
@@ -109,7 +104,7 @@ void main() {
 
     expect(player.played?.map((t) => t.id), ['1', '2', '3']);
     expect(player.shuffled, isNull);
-    expect(playerOpened, 1);
+    expect(navigation.nowPlayingOpened, 1);
   });
 
   testWidgets('Shuffle plays the whole library, shuffled', (tester) async {
@@ -120,7 +115,7 @@ void main() {
 
     expect(player.shuffled?.map((t) => t.id), ['1', '2', '3']);
     expect(player.played, isNull);
-    expect(playerOpened, 1);
+    expect(navigation.nowPlayingOpened, 1);
   });
 
   testWidgets('both are disabled while the library is empty', (tester) async {

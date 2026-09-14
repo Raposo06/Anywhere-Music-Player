@@ -14,6 +14,49 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## Shell navigation is one module the shell provides, not two protocols (2026-09-14)
+
+**Decided.** `ShellNavigation` (`screens/desktop/shell_navigation.dart`) has
+two verbs — `openNowPlaying()` and `showFolder(path:, name:)` — and
+`_DesktopShellState` implements it, providing itself through `Provider`.
+`playFromList`/`playAll` and the mini player read it to open the player;
+Now Playing's folder line reads it to open the folder. Gone: the
+`NowPlayingOpener` `InheritedWidget` (one callback), its fallback branch
+that pushed the player route directly when no opener was installed, and
+the `FolderRequest` record the player used to pop with for the shell to
+`await` and act on. The shell closes the player itself inside `showFolder`
+when it is open.
+
+**Why.** "Click the folder line on Now Playing" took four files to read:
+the `FolderRequest` typedef and `pop<FolderRequest>` in the player screen,
+the `await push` plus `_playerOpen` flag in the shell, and `NowPlayingOpener`
+in `play_actions.dart`. Worse, the opener's fallback branch — a plain push —
+ran only in tests: the tested path and the shipped path diverged exactly at
+the seam, which is the one place they must not. Two moves only the shell
+can make (the root navigator, the Library's nested navigator) are two
+methods on one module; a widget asks, the shell does. Tests hand in a
+`RecordingShellNavigation` and assert what was asked for, instead of
+pushing a real `DesktopPlayerScreen` to prove a row tap works.
+
+**Found by the new test.** The player is pushed on the *root* navigator,
+above the shell's own subtree — so a `Provider` in the shell's `build()`
+does not reach it, and the first round-trip test threw
+`ProviderNotFoundException` from the folder line. Production would have too.
+The route the shell pushes now carries its own `Provider.value(this)`. That
+test (`desktop_shell_test.dart`: mini player → Now Playing → folder line →
+`DesktopFolderScreen` in the Library, chevron showing) is the one the
+2026-09-13 review said did not exist.
+
+**What was considered and not done.** A `goBack()` on the module — only
+the chrome and the keyboard shortcuts use it, both inside the shell. A
+nullable lookup so list tests could run without providing one — that is the
+fallback again under another name.
+
+**What would reverse it.** A third move that is not the shell's to make.
+Then it is a different module, not a third method here.
+
+---
+
 ## Browsing goes through `scanner.tree`; the cache is a seam with two adapters (2026-09-14)
 
 **Decided.** `LibraryScanner`'s seven forwarders (`getFolderContents`,
@@ -1135,6 +1178,8 @@ directly. Extends "2026-08-22 architecture review" Candidate 02.
 ---
 
 ## "Play this, and show it" is one helper, not eleven copies (2026-09-01)
+
+> **Refined (2026-09-14)** — the helper stays; `NowPlayingOpener` and the `FolderRequest` round-trip it describes became `ShellNavigation`. See the 2026-09-14 entry.
 
 **Decided.** `lib/widgets/play_actions.dart` owns the whole track-pick gesture:
 `playFromList(context, track, tracks)` and `playAll(context, tracks, {shuffled})`

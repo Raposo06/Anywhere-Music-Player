@@ -19,6 +19,7 @@ import '../../widgets/desktop/up_next_panel.dart';
 import '../../widgets/desktop/window_chrome.dart';
 import '../../widgets/scrub_bar.dart';
 import '../../widgets/upcoming_cover_precacher.dart';
+import 'shell_navigation.dart';
 
 /// The size the cover is *requested* at — deliberately a constant, and
 /// deliberately larger than the biggest size it is ever drawn at
@@ -64,15 +65,6 @@ const _minPaneHPadding = 24.0;
 /// Pane width below which the gap and padding scale down to their minimums.
 const _tightPaneWidth = 900.0;
 
-/// What [DesktopPlayerScreen] pops with when the user clicks through to the
-/// track's folder.
-///
-/// The player covers the whole window from the *root* navigator, so it can't
-/// push into the shell's library navigator itself. It closes and hands the
-/// destination back instead, and the shell — which owns that navigator — does
-/// the pushing. A plain pop (null) just closes the player.
-typedef FolderRequest = ({String path, String name});
-
 /// Full-window playback view: art and transport on the left, a permanent
 /// "Up Next" queue on the right.
 ///
@@ -94,10 +86,11 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
     final displayName = track.folderName.isNotEmpty
         ? track.folderName
         : track.folderPath.split('/').last;
-    // Close, and let the shell open the folder — see [FolderRequest].
-    Navigator.of(
-      context,
-    ).pop<FolderRequest>((path: track.folderPath, name: displayName));
+    // The shell owns the Library's navigator, and closes this screen itself.
+    context.read<ShellNavigation>().showFolder(
+      path: track.folderPath,
+      name: displayName,
+    );
   }
 
   @override
@@ -119,7 +112,7 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen> {
 
         return DesktopPlaybackShortcuts(
           // Alt+← / Escape back out of Now Playing — the same plain pop the
-          // chrome's back chevron does, so it can't strand a FolderRequest.
+          // chrome's back chevron does.
           onBack: () => Navigator.of(context).pop(),
           child: Scaffold(
             backgroundColor: AppColors.win,

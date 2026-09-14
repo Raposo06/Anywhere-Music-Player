@@ -4,13 +4,16 @@ import 'package:provider/provider.dart';
 import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:anywhere_music_player/models/track.dart';
 import 'package:anywhere_music_player/screens/desktop/desktop_player_screen.dart';
+import 'package:anywhere_music_player/screens/desktop/shell_navigation.dart';
 import 'package:anywhere_music_player/services/audio_player_service.dart';
 import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/favourites_service.dart';
 import 'package:anywhere_music_player/services/library_scanner.dart';
 import 'package:anywhere_music_player/widgets/desktop/desktop_mini_player.dart';
 import '../support/fake_auth.dart';
+import '../support/fake_navigation.dart';
 import '../support/fake_resolver.dart';
 import '../support/fixtures.dart';
 
@@ -29,6 +32,7 @@ void main() {
 
   late AudioPlayerService player;
   late AuthService auth;
+  late RecordingShellNavigation navigation;
 
   setUp(() async {
     FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(
@@ -37,6 +41,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     auth = await loggedInAuthService();
     player = AudioPlayerService(resolver: const FakeStreamUrlResolver());
+    navigation = RecordingShellNavigation();
   });
 
   tearDown(() => player.dispose());
@@ -62,6 +67,7 @@ void main() {
           ChangeNotifierProvider<LibraryScanner>(
             create: (_) => LibraryScanner(null),
           ),
+          Provider<ShellNavigation>.value(value: navigation),
         ],
         child: MaterialApp(home: home),
       ),
@@ -116,6 +122,30 @@ void main() {
       expect(isLive(tester, 'Previous (Ctrl+←)'), isFalse);
     });
 
+    testWidgets('clicking the folder line asks the shell for that folder', (
+      tester,
+    ) async {
+      final inFolder = Track(
+        id: 'f',
+        title: 'Filed',
+        path: 'Rock/Album/Filed.mp3',
+        folderPath: 'Rock/Album',
+        folderName: 'Album',
+        createdAt: DateTime(2024),
+      );
+      player.seedForTest(
+        playlist: [inFolder],
+        currentIndex: 0,
+        currentTrack: inFolder,
+      );
+      await pump(tester, const DesktopPlayerScreen());
+
+      await tester.tap(find.text('Rock/Album'));
+      await settle(tester);
+
+      expect(navigation.foldersShown, [(path: 'Rock/Album', name: 'Album')]);
+    });
+
     testWidgets('the buttons follow the service as it changes', (tester) async {
       player.seedForTest(
         playlist: [one],
@@ -142,10 +172,7 @@ void main() {
         queue: [queued],
         repeatMode: RepeatMode.off,
       );
-      await pump(
-        tester,
-        Scaffold(body: DesktopMiniPlayer(onOpenPlayer: () {})),
-      );
+      await pump(tester, const Scaffold(body: DesktopMiniPlayer()));
 
       expect(isLive(tester, 'Next (Ctrl+→)'), isTrue);
       expect(isLive(tester, 'Previous (Ctrl+←)'), isFalse);
