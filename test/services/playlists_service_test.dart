@@ -114,6 +114,48 @@ void main() {
     });
   });
 
+  // canEdit is the service's answer to "may this session edit it?" — the
+  // model's rule applied to the user its client speaks for. Screens used to
+  // assemble the two from PlaylistsService and AuthService each.
+  group('canEdit', () {
+    test('the owner may; someone else may not', () async {
+      final (:playlists, requests: _) = build(
+        (_) => _ok({
+          'playlists': {
+            'playlist': [
+              _playlistJson('1', 'Mine'),
+              _playlistJson('2', 'Theirs', owner: 'bob'),
+            ],
+          },
+        }),
+      );
+      await playlists.load();
+
+      expect(playlists.canEdit('1'), isTrue);
+      expect(playlists.canEdit('2'), isFalse);
+    });
+
+    test('readonly wins, even for the owner', () async {
+      final (:playlists, requests: _) = build(
+        (_) => _ok({
+          'playlists': {
+            'playlist': [
+              {..._playlistJson('1', 'Smart'), 'readonly': true},
+            ],
+          },
+        }),
+      );
+      await playlists.load();
+
+      expect(playlists.canEdit('1'), isFalse);
+    });
+
+    test('an unknown playlist is not editable', () {
+      final (:playlists, requests: _) = build((_) => _ok({}));
+      expect(playlists.canEdit('missing'), isFalse);
+    });
+  });
+
   group('load', () {
     test('lists playlists', () async {
       final (:playlists, :requests) = build(

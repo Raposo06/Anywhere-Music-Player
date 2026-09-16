@@ -120,8 +120,9 @@ class AuthService
           await api.ping();
           _apiService = api;
           _currentUser = User(username: username);
-          if (kDebugMode)
+          if (kDebugMode) {
             debugPrint('AuthService: Restored session for $username');
+          }
         } on SubsonicApiException catch (e) {
           if (e.code == 40) {
             debugPrint(

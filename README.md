@@ -213,7 +213,7 @@ lib/
   theme/
     app_colors.dart  app_theme.dart
   utils/
-    responsive.dart  now_playing_folder.dart
+    now_playing_folder.dart
   widgets/
     scrub_bar.dart  cover_art.dart  play_actions.dart  favourite_button.dart
     add_to_playlist.dart  add_songs_to_playlist.dart

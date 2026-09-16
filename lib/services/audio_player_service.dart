@@ -554,16 +554,29 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Seek the currently-loaded track to [position]. No-op if nothing is
-  /// loaded. Preserves the play/pause state — playback continues from the
-  /// new position if it was playing, stays paused otherwise.
+  /// Seek the currently-loaded track to [position], clamped to the track:
+  /// never before its start, never past [duration] when that is known. No-op
+  /// if nothing is loaded. Preserves the play/pause state — playback
+  /// continues from the new position if it was playing, stays paused
+  /// otherwise.
   Future<void> seek(Duration position) async {
     if (_player == null || _currentTrack == null) return;
+    var target = position < Duration.zero ? Duration.zero : position;
+    final total = duration;
+    if (total != null && target > total) target = total;
     try {
-      await _player!.seek(position);
+      await _player!.seek(target);
     } catch (e) {
       _handlePlaybackError(e);
     }
+  }
+
+  /// Seek relative to where playback is now — the arrow keys' ten seconds.
+  /// Same clamping as [seek]; a no-op until a position exists to move from.
+  Future<void> seekBy(Duration delta) async {
+    final from = position;
+    if (from == null) return;
+    await seek(from + delta);
   }
 
   // -------- Queue API --------
@@ -666,6 +679,9 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Set the user's volume, clamped to 0–1, so a relative nudge
+  /// (`setVolume(volume + step)`) cannot overshoot. ReplayGain is applied on
+  /// top before it reaches the player — see [PlaybackPolicy.replayGainFactor].
   Future<void> setVolume(double volume) async {
     _volume = volume.clamp(0.0, 1.0);
     if (_player != null) {

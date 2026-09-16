@@ -1,13 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
-import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:anywhere_music_player/services/auth_service.dart';
 import 'package:anywhere_music_player/services/playlists_service.dart';
 import 'package:anywhere_music_player/widgets/add_to_playlist.dart';
-import '../support/fake_auth.dart';
 import '../support/fake_playlists.dart';
 import '../support/fixtures.dart';
 
@@ -20,35 +15,24 @@ import '../support/fixtures.dart';
 void main() {
   late FakePlaylistServer server;
   late PlaylistsService service;
-  late AuthService auth;
 
-  setUp(() async {
-    // A real session, because ownership gating reads the current username —
-    // logged out, Playlist.isEditableBy treats everything as editable.
-    FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(
-      {},
-    );
-    SharedPreferences.setMockInitialValues({});
-    auth = await loggedInAuthService();
-
+  setUp(() {
     server = FakePlaylistServer(
       playlists: {
         '1': (name: 'Roadtrip', owner: 'alice', trackIds: ['x']),
         '2': (name: 'Bob\'s mix', owner: 'bob', trackIds: []),
       },
     );
+    // Ownership gating reads the username the service's client logs in as —
+    // 'alice', the fake server's default.
     service = server.service();
   });
 
   /// Pumps a screen whose only content is a button that opens the picker.
   Future<void> pumpPicker(WidgetTester tester) async {
     await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider<PlaylistsService>.value(value: service),
-          // Ownership gating reads the current user from here.
-          ChangeNotifierProvider<AuthService>.value(value: auth),
-        ],
+      ChangeNotifierProvider<PlaylistsService>.value(
+        value: service,
         child: MaterialApp(
           home: Scaffold(
             body: Builder(

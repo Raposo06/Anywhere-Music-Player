@@ -109,20 +109,6 @@ class _DesktopPlaybackShortcutsState extends State<DesktopPlaybackShortcuts> {
     action(context.read<AudioPlayerService>());
   }
 
-  static void _seekBy(AudioPlayerService player, Duration delta) {
-    final position = player.position;
-    if (position == null || player.currentTrack == null) return;
-    var target = position + delta;
-    if (target < Duration.zero) target = Duration.zero;
-    final duration = player.duration;
-    if (duration != null && target > duration) target = duration;
-    player.seek(target);
-  }
-
-  static void _nudgeVolume(AudioPlayerService player, double delta) {
-    player.setVolume((player.volume + delta).clamp(0.0, 1.0));
-  }
-
   @override
   Widget build(BuildContext context) {
     return CallbackShortcuts(
@@ -130,9 +116,9 @@ class _DesktopPlaybackShortcutsState extends State<DesktopPlaybackShortcuts> {
         const SingleActivator(LogicalKeyboardKey.space): () =>
             _play(context, (p) => p.togglePlayPause()),
         const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
-            _play(context, (p) => _seekBy(p, -_seekStep)),
+            _play(context, (p) => p.seekBy(-_seekStep)),
         const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
-            _play(context, (p) => _seekBy(p, _seekStep)),
+            _play(context, (p) => p.seekBy(_seekStep)),
         const SingleActivator(
           LogicalKeyboardKey.arrowLeft,
           control: true,
@@ -144,9 +130,9 @@ class _DesktopPlaybackShortcutsState extends State<DesktopPlaybackShortcuts> {
         ): () =>
             _play(context, (p) => p.playNext()),
         const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
-            _play(context, (p) => _nudgeVolume(p, _volumeStep)),
+            _play(context, (p) => p.setVolume(p.volume + _volumeStep)),
         const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
-            _play(context, (p) => _nudgeVolume(p, -_volumeStep)),
+            _play(context, (p) => p.setVolume(p.volume - _volumeStep)),
         const SingleActivator(LogicalKeyboardKey.keyF, control: true):
             _focusSearch,
         if (widget.onBack case final onBack?) ...{

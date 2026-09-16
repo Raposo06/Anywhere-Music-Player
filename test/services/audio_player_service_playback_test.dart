@@ -207,6 +207,77 @@ void main() {
     expect(fakePlatform.player.lastSeekPosition, const Duration(seconds: 42));
   });
 
+  // The clamp lives on the module, not on whichever caller does relative
+  // seeks — until 2026-09-16 the keyboard shortcuts re-derived it from
+  // position/duration/currentTrack, out of reach of these tests.
+  group('seek clamps to the track', () {
+    test('never before the start', () async {
+      final service = AudioPlayerService(
+        resolver: const FakeStreamUrlResolver(),
+      );
+      await service.playTrack(sampleTrack(id: '1'));
+      await waitUntil(() => !service.isLoading);
+
+      await service.seek(const Duration(seconds: -5));
+
+      expect(fakePlatform.player.lastSeekPosition, Duration.zero);
+    });
+
+    test('never past the duration', () async {
+      final service = AudioPlayerService(
+        resolver: const FakeStreamUrlResolver(),
+      );
+      await service.playTrack(sampleTrack(id: '1'));
+      await waitUntil(() => !service.isLoading);
+
+      await service.seek(const Duration(hours: 1));
+
+      // The fake platform reports a three-minute track.
+      expect(
+        fakePlatform.player.lastSeekPosition,
+        const Duration(minutes: 3),
+      );
+    });
+
+    test('seekBy moves relative to the current position, clamped', () async {
+      final service = AudioPlayerService(
+        resolver: const FakeStreamUrlResolver(),
+      );
+      await service.playTrack(sampleTrack(id: '1'));
+      await waitUntil(() => !service.isLoading);
+      fakePlatform.player.reportPosition(const Duration(seconds: 30));
+      await waitUntil(
+        () => (service.position ?? Duration.zero) >= const Duration(seconds: 30),
+      );
+
+      await service.seekBy(const Duration(seconds: 10));
+      // Position keeps ticking off wall time, so assert the jump, not equality.
+      final forward = fakePlatform.player.lastSeekPosition!;
+      expect(forward, greaterThanOrEqualTo(const Duration(seconds: 40)));
+      expect(forward, lessThan(const Duration(seconds: 45)));
+
+      await service.seekBy(const Duration(minutes: -5));
+      expect(fakePlatform.player.lastSeekPosition, Duration.zero);
+    });
+
+    test('seekBy is a no-op with nothing loaded', () async {
+      final service = AudioPlayerService(
+        resolver: const FakeStreamUrlResolver(),
+      );
+      await service.seekBy(const Duration(seconds: 10));
+      // Nothing was ever loaded, so no platform player was even created.
+      expect(fakePlatform.players, isEmpty);
+    });
+  });
+
+  test('setVolume clamps to 0-1, so a nudge cannot overshoot', () async {
+    final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
+    await service.setVolume(1.2);
+    expect(service.volume, 1.0);
+    await service.setVolume(-0.1);
+    expect(service.volume, 0.0);
+  });
+
   test('setVolume applies ReplayGain on top of the requested volume', () async {
     final service = AudioPlayerService(resolver: const FakeStreamUrlResolver());
     await service.playTrack(sampleTrack(id: '1')); // no ReplayGain data -> factor 1.0

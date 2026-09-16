@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../models/playlist.dart';
 import '../../models/track.dart';
-import '../../services/auth_service.dart';
 import '../../services/playlists_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/add_songs_to_playlist.dart';
@@ -63,7 +62,6 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
   @override
   Widget build(BuildContext context) {
     final service = context.watch<PlaylistsService>();
-    final username = context.read<AuthService>().currentUser?.username;
 
     return ColoredBox(
       color: AppColors.win,
@@ -103,7 +101,7 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            Expanded(child: _buildBody(service, username)),
+            Expanded(child: _buildBody(service)),
           ],
         ),
       ),
@@ -116,7 +114,7 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
     return n == 1 ? '1 playlist' : '$n playlists';
   }
 
-  Widget _buildBody(PlaylistsService service, String? username) {
+  Widget _buildBody(PlaylistsService service) {
     if (service.isLoading && !service.isLoaded) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -133,7 +131,7 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
           for (final playlist in service.playlists)
             _PlaylistCard(
               playlist: playlist,
-              editable: playlist.isEditableBy(username),
+              editable: service.canEdit(playlist.id),
               onOpen: () => _open(playlist),
               onPlay: () => _playPlaylist(playlist),
             ),
@@ -302,12 +300,9 @@ class _DesktopPlaylistScreenState extends State<DesktopPlaylistScreen> {
   }
 
   /// Whether this playlist accepts edits. Playlists owned by someone else are
-  /// visible but not modifiable — see [Playlist.isEditableBy].
-  bool get _editable {
-    final playlist = context.read<PlaylistsService>().byId(widget.playlistId);
-    final username = context.read<AuthService>().currentUser?.username;
-    return playlist?.isEditableBy(username) ?? false;
-  }
+  /// visible but not modifiable — see [PlaylistsService.canEdit].
+  bool get _editable =>
+      context.read<PlaylistsService>().canEdit(widget.playlistId);
 
   Future<void> _addSongs(Playlist playlist) =>
       AddSongsToPlaylist.show(context, playlist);

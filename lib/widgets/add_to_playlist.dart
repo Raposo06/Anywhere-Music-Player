@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../models/playlist.dart';
 import '../models/track.dart';
-import '../services/auth_service.dart';
 import '../services/playlists_service.dart';
 
 /// Picks a playlist to add [tracks] to, or creates one for them.
@@ -81,7 +80,6 @@ class _AddToPlaylistBodyState extends State<_AddToPlaylistBody> {
   @override
   Widget build(BuildContext context) {
     final service = context.watch<PlaylistsService>();
-    final username = context.read<AuthService>().currentUser?.username;
     final count = widget.tracks.length;
 
     return Column(
@@ -99,13 +97,13 @@ class _AddToPlaylistBodyState extends State<_AddToPlaylistBody> {
           onTap: _createAndAdd,
         ),
         const Divider(height: 1),
-        Flexible(child: _buildList(service, username)),
+        Flexible(child: _buildList(service)),
         if (_busy) const LinearProgressIndicator(minHeight: 2),
       ],
     );
   }
 
-  Widget _buildList(PlaylistsService service, String? username) {
+  Widget _buildList(PlaylistsService service) {
     if (service.isLoading && !service.isLoaded) {
       return const Padding(
         padding: EdgeInsets.all(24),
@@ -123,7 +121,7 @@ class _AddToPlaylistBodyState extends State<_AddToPlaylistBody> {
       itemCount: service.playlists.length,
       itemBuilder: (context, i) {
         final playlist = service.playlists[i];
-        final editable = playlist.isEditableBy(username);
+        final editable = service.canEdit(playlist.id);
         return ListTile(
           leading: const Icon(Icons.queue_music),
           title: Text(playlist.name),

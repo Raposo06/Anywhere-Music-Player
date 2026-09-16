@@ -80,6 +80,8 @@ void main() {
         providers: [
           ChangeNotifierProvider<PlaylistsService>.value(value: playlists),
           ChangeNotifierProvider<AudioPlayerService>.value(value: player),
+          // Cover art resolves its URLs through the session — ownership
+          // gating no longer reads it (PlaylistsService.canEdit does).
           ChangeNotifierProvider<AuthService>.value(value: auth),
           // DesktopTrackRow carries a favourite heart, which reads this.
           ChangeNotifierProvider<FavouritesService>(

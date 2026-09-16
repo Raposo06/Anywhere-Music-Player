@@ -41,6 +41,13 @@ class PlaylistsService extends SessionScoped with LoadStatus {
     return null;
   }
 
+  /// Whether the current session may add to, remove from, rename or delete
+  /// [playlistId]. False for a playlist this service does not know. The rule
+  /// is [Playlist.isEditableBy]'s; the user it is asked about is the one the
+  /// session's client speaks for, which is who the server counts as owner.
+  bool canEdit(String playlistId) =>
+      byId(playlistId)?.isEditableBy(api?.username) ?? false;
+
   /// Fetch the playlist list. Safe to call repeatedly; concurrent calls
   /// collapse into the first.
   Future<void> load() => runLoad('playlists', (api) async {

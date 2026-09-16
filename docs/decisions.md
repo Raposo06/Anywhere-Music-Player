@@ -14,6 +14,46 @@ Each entry: **what was decided**, **why**, and **what would reverse it**.
 
 ---
 
+## The verbs a caller was assembling now live on the module that owns the facts (2026-09-16)
+
+**Decided.** Three small moves, one rule. `AudioPlayerService.seek` clamps
+to the track (never before zero, never past `duration` when known) and
+`seekBy(delta)` is the relative form — the arrow keys call it and own no
+arithmetic. `setVolume` already clamped to 0–1; the shortcuts' second
+clamp is gone and the up/down keys call `setVolume(volume ± step)`.
+`PlaylistsService.canEdit(id)` answers "may this session edit it?" by
+applying `Playlist.isEditableBy` to the username its own client logs in
+as; the playlists screen, the playlist detail and the add-to-playlist
+picker call it, and none of them reads `AuthService` any more. The unused
+`lib/utils/responsive.dart` went in the same commit.
+
+**Why.** Each of these was a caller re-deriving a fact the module already
+held: the shortcuts read `position`, `duration` and `currentTrack` to
+clamp a seek the player could have clamped; two screens and a sheet read
+`AuthService.currentUser?.username` to feed a model method, when the
+service's `api.username` is the same identity — it is the `u=` on every
+request, which is what the server counts as owner. The re-derivation was
+also the untested part: the clamp lived in a widget the service tests
+could not reach, and the ownership rule was checked on the model alone,
+never against a session. Both are now a method on the module with tests
+of their own, and the two playlist widget tests stopped needing a
+logged-in `AuthService` (secure-storage mocks and all) just to have a
+username — the fake server's client already carries one.
+
+**What was considered and not done.** A `nudgeVolume(delta)` on the
+player, as the review card had it — it would be `setVolume(volume +
+delta)` and nothing else, a pass-through with a name. The clamp is the
+invariant, and it was already on `setVolume`; documenting it there is
+the whole fix. `canEdit(Playlist)` taking the object — the detail screen
+only has an id, so it would look up and null-check anyway; one shape, by
+id, and the lookup is a scan of a list that is never long.
+
+**What would reverse it.** A caller that needs the *unclamped* seek — a
+scrub bar that lets you drag past the end to trigger "next", say. Then
+clamping belongs to the shortcut again and `seek` is the raw verb.
+
+---
+
 ## `AuthService` is the session-following resolver and reporter; the `Rotating*` wrappers go (2026-09-14)
 
 **Decided.** `AuthService implements StreamUrlResolver, PlaybackReporter`,
